@@ -38,6 +38,9 @@ cargo build --release
 git status -sb
 ```
 
+If registry secrets changed, run the manual `Release Auth Check` workflow before
+tagging.
+
 Then update `Cargo.toml`, commit, tag, and push:
 
 ```sh

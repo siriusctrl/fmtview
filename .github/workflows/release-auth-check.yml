@@ -1,0 +1,66 @@
+name: Release Auth Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crates-io:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Check crates.io token is configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CARGO_REGISTRY_TOKEN"
+
+      - name: Check crates.io token authenticates
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(
+            curl -sS -o /tmp/crates-me.json -w '%{http_code}' \
+              -H "Authorization: $CARGO_REGISTRY_TOKEN" \
+              -H "User-Agent: fmtview-release-check (https://github.com/siriusctrl/fmtview)" \
+              https://crates.io/api/v1/me
+          )"
+          if [ "$status" != "200" ]; then
+            echo "crates.io auth check failed with HTTP $status"
+            sed -n '1,120p' /tmp/crates-me.json
+            exit 1
+          fi
+          echo "crates.io token authenticated"
+
+      - name: Dry-run crates.io package
+        run: cargo publish --dry-run --locked
+
+  npm:
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Check npm token is configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NODE_AUTH_TOKEN"
+
+      - name: Check npm token authenticates
+        run: npm whoami
+
+      - name: Dry-run npm manifest
+        run: npm pack --dry-run ./npm/fmtview
