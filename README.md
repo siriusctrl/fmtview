@@ -46,9 +46,22 @@ XML payloads or nested markup.
 
 ## Install
 
+Current source install:
+
 ```sh
-cargo install --git https://github.com/siriusctrl/fmtview
+cargo install --git https://github.com/siriusctrl/fmtview --locked
 ```
+
+Planned registry installs:
+
+```sh
+cargo install fmtview --locked
+npm install -g fmtview
+```
+
+These commands become available after the first crates.io and npm release. The
+npm package ships a prebuilt Linux x64 binary. Use Cargo or the GitHub Release
+artifacts for other environments.
 
 For local development:
 

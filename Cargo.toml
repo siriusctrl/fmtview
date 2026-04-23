@@ -2,6 +2,14 @@
 name = "fmtview"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "Fast terminal formatter and viewer for JSON, JSONL, XML, and formatted diffs"
+license = "MIT"
+repository = "https://github.com/siriusctrl/fmtview"
+readme = "README.md"
+keywords = ["json", "jsonl", "xml", "cli", "viewer"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = [".github/", "npm/"]
 
 [dependencies]
 anyhow = "1.0.102"

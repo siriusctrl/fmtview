@@ -16,7 +16,7 @@ Target public channels:
 
 - GitHub Releases with prebuilt binaries and checksums.
 - crates.io, so Rust users can run `cargo install fmtview --locked`.
-- npm, so users without a Rust toolchain can run `npm install -g @siriusctrl/fmtview`.
+- npm, so Linux x64 users without a Rust toolchain can run `npm install -g fmtview`.
 
 Add a channel to README only after it is actually published and verified.
 
@@ -61,20 +61,26 @@ The workflow should:
 
 - Check out the tagged commit.
 - Verify the tag version matches `Cargo.toml`.
+- Verify the npm package version matches `Cargo.toml`.
 - Run `cargo fmt --check`, `cargo test`, and `cargo clippy --all-targets -- -D warnings`.
-- Build release binaries in a target matrix.
-- Package each binary as `fmtview-<target>.tar.gz`.
+- Build the Linux x64 release binary.
+- Package the binary as `fmtview-linux-x64.tar.gz`.
 - Generate `sha256sums.txt`.
 - Create or update a GitHub Release for the tag.
-- Upload binaries and checksums as release assets.
+- Upload the binary archive and checksums as release assets.
+- Publish to crates.io if `CARGO_REGISTRY_TOKEN` is configured.
+- Publish to npm if `NPM_TOKEN` is configured.
 
-Suggested initial target matrix:
+If either registry secret is missing, the workflow still builds the GitHub
+Release artifact and skips that registry publish step.
+
+Initial target:
 
 - `x86_64-unknown-linux-gnu`
+
+Potential future targets:
+
 - `aarch64-unknown-linux-gnu`
-
-Add macOS targets before npm publication:
-
 - `x86_64-apple-darwin`
 - `aarch64-apple-darwin`
 
@@ -92,8 +98,12 @@ metadata:
 
 Use `cargo publish --dry-run` before publishing.
 
-Publish only from a release tag or an approved release workflow. If publishing
-from CI, store the crates.io token in a protected GitHub environment.
+Publish only from a release tag or an approved release workflow. The release
+workflow uses the `CARGO_REGISTRY_TOKEN` GitHub secret when it is configured:
+
+```sh
+gh secret set CARGO_REGISTRY_TOKEN
+```
 
 After the first publish, README may list:
 
@@ -106,35 +116,36 @@ cargo install fmtview --locked
 npm should be an installation wrapper for prebuilt Rust binaries, not a second
 implementation.
 
-Recommended package layout:
+Initial package layout:
 
-- `@siriusctrl/fmtview` - JS shim, command entrypoint, and optional platform
-  dependencies.
-- `@siriusctrl/fmtview-linux-x64` - Linux x64 binary package.
-- `@siriusctrl/fmtview-linux-arm64` - Linux ARM64 binary package.
-- `@siriusctrl/fmtview-darwin-x64` - macOS Intel binary package.
-- `@siriusctrl/fmtview-darwin-arm64` - macOS Apple Silicon binary package.
+- `fmtview` - JS shim plus a bundled Linux x64 binary.
 
-The root npm package should expose the CLI through `package.json` `bin` and
-select the installed platform package at runtime.
+The npm package exposes the CLI through `package.json` `bin`, and the shim
+executes `vendor/fmtview`. It is intentionally Linux x64 only for the first
+release.
 
-Prefer platform packages in `optionalDependencies` over downloading binaries in
-`postinstall`. Platform packages are easier to audit and behave better in
-restricted CI environments.
+A future multi-platform npm release should move to a root wrapper package plus
+platform packages in `optionalDependencies`. Prefer that over downloading
+binaries in `postinstall`; platform packages are easier to audit and behave
+better in restricted CI environments.
 
 When publishing to npm from GitHub Actions:
 
-- Use a protected `npm` environment.
 - Use `actions/setup-node` with the npm registry URL.
 - Publish public packages with provenance.
 - Grant `id-token: write` only to the npm publish job.
 - Keep npm publish jobs tag-gated and never run them for pull requests.
-
-README may list npm installation only after every required platform package and
-the root wrapper package have been published and smoke-tested:
+- Configure the `NPM_TOKEN` GitHub secret:
 
 ```sh
-npm install -g @siriusctrl/fmtview
+gh secret set NPM_TOKEN
+```
+
+README may list npm installation only after the package has been published and
+smoke-tested:
+
+```sh
+npm install -g fmtview
 ```
 
 ## Release Checklist
