@@ -29,7 +29,8 @@ XML payloads or nested markup.
 `fmtview` combines the two:
 
 - Format JSON, JSONL, and XML from files, stdin, or literal strings.
-- Preview in a terminal UI with line numbers, progress, and horizontal scroll.
+- Preview in a terminal UI with line numbers, progress, and indent-aware soft
+  wrap.
 - Highlight JSON, XML, and unified diff output.
 - Pair XML opening and closing tags by depth, including XML embedded inside JSON
   string values.
@@ -94,20 +95,30 @@ The viewer is intentionally small and keyboard-driven:
 
 ```text
 q/Esc       quit
-j/k         scroll down/up
-Up/Down     scroll down/up
-PgUp/PgDn   page scroll
+j/k         scroll down/up by logical line
+Up/Down     scroll down/up by logical line
+Space/f     page down
+b           page up
+Ctrl-d      half page down
+Ctrl-u      half page up
 g/G         top/end
-h/l         horizontal scroll
-Left/Right  horizontal scroll
+w           toggle wrap/nowrap
+h/l         horizontal scroll in nowrap mode
+Left/Right  horizontal scroll in nowrap mode
 ```
 
 The title bar shows the source label, total line count, visible line range,
-scroll percentage, and horizontal offset. The left gutter shows line numbers.
+scroll percentage, and whether wrapping is enabled. The left gutter shows line
+numbers, and wrapped continuation rows use a lighter continuation gutter.
 
-Syntax highlighting is applied only to the visible window. That means a very
-large file does not require a full highlighted render before you can start
-scrolling.
+Soft wrap is enabled by default. Continuation rows preserve the original
+indentation, with a capped extra indent so deeply nested documents still have
+usable content width. Press `w` to switch to nowrap mode when exact columns
+matter; horizontal scrolling is available there.
+
+Syntax highlighting and wrapping are applied only to the visible window. That
+means a very large file does not require a full highlighted render before you
+can start scrolling.
 
 ## Embedded XML
 

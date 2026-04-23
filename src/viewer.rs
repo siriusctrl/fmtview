@@ -46,6 +46,7 @@ fn run_loop(
 ) -> Result<()> {
     let mut top = 0_usize;
     let mut x = 0_usize;
+    let mut wrap = true;
 
     loop {
         terminal
@@ -64,24 +65,30 @@ fn run_loop(
                 let lines = file.read_window(top, visible_height).unwrap_or_else(|error| {
                     vec![format!("failed to read window: {error:#}")]
                 });
-                let styled = lines
-                    .iter()
-                    .enumerate()
-                    .map(|(index, line)| {
-                        styled_line(line, top + index + 1, gutter_digits, x, content_width, mode)
-                    })
-                    .collect::<Vec<_>>();
+                let render_context = RenderContext {
+                    gutter_digits,
+                    x,
+                    width: content_width,
+                    wrap,
+                    mode,
+                };
+                let styled = render_visible_lines(&lines, top + 1, visible_height, render_context);
 
                 let current = if file.line_count() == 0 { 0 } else { top + 1 };
                 let bottom = top.saturating_add(visible_height).min(file.line_count());
+                let display_mode = if wrap {
+                    "wrap".to_owned()
+                } else {
+                    format!("nowrap x:{x}")
+                };
                 let title = format!(
-                    " {} | {} lines | {}-{} | {:>3}% | x:{} ",
+                    " {} | {} lines | {}-{} | {:>3}% | {} ",
                     file.label(),
                     file.line_count(),
                     current,
                     bottom,
                     progress_percent(bottom, file.line_count()),
-                    x
+                    display_mode
                 );
                 let paragraph = Paragraph::new(styled).block(
                     Block::default()
@@ -92,7 +99,7 @@ fn run_loop(
                 frame.render_widget(paragraph, body);
 
                 let footer_text =
-                    " q/Esc quit | j/k/↑/↓ scroll | PgUp/PgDn page | g/G top/end | h/l/←/→ horizontal | redirect with > to write ";
+                    " q/Esc quit | j/k/↑/↓ line | Space/f page down | b page up | Ctrl-d/u half | g/G top/end | w wrap ";
                 frame.render_widget(
                     Paragraph::new(footer_text).style(Style::default().fg(Color::DarkGray)),
                     footer,
@@ -119,6 +126,9 @@ fn run_loop(
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => break,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+            KeyCode::Char('w') => {
+                wrap = !wrap;
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 top = top
                     .saturating_add(1)
@@ -127,13 +137,21 @@ fn run_loop(
             KeyCode::Up | KeyCode::Char('k') => {
                 top = top.saturating_sub(1);
             }
-            KeyCode::PageDown => {
+            KeyCode::PageDown | KeyCode::Char(' ') | KeyCode::Char('f') => {
                 top = top
                     .saturating_add(page)
                     .min(file.line_count().saturating_sub(1));
             }
-            KeyCode::PageUp => {
+            KeyCode::PageUp | KeyCode::Char('b') => {
                 top = top.saturating_sub(page);
+            }
+            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                top = top
+                    .saturating_add((page / 2).max(1))
+                    .min(file.line_count().saturating_sub(1));
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                top = top.saturating_sub((page / 2).max(1));
             }
             KeyCode::Home | KeyCode::Char('g') => {
                 top = 0;
@@ -141,10 +159,10 @@ fn run_loop(
             KeyCode::End | KeyCode::Char('G') => {
                 top = file.line_count().saturating_sub(1);
             }
-            KeyCode::Right | KeyCode::Char('l') => {
+            KeyCode::Right | KeyCode::Char('l') if !wrap => {
                 x = x.saturating_add(4);
             }
-            KeyCode::Left | KeyCode::Char('h') => {
+            KeyCode::Left | KeyCode::Char('h') if !wrap => {
                 x = x.saturating_sub(4);
             }
             _ => {}
@@ -154,30 +172,222 @@ fn run_loop(
     Ok(())
 }
 
-fn styled_line(
-    line: &str,
-    line_number: usize,
+#[derive(Debug, Clone, Copy)]
+struct RenderContext {
     gutter_digits: usize,
     x: usize,
     width: usize,
+    wrap: bool,
+    mode: ViewMode,
+}
+
+fn render_visible_lines(
+    lines: &[String],
+    first_line_number: usize,
+    height: usize,
+    context: RenderContext,
+) -> Vec<Line<'static>> {
+    let mut rendered = Vec::with_capacity(height);
+
+    for (index, line) in lines.iter().enumerate() {
+        if rendered.len() >= height {
+            break;
+        }
+
+        let remaining = height - rendered.len();
+        rendered.extend(render_logical_line(
+            line,
+            first_line_number + index,
+            remaining,
+            context,
+        ));
+    }
+
+    rendered
+}
+
+fn render_logical_line(
+    line: &str,
+    line_number: usize,
+    max_rows: usize,
+    context: RenderContext,
+) -> Vec<Line<'static>> {
+    if max_rows == 0 {
+        return Vec::new();
+    }
+
+    if !context.wrap {
+        return vec![styled_segment(
+            line_number_gutter(line_number, context.gutter_digits),
+            line,
+            context.x,
+            context.x.saturating_add(context.width),
+            context.mode,
+        )];
+    }
+
+    let spans = highlight_content(line, context.mode);
+    let ranges = wrap_ranges(
+        line,
+        context.width,
+        continuation_indent(line, context.width),
+        max_rows,
+    );
+    ranges
+        .iter()
+        .enumerate()
+        .map(|(index, range)| {
+            let gutter = if index == 0 {
+                line_number_gutter(line_number, context.gutter_digits)
+            } else {
+                continuation_gutter(context.gutter_digits)
+            };
+            let mut line_spans = vec![gutter];
+            if range.continuation_indent > 0 {
+                line_spans.push(Span::styled(
+                    " ".repeat(range.continuation_indent),
+                    Style::default(),
+                ));
+            }
+            line_spans.extend(slice_spans(&spans, range.start, range.end));
+            Line::from(line_spans)
+        })
+        .collect()
+}
+
+fn styled_segment(
+    gutter: Span<'static>,
+    line: &str,
+    start: usize,
+    end: usize,
     mode: ViewMode,
 ) -> Line<'static> {
     let mut spans = Vec::new();
-    spans.push(Span::styled(
-        format!("{line_number:>gutter_digits$} │ "),
-        gutter_style(),
-    ));
-
-    let clipped = clip(line, x, width);
-    spans.extend(highlight_content(&clipped, mode));
+    spans.push(gutter);
+    spans.extend(slice_spans(&highlight_content(line, mode), start, end));
     Line::from(spans)
 }
 
-fn clip(line: &str, x: usize, width: usize) -> String {
-    if width == 0 {
-        return String::new();
+fn line_number_gutter(line_number: usize, gutter_digits: usize) -> Span<'static> {
+    Span::styled(format!("{line_number:>gutter_digits$} │ "), gutter_style())
+}
+
+fn continuation_gutter(gutter_digits: usize) -> Span<'static> {
+    Span::styled(format!("{:>gutter_digits$} ┆ ", ""), gutter_style())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WrapRange {
+    start: usize,
+    end: usize,
+    continuation_indent: usize,
+}
+
+fn wrap_ranges(
+    line: &str,
+    width: usize,
+    continuation_indent: usize,
+    max_rows: usize,
+) -> Vec<WrapRange> {
+    if max_rows == 0 {
+        return Vec::new();
     }
-    line.chars().skip(x).take(width).collect()
+
+    let char_count = line.chars().count();
+    if char_count == 0 || width == 0 {
+        return vec![WrapRange {
+            start: 0,
+            end: 0,
+            continuation_indent: 0,
+        }];
+    }
+
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    while start < char_count && ranges.len() < max_rows {
+        let continuation = !ranges.is_empty();
+        let indent = if continuation {
+            continuation_indent.min(width.saturating_sub(1))
+        } else {
+            0
+        };
+        let row_width = width.saturating_sub(indent).max(1);
+        let hard_end = start.saturating_add(row_width).min(char_count);
+        let end = if hard_end < char_count {
+            best_wrap_end(line, start, hard_end).unwrap_or(hard_end)
+        } else {
+            hard_end
+        };
+        let end = end.max(start + 1);
+        ranges.push(WrapRange {
+            start,
+            end,
+            continuation_indent: indent,
+        });
+        start = end;
+    }
+
+    ranges
+}
+
+fn best_wrap_end(line: &str, start: usize, hard_end: usize) -> Option<usize> {
+    let chars = line.chars().collect::<Vec<_>>();
+    let min_end = start + ((hard_end - start) / 2).max(1);
+
+    for end in (min_end..=hard_end).rev() {
+        let ch = chars[end - 1];
+        if ch.is_whitespace() || matches!(ch, ',' | '>' | '}' | ']' | ';') {
+            return Some(end);
+        }
+    }
+
+    None
+}
+
+fn continuation_indent(line: &str, width: usize) -> usize {
+    if width < 8 {
+        return 0;
+    }
+
+    let indent = line
+        .chars()
+        .take_while(|ch| ch.is_whitespace())
+        .map(|ch| if ch == '\t' { 2 } else { 1 })
+        .sum::<usize>()
+        + 2;
+    indent.min(24).min(width / 2)
+}
+
+fn slice_spans(spans: &[Span<'static>], start: usize, end: usize) -> Vec<Span<'static>> {
+    if end <= start {
+        return Vec::new();
+    }
+
+    let mut sliced = Vec::new();
+    let mut cursor = 0;
+
+    for span in spans {
+        let text = span.content.as_ref();
+        let len = text.chars().count();
+        let span_start = cursor;
+        let span_end = cursor + len;
+        cursor = span_end;
+
+        let overlap_start = start.max(span_start);
+        let overlap_end = end.min(span_end);
+        if overlap_start >= overlap_end {
+            continue;
+        }
+
+        let text = slice_chars(text, overlap_start - span_start, overlap_end - span_start);
+        sliced.push(Span::styled(text, span.style));
+    }
+
+    sliced
+}
+
+fn slice_chars(text: &str, start: usize, end: usize) -> String {
+    text.chars().skip(start).take(end - start).collect()
 }
 
 fn line_number_digits(line_count: usize) -> usize {
@@ -677,14 +887,64 @@ mod tests {
     use super::*;
 
     #[test]
-    fn clips_by_character_not_byte() {
-        assert_eq!(clip("a路径b", 1, 2), "路径");
+    fn slices_by_character_not_byte() {
+        assert_eq!(slice_chars("a路径b", 1, 3), "路径");
     }
 
     #[test]
     fn styled_line_keeps_a_gutter() {
-        let line = styled_line(r#"  "name": "fmtview","#, 12, 3, 0, 80, ViewMode::Plain);
+        let line = render_logical_line(
+            r#"  "name": "fmtview","#,
+            12,
+            1,
+            RenderContext {
+                gutter_digits: 3,
+                x: 0,
+                width: 80,
+                wrap: false,
+                mode: ViewMode::Plain,
+            },
+        )
+        .remove(0);
         assert_eq!(span_text(&line.spans), r#" 12 │   "name": "fmtview","#);
+    }
+
+    #[test]
+    fn wrap_uses_continuation_gutter_and_indent() {
+        let lines = render_logical_line(
+            r#"  "payload": "abcdefghijklmnopqrstuvwxyz","#,
+            7,
+            3,
+            RenderContext {
+                gutter_digits: 2,
+                x: 0,
+                width: 18,
+                wrap: true,
+                mode: ViewMode::Plain,
+            },
+        );
+
+        assert!(lines.len() > 1);
+        assert!(span_text(&lines[0].spans).starts_with(" 7 │ "));
+        assert!(span_text(&lines[1].spans).starts_with("   ┆     "));
+    }
+
+    #[test]
+    fn nowrap_applies_horizontal_offset() {
+        let lines = render_logical_line(
+            "abcdef",
+            1,
+            1,
+            RenderContext {
+                gutter_digits: 1,
+                x: 2,
+                width: 3,
+                wrap: false,
+                mode: ViewMode::Plain,
+            },
+        );
+
+        assert_eq!(span_text(&lines[0].spans), "1 │ cde");
     }
 
     #[test]
