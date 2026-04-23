@@ -163,6 +163,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -209,10 +211,14 @@ jobs:
           npm pack --dry-run ./npm/fmtview
 
       - name: Publish to npm
-        if: steps.npm-published.outputs.published != 'true'
+        if: env.NODE_AUTH_TOKEN != '' && steps.npm-published.outputs.published != 'true'
         working-directory: npm/fmtview
         run: npm publish --provenance --access public
 
       - name: Skip already published npm version
         if: steps.npm-published.outputs.published == 'true'
         run: echo "fmtview ${{ needs.build-linux-x64.outputs.version }} is already published on npm."
+
+      - name: Skip npm publish
+        if: env.NODE_AUTH_TOKEN == '' && steps.npm-published.outputs.published != 'true'
+        run: echo "NPM_TOKEN is not configured; skipped npm publish."

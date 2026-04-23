@@ -75,13 +75,13 @@ The workflow should:
 - Create or update a GitHub Release for the tag.
 - Upload the binary archive and checksums as release assets.
 - Publish to crates.io if `CARGO_REGISTRY_TOKEN` is configured.
-- Publish to npm through Trusted Publishing.
+- Publish to npm using a publish-capable `NPM_TOKEN`, or through Trusted
+  Publishing after it is configured.
 - Support manual reruns for an existing tag and skip registry versions that are
   already published.
 
-If the crates.io secret is missing, the workflow still builds the GitHub Release
-artifact and skips crates.io publishing. npm publishing requires Trusted
-Publishing to be configured for the release workflow.
+If the crates.io or npm secret is missing, the workflow still builds the GitHub
+Release artifact and skips that registry publish step.
 
 Initial target:
 
@@ -138,13 +138,21 @@ platform packages in `optionalDependencies`. Prefer that over downloading
 binaries in `postinstall`; platform packages are easier to audit and behave
 better in restricted CI environments.
 
-When publishing to npm from GitHub Actions:
+When publishing to npm from GitHub Actions with a token:
 
 - Use `actions/setup-node` with the npm registry URL.
 - Publish public packages with provenance.
 - Grant `id-token: write` only to the npm publish job.
 - Keep npm publish jobs tag-gated and never run them for pull requests.
-- Use npm Trusted Publishing instead of a long-lived npm token.
+- Configure an npm granular access token that can publish `fmtview` and bypass
+  2FA for automation, then store it as `NPM_TOKEN`:
+
+```sh
+gh secret set NPM_TOKEN
+```
+
+Trusted Publishing is preferred once the npm package exists:
+
 - Configure the trusted publisher for package `fmtview` with GitHub owner
   `siriusctrl`, repository `fmtview`, and workflow filename `release.yml`.
 
