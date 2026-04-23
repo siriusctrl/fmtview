@@ -37,10 +37,6 @@ struct FormatCommand {
     #[arg(short = 't', long = "type", value_enum, default_value_t = FormatKind::Auto)]
     kind: FormatKind,
 
-    /// Force the scrollable viewer even when stdout is not a TTY.
-    #[arg(long)]
-    view: bool,
-
     /// Format this literal string instead of reading INPUT/stdin.
     #[arg(long, value_name = "STRING")]
     literal: Option<String>,
@@ -74,10 +70,6 @@ struct DiffCommand {
     #[arg(short = 't', long = "type", value_enum, default_value_t = FormatKind::Auto)]
     kind: FormatKind,
 
-    /// Force the scrollable viewer even when stdout is not a TTY.
-    #[arg(long)]
-    view: bool,
-
     /// Recursively pretty-print JSON string values that contain JSON or XML.
     #[arg(long)]
     expand_embedded: bool,
@@ -109,7 +101,7 @@ fn run_format(command: FormatCommand) -> Result<()> {
 
     let formatted = format::format_source_to_temp(&input, &options)?;
 
-    if should_view(command.view) {
+    if should_view() {
         let indexed = line_index::IndexedTempFile::new(input.label().to_owned(), formatted)?;
         viewer::run(indexed, viewer::ViewMode::Plain)
     } else {
@@ -131,7 +123,7 @@ fn run_diff(command: DiffCommand) -> Result<()> {
 
     let diffed = diff::diff_sources(&left, &right, &options)?;
 
-    if should_view(command.view) {
+    if should_view() {
         let label = format!("{} <-> {}", left.label(), right.label());
         let indexed = line_index::IndexedTempFile::new(label, diffed)?;
         viewer::run(indexed, viewer::ViewMode::Diff)
@@ -140,8 +132,8 @@ fn run_diff(command: DiffCommand) -> Result<()> {
     }
 }
 
-fn should_view(force_view: bool) -> bool {
-    force_view || io::stdout().is_terminal()
+fn should_view() -> bool {
+    io::stdout().is_terminal()
 }
 
 fn copy_temp_to_stdout(temp: &tempfile::NamedTempFile) -> Result<()> {
