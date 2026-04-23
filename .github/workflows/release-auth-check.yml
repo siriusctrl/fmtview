@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   crates-io:
@@ -26,24 +27,13 @@ jobs:
 
   npm:
     runs-on: ubuntu-latest
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
-
-      - name: Check npm token is configured
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$NODE_AUTH_TOKEN"
-
-      - name: Check npm token authenticates
-        run: npm whoami
 
       - name: Dry-run npm manifest
         run: npm pack --dry-run ./npm/fmtview

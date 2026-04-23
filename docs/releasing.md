@@ -39,10 +39,10 @@ git status -sb
 ```
 
 If registry secrets changed, run the manual `Release Auth Check` workflow before
-tagging. That workflow verifies the npm token with `npm whoami`, checks that
-the crates.io secret is configured, and runs a crates.io package dry-run. The
-crates.io token itself is fully validated only by the real publish step because
-Cargo dry-runs do not upload.
+tagging. That workflow checks that the crates.io secret is configured, runs a
+crates.io package dry-run, and validates the npm package manifest. The crates.io
+token itself is fully validated only by the real publish step because Cargo
+dry-runs do not upload.
 
 Then update `Cargo.toml`, commit, tag, and push:
 
@@ -75,12 +75,13 @@ The workflow should:
 - Create or update a GitHub Release for the tag.
 - Upload the binary archive and checksums as release assets.
 - Publish to crates.io if `CARGO_REGISTRY_TOKEN` is configured.
-- Publish to npm if `NPM_TOKEN` is configured.
+- Publish to npm through Trusted Publishing.
 - Support manual reruns for an existing tag and skip registry versions that are
   already published.
 
-If either registry secret is missing, the workflow still builds the GitHub
-Release artifact and skips that registry publish step.
+If the crates.io secret is missing, the workflow still builds the GitHub Release
+artifact and skips crates.io publishing. npm publishing requires Trusted
+Publishing to be configured for the release workflow.
 
 Initial target:
 
@@ -143,15 +144,18 @@ When publishing to npm from GitHub Actions:
 - Publish public packages with provenance.
 - Grant `id-token: write` only to the npm publish job.
 - Keep npm publish jobs tag-gated and never run them for pull requests.
-- Configure the `NPM_TOKEN` GitHub secret:
+- Use npm Trusted Publishing instead of a long-lived npm token.
+- Configure the trusted publisher for package `fmtview` with GitHub owner
+  `siriusctrl`, repository `fmtview`, and workflow filename `release.yml`.
 
 ```sh
-gh secret set NPM_TOKEN
+npm trust github fmtview --repo siriusctrl/fmtview --file release.yml --yes
 ```
 
-The npm token must be able to publish from CI. If the npm account has 2FA
-enabled, use a granular access token that can bypass 2FA for publishing this
-package; a token that only passes `npm whoami` is not enough.
+The equivalent npmjs.com setup is package settings -> Trusted Publishers ->
+GitHub Actions, with the same owner, repository, and workflow filename. npm CLI
+automatically detects the GitHub Actions OIDC environment during
+`npm publish --provenance --access public`.
 
 README may list npm installation only after the package has been published and
 smoke-tested:
