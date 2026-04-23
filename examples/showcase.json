@@ -20,6 +20,7 @@
   },
   "embedded_xml": "<order id=\"A-100\"><customer tier=\"gold\">Ada Lovelace</customer><items><item sku=\"fmt-001\" qty=\"2\">terminal viewer</item><item sku=\"xml-777\" qty=\"1\">pairing-aware tags</item></items><total currency=\"USD\">42.00</total></order>",
   "embedded_xml_mismatch_demo": "<root><valid>paired</valid></wrong>",
+  "special_tokens": "first line\nsecond line\tindented column\r\nquoted value: \"fmtview\" escaped backslash: \\",
   "long_line": "This value is intentionally long so the viewer has to wrap it. Press w to toggle nowrap mode, then use h/l or the arrow keys to compare horizontal scrolling with the default soft-wrap view. The content should remain readable without needing PageUp or PageDown keys.",
   "array_of_objects": [
     {

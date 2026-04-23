@@ -32,6 +32,8 @@ XML payloads or nested markup.
 - Preview in a terminal UI with line numbers, progress, and indent-aware soft
   wrap.
 - Highlight JSON, XML, and unified diff output.
+- Highlight JSON string escape tokens such as `\n`, `\t`, `\r`, `\"`, and
+  `\\`.
 - Pair XML opening and closing tags by depth, including XML embedded inside JSON
   string values.
 - Preserve data semantics. JSON strings are highlighted for readability, not
@@ -102,8 +104,8 @@ fmtview diff examples/diff-left.json examples/diff-right.json
 
 Use `Space`/`f` and `b` to page, `w` to toggle wrap/nowrap, and `q` to exit.
 `examples/showcase.json` includes embedded XML, a deliberately mismatched XML
-closing tag, nested JSON, arrays, booleans, nulls, and long strings for wrap
-testing.
+closing tag, escaped special tokens, nested JSON, arrays, booleans, nulls, and
+long strings for wrap testing.
 
 ## Viewer
 

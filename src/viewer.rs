@@ -504,7 +504,7 @@ fn highlight_json_like(line: &str) -> Vec<Span<'static>> {
 
 fn highlight_json_string_value(text: &str) -> Vec<Span<'static>> {
     if !text.contains('<') {
-        return vec![Span::styled(text.to_owned(), string_style())];
+        return highlight_string_segment(text);
     }
 
     let mut spans = Vec::new();
@@ -515,9 +515,34 @@ fn highlight_json_string_value(text: &str) -> Vec<Span<'static>> {
         text.len()
     };
 
-    push_span(&mut spans, &text[..inner_start], string_style());
+    spans.extend(highlight_string_segment(&text[..inner_start]));
     spans.extend(highlight_inline_xml(&text[inner_start..inner_end], 0));
-    push_span(&mut spans, &text[inner_end..], string_style());
+    spans.extend(highlight_string_segment(&text[inner_end..]));
+    spans
+}
+
+fn highlight_string_segment(text: &str) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut index = 0;
+    let mut plain_start = 0;
+
+    while index < text.len() {
+        if let Some(end) = escape_token_end(text, index) {
+            push_span(&mut spans, &text[plain_start..index], string_style());
+            push_span(&mut spans, &text[index..end], escape_style());
+            index = end;
+            plain_start = index;
+            continue;
+        }
+
+        let ch = text[index..]
+            .chars()
+            .next()
+            .expect("index should point to a char");
+        index += ch.len_utf8();
+    }
+
+    push_span(&mut spans, &text[plain_start..], string_style());
     spans
 }
 
@@ -542,7 +567,7 @@ fn highlight_inline_xml(line: &str, base_depth: usize) -> Vec<Span<'static>> {
             if looks_like_xml_tag(tag) {
                 spans.extend(highlight_xml_tag(tag, &mut state, base_depth));
             } else {
-                push_span(&mut spans, tag, string_style());
+                spans.extend(highlight_string_segment(tag));
             }
             index = end;
         } else {
@@ -550,7 +575,7 @@ fn highlight_inline_xml(line: &str, base_depth: usize) -> Vec<Span<'static>> {
                 .find('<')
                 .map(|position| index + position)
                 .unwrap_or(line.len());
-            push_span(&mut spans, &line[index..end], string_style());
+            spans.extend(highlight_string_segment(&line[index..end]));
             index = end;
         }
     }
@@ -593,14 +618,14 @@ fn highlight_xml_tag(tag: &str, state: &mut XmlPairState, base_depth: usize) -> 
         if rest.starts_with("\\\"") || rest.starts_with("\\'") {
             let quote = rest.chars().nth(1).expect("escaped quote should exist");
             let end = escaped_quoted_end(tag, index, quote);
-            push_span(&mut spans, &tag[index..end], string_style());
+            spans.extend(highlight_string_segment(&tag[index..end]));
             index = end;
             continue;
         }
 
         if ch == '"' || ch == '\'' {
             let end = quoted_end(tag, index, ch);
-            push_span(&mut spans, &tag[index..end], string_style());
+            spans.extend(highlight_string_segment(&tag[index..end]));
             index = end;
             continue;
         }
@@ -817,6 +842,31 @@ fn escaped_quoted_end(text: &str, start: usize, quote: char) -> usize {
         .unwrap_or(text.len())
 }
 
+fn escape_token_end(text: &str, start: usize) -> Option<usize> {
+    let rest = text.get(start..)?;
+    if !rest.starts_with('\\') {
+        return None;
+    }
+
+    let mut chars = rest.chars();
+    chars.next()?;
+    let escaped = chars.next()?;
+    let escaped_start = start + '\\'.len_utf8();
+    let escaped_end = escaped_start + escaped.len_utf8();
+
+    if escaped == 'u' {
+        let unicode_end = escaped_end + 4;
+        if text
+            .get(escaped_end..unicode_end)
+            .is_some_and(|digits| digits.chars().all(|ch| ch.is_ascii_hexdigit()))
+        {
+            return Some(unicode_end);
+        }
+    }
+
+    Some(escaped_end)
+}
+
 fn is_xml_name_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | ':' | '.')
 }
@@ -862,6 +912,12 @@ fn attr_style() -> Style {
 
 fn string_style() -> Style {
     Style::default().fg(Color::Green)
+}
+
+fn escape_style() -> Style {
+    Style::default()
+        .fg(Color::LightMagenta)
+        .add_modifier(Modifier::BOLD)
 }
 
 fn number_style() -> Style {
@@ -954,6 +1010,17 @@ mod tests {
     }
 
     #[test]
+    fn json_string_escape_tokens_are_highlighted() {
+        let spans = highlight_json_like(r#"  "text": "line\nnext\t\u263A\\done""#);
+        assert_eq!(span_text(&spans), r#"  "text": "line\nnext\t\u263A\\done""#);
+
+        assert_eq!(styles_for_text(&spans, r#"\n"#), vec![escape_style()]);
+        assert_eq!(styles_for_text(&spans, r#"\t"#), vec![escape_style()]);
+        assert_eq!(styles_for_text(&spans, r#"\u263A"#), vec![escape_style()]);
+        assert_eq!(styles_for_text(&spans, r#"\\"#), vec![escape_style()]);
+    }
+
+    #[test]
     fn xml_highlight_preserves_visible_text() {
         let spans = highlight_xml_line(r#"<root id="1"><child>value</child></root>"#);
         assert_eq!(
@@ -978,6 +1045,10 @@ mod tests {
         assert_eq!(child_styles.len(), 2);
         assert_eq!(child_styles[0], child_styles[1]);
         assert_ne!(root_styles[0], child_styles[0]);
+        assert_eq!(
+            styles_for_text(&spans, r#"\""#),
+            vec![escape_style(), escape_style()]
+        );
     }
 
     #[test]

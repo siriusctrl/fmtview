@@ -1,4 +1,5 @@
 {"ts":"2026-04-23T12:00:00Z","level":"info","event":"start","payload":"<run id=\"r-001\"><phase>start</phase></run>","message":"Short JSONL record for baseline highlighting."}
 {"ts":"2026-04-23T12:00:01Z","level":"debug","event":"wrap","payload":"<wrap><mode>soft</mode><continuation>indent-aware</continuation></wrap>","message":"This JSONL message is intentionally long enough to demonstrate soft wrapping inside the viewer without requiring horizontal scrolling by default."}
 {"ts":"2026-04-23T12:00:02Z","level":"warn","event":"xml_mismatch","payload":"<root><expected>pair</expected></unexpected>","message":"The embedded XML payload has a local closing-tag mismatch for visual inspection."}
+{"ts":"2026-04-23T12:00:02Z","level":"debug","event":"escapes","payload":"<tokens><token>escape</token></tokens>","message":"Special token preview: line one\nline two\twith tab, quoted \"value\", and escaped backslash \\."}
 {"ts":"2026-04-23T12:00:03Z","level":"info","event":"finish","payload":"<run id=\"r-001\"><phase>finish</phase><ok>true</ok></run>","message":"Use Space/f and b to page through JSONL streams."}
