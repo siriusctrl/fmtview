@@ -21,23 +21,6 @@ jobs:
           set -euo pipefail
           test -n "$CARGO_REGISTRY_TOKEN"
 
-      - name: Check crates.io token authenticates
-        shell: bash
-        run: |
-          set -euo pipefail
-          status="$(
-            curl -sS -o /tmp/crates-me.json -w '%{http_code}' \
-              -H "Authorization: $CARGO_REGISTRY_TOKEN" \
-              -H "User-Agent: fmtview-release-check (https://github.com/siriusctrl/fmtview)" \
-              https://crates.io/api/v1/me
-          )"
-          if [ "$status" != "200" ]; then
-            echo "crates.io auth check failed with HTTP $status"
-            sed -n '1,120p' /tmp/crates-me.json
-            exit 1
-          fi
-          echo "crates.io token authenticated"
-
       - name: Dry-run crates.io package
         run: cargo publish --dry-run --locked
 

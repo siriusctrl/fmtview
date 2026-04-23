@@ -39,7 +39,10 @@ git status -sb
 ```
 
 If registry secrets changed, run the manual `Release Auth Check` workflow before
-tagging.
+tagging. That workflow verifies the npm token with `npm whoami`, checks that
+the crates.io secret is configured, and runs a crates.io package dry-run. The
+crates.io token itself is fully validated only by the real publish step because
+Cargo dry-runs do not upload.
 
 Then update `Cargo.toml`, commit, tag, and push:
 
