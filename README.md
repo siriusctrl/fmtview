@@ -59,8 +59,11 @@ Left/Right horizontal scroll
 ```
 
 The viewer renders line numbers, scroll progress, and lightweight JSON/XML/diff
-syntax highlighting for the visible window only. That keeps very large files
-responsive while still making nested structures easier to scan.
+syntax highlighting for the visible window only. XML tags are tokenized as
+opening, closing, and self-closing tags, with paired tags colored by depth. JSON
+string values that contain XML tags use the same pairing-aware highlighter
+without changing the underlying string. That keeps very large files responsive
+while still making nested structures easier to scan.
 
 ## Embedded Strings
 

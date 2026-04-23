@@ -226,7 +226,7 @@ fn highlight_diff_payload(line: &str, color: Color) -> Vec<Span<'static>> {
 fn highlight_structured(line: &str) -> Vec<Span<'static>> {
     let trimmed = line.trim_start();
     if trimmed.starts_with('<') {
-        highlight_xml(line)
+        highlight_xml_line(line)
     } else {
         highlight_json_like(line)
     }
@@ -249,12 +249,11 @@ fn highlight_json_like(line: &str) -> Vec<Span<'static>> {
 
         if ch == '"' {
             let end = json_string_end(line, index);
-            let style = if json_string_is_key(line, end) {
-                key_style()
+            if json_string_is_key(line, end) {
+                push_span(&mut spans, &line[index..end], key_style());
             } else {
-                string_style()
-            };
-            push_span(&mut spans, &line[index..end], style);
+                spans.extend(highlight_json_string_value(&line[index..end]));
+            }
             index = end;
             continue;
         }
@@ -293,9 +292,34 @@ fn highlight_json_like(line: &str) -> Vec<Span<'static>> {
     spans
 }
 
-fn highlight_xml(line: &str) -> Vec<Span<'static>> {
+fn highlight_json_string_value(text: &str) -> Vec<Span<'static>> {
+    if !text.contains('<') {
+        return vec![Span::styled(text.to_owned(), string_style())];
+    }
+
+    let mut spans = Vec::new();
+    let inner_start = if text.starts_with('"') { 1 } else { 0 };
+    let inner_end = if text.len() > inner_start && text.ends_with('"') {
+        text.len() - 1
+    } else {
+        text.len()
+    };
+
+    push_span(&mut spans, &text[..inner_start], string_style());
+    spans.extend(highlight_inline_xml(&text[inner_start..inner_end], 0));
+    push_span(&mut spans, &text[inner_end..], string_style());
+    spans
+}
+
+fn highlight_xml_line(line: &str) -> Vec<Span<'static>> {
+    let base_depth = xml_depth_from_indent(line);
+    highlight_inline_xml(line, base_depth)
+}
+
+fn highlight_inline_xml(line: &str, base_depth: usize) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut index = 0;
+    let mut state = XmlPairState::default();
 
     while index < line.len() {
         let rest = &line[index..];
@@ -304,14 +328,19 @@ fn highlight_xml(line: &str) -> Vec<Span<'static>> {
                 .find('>')
                 .map(|position| index + position + 1)
                 .unwrap_or(line.len());
-            spans.extend(highlight_xml_tag(&line[index..end]));
+            let tag = &line[index..end];
+            if looks_like_xml_tag(tag) {
+                spans.extend(highlight_xml_tag(tag, &mut state, base_depth));
+            } else {
+                push_span(&mut spans, tag, string_style());
+            }
             index = end;
         } else {
             let end = rest
                 .find('<')
                 .map(|position| index + position)
                 .unwrap_or(line.len());
-            push_span(&mut spans, &line[index..end], Style::default());
+            push_span(&mut spans, &line[index..end], string_style());
             index = end;
         }
     }
@@ -319,18 +348,42 @@ fn highlight_xml(line: &str) -> Vec<Span<'static>> {
     spans
 }
 
-fn highlight_xml_tag(tag: &str) -> Vec<Span<'static>> {
+fn highlight_xml_tag(tag: &str, state: &mut XmlPairState, base_depth: usize) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut index = 0;
-    let mut saw_name = false;
+    let kind = xml_tag_kind(tag);
+    let name_range = xml_tag_name_range(tag);
+    let name = name_range.map(|(start, end)| &tag[start..end]);
+    let tag_state = state.apply(kind, name, base_depth);
 
     while index < tag.len() {
         let rest = &tag[index..];
         let ch = rest.chars().next().expect("index should point to a char");
 
+        if let Some((start, end)) = name_range
+            && index == start
+        {
+            let style = if tag_state.matched {
+                xml_depth_style(tag_state.depth)
+            } else {
+                error_style()
+            };
+            push_span(&mut spans, &tag[start..end], style);
+            index = end;
+            continue;
+        }
+
         if ch.is_whitespace() {
             let end = take_while(tag, index, char::is_whitespace);
             push_span(&mut spans, &tag[index..end], Style::default());
+            index = end;
+            continue;
+        }
+
+        if rest.starts_with("\\\"") || rest.starts_with("\\'") {
+            let quote = rest.chars().nth(1).expect("escaped quote should exist");
+            let end = escaped_quoted_end(tag, index, quote);
+            push_span(&mut spans, &tag[index..end], string_style());
             index = end;
             continue;
         }
@@ -354,9 +407,7 @@ fn highlight_xml_tag(tag: &str) -> Vec<Span<'static>> {
 
         if is_xml_name_char(ch) {
             let end = take_while(tag, index, is_xml_name_char);
-            let style = if saw_name { attr_style() } else { key_style() };
-            saw_name = true;
-            push_span(&mut spans, &tag[index..end], style);
+            push_span(&mut spans, &tag[index..end], attr_style());
             index = end;
             continue;
         }
@@ -370,6 +421,116 @@ fn highlight_xml_tag(tag: &str) -> Vec<Span<'static>> {
     }
 
     spans
+}
+
+#[derive(Debug, Default)]
+struct XmlPairState {
+    stack: Vec<XmlOpenTag>,
+}
+
+#[derive(Debug)]
+struct XmlOpenTag {
+    name: String,
+    depth: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum XmlTagKind {
+    Open,
+    Close,
+    SelfClosing,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct XmlTagState {
+    depth: usize,
+    matched: bool,
+}
+
+impl XmlPairState {
+    fn apply(&mut self, kind: XmlTagKind, name: Option<&str>, base_depth: usize) -> XmlTagState {
+        match (kind, name) {
+            (XmlTagKind::Open, Some(name)) => {
+                let depth = base_depth + self.stack.len();
+                self.stack.push(XmlOpenTag {
+                    name: name.to_owned(),
+                    depth,
+                });
+                XmlTagState {
+                    depth,
+                    matched: true,
+                }
+            }
+            (XmlTagKind::SelfClosing, Some(_)) => XmlTagState {
+                depth: base_depth + self.stack.len(),
+                matched: true,
+            },
+            (XmlTagKind::Close, Some(name)) => match self.stack.pop() {
+                Some(open) if open.name == name => XmlTagState {
+                    depth: open.depth,
+                    matched: true,
+                },
+                Some(open) => {
+                    self.stack.push(open);
+                    XmlTagState {
+                        depth: base_depth + self.stack.len().saturating_sub(1),
+                        matched: false,
+                    }
+                }
+                None => XmlTagState {
+                    depth: base_depth,
+                    matched: true,
+                },
+            },
+            _ => XmlTagState {
+                depth: base_depth + self.stack.len(),
+                matched: true,
+            },
+        }
+    }
+}
+
+fn looks_like_xml_tag(tag: &str) -> bool {
+    tag.starts_with("</")
+        || tag.starts_with("<?")
+        || tag.starts_with("<!")
+        || xml_tag_name_range(tag).is_some()
+}
+
+fn xml_tag_kind(tag: &str) -> XmlTagKind {
+    if tag.starts_with("</") {
+        XmlTagKind::Close
+    } else if tag.starts_with("<?") || tag.starts_with("<!") {
+        XmlTagKind::Other
+    } else if tag.trim_end_matches('>').trim_end().ends_with('/') {
+        XmlTagKind::SelfClosing
+    } else {
+        XmlTagKind::Open
+    }
+}
+
+fn xml_tag_name_range(tag: &str) -> Option<(usize, usize)> {
+    let mut index = if tag.starts_with("</") { 2 } else { 1 };
+    while index < tag.len() {
+        let ch = tag[index..].chars().next()?;
+        if !ch.is_whitespace() {
+            break;
+        }
+        index += ch.len_utf8();
+    }
+
+    let start = index;
+    let end = take_while(tag, start, is_xml_name_char);
+    (end > start).then_some((start, end))
+}
+
+fn xml_depth_from_indent(line: &str) -> usize {
+    line.chars()
+        .take_while(|ch| ch.is_whitespace())
+        .map(|ch| if ch == '\t' { 2 } else { 1 })
+        .sum::<usize>()
+        / 2
 }
 
 fn take_while<F>(text: &str, start: usize, mut predicate: F) -> usize
@@ -438,6 +599,14 @@ fn quoted_end(text: &str, start: usize, quote: char) -> usize {
     text.len()
 }
 
+fn escaped_quoted_end(text: &str, start: usize, quote: char) -> usize {
+    let pattern = if quote == '"' { "\\\"" } else { "\\'" };
+    text[start + pattern.len()..]
+        .find(pattern)
+        .map(|offset| start + pattern.len() + offset + pattern.len())
+        .unwrap_or(text.len())
+}
+
 fn is_xml_name_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | ':' | '.')
 }
@@ -459,6 +628,21 @@ fn punctuation_style() -> Style {
 fn key_style() -> Style {
     Style::default()
         .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD)
+}
+
+fn xml_depth_style(depth: usize) -> Style {
+    const COLORS: [Color; 6] = [
+        Color::Cyan,
+        Color::Magenta,
+        Color::Yellow,
+        Color::Green,
+        Color::Blue,
+        Color::LightCyan,
+    ];
+
+    Style::default()
+        .fg(COLORS[depth % COLORS.len()])
         .add_modifier(Modifier::BOLD)
 }
 
@@ -484,6 +668,10 @@ fn null_style() -> Style {
     Style::default().fg(Color::Blue)
 }
 
+fn error_style() -> Style {
+    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,11 +695,36 @@ mod tests {
 
     #[test]
     fn xml_highlight_preserves_visible_text() {
-        let spans = highlight_xml(r#"<root id="1"><child>value</child></root>"#);
+        let spans = highlight_xml_line(r#"<root id="1"><child>value</child></root>"#);
         assert_eq!(
             span_text(&spans),
             r#"<root id="1"><child>value</child></root>"#
         );
+    }
+
+    #[test]
+    fn embedded_xml_string_uses_tag_pairing() {
+        let spans = highlight_json_like(r#"  "xml": "<root><child id=\"1\">v</child></root>""#);
+        assert_eq!(
+            span_text(&spans),
+            r#"  "xml": "<root><child id=\"1\">v</child></root>""#
+        );
+
+        let root_styles = styles_for_text(&spans, "root");
+        assert_eq!(root_styles.len(), 2);
+        assert_eq!(root_styles[0], root_styles[1]);
+
+        let child_styles = styles_for_text(&spans, "child");
+        assert_eq!(child_styles.len(), 2);
+        assert_eq!(child_styles[0], child_styles[1]);
+        assert_ne!(root_styles[0], child_styles[0]);
+    }
+
+    #[test]
+    fn mismatched_inline_xml_tag_is_marked() {
+        let spans = highlight_json_like(r#"  "xml": "<root></child>""#);
+        let child_styles = styles_for_text(&spans, "child");
+        assert_eq!(child_styles, vec![error_style()]);
     }
 
     fn span_text(spans: &[Span<'static>]) -> String {
@@ -519,5 +732,13 @@ mod tests {
             .iter()
             .map(|span| span.content.as_ref())
             .collect::<String>()
+    }
+
+    fn styles_for_text(spans: &[Span<'static>], text: &str) -> Vec<Style> {
+        spans
+            .iter()
+            .filter(|span| span.content.as_ref() == text)
+            .map(|span| span.style)
+            .collect()
     }
 }
