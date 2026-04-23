@@ -37,10 +37,6 @@ struct FormatCommand {
     #[arg(short = 't', long = "type", value_enum, default_value_t = FormatKind::Auto)]
     kind: FormatKind,
 
-    /// Print formatted output instead of opening the scrollable viewer.
-    #[arg(long)]
-    stdout: bool,
-
     /// Force the scrollable viewer even when stdout is not a TTY.
     #[arg(long)]
     view: bool,
@@ -78,10 +74,6 @@ struct DiffCommand {
     #[arg(short = 't', long = "type", value_enum, default_value_t = FormatKind::Auto)]
     kind: FormatKind,
 
-    /// Print diff output instead of opening the scrollable viewer.
-    #[arg(long)]
-    stdout: bool,
-
     /// Force the scrollable viewer even when stdout is not a TTY.
     #[arg(long)]
     view: bool,
@@ -117,7 +109,7 @@ fn run_format(command: FormatCommand) -> Result<()> {
 
     let formatted = format::format_source_to_temp(&input, &options)?;
 
-    if should_view(command.view, command.stdout) {
+    if should_view(command.view) {
         let indexed = line_index::IndexedTempFile::new(input.label().to_owned(), formatted)?;
         viewer::run(indexed, viewer::ViewMode::Plain)
     } else {
@@ -139,7 +131,7 @@ fn run_diff(command: DiffCommand) -> Result<()> {
 
     let diffed = diff::diff_sources(&left, &right, &options)?;
 
-    if should_view(command.view, command.stdout) {
+    if should_view(command.view) {
         let label = format!("{} <-> {}", left.label(), right.label());
         let indexed = line_index::IndexedTempFile::new(label, diffed)?;
         viewer::run(indexed, viewer::ViewMode::Diff)
@@ -148,8 +140,8 @@ fn run_diff(command: DiffCommand) -> Result<()> {
     }
 }
 
-fn should_view(force_view: bool, force_stdout: bool) -> bool {
-    force_view || (!force_stdout && io::stdout().is_terminal())
+fn should_view(force_view: bool) -> bool {
+    force_view || io::stdout().is_terminal()
 }
 
 fn copy_temp_to_stdout(temp: &tempfile::NamedTempFile) -> Result<()> {

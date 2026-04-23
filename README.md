@@ -29,19 +29,19 @@ fmtview data.jsonl
 fmtview data.xml
 ```
 
-Force stdout:
+Write formatted output with normal shell redirection:
 
 ```sh
-fmtview --stdout data.json
-cat data.xml | fmtview --type xml --stdout
-fmtview --literal '{"a":{"b":1}}' --stdout
+fmtview data.json > pretty.json
+cat data.xml | fmtview --type xml > pretty.xml
+fmtview --literal '{"a":{"b":1}}' > pretty.json
 ```
 
 Diff two inputs after formatting:
 
 ```sh
 fmtview diff left.json right.json
-fmtview diff --stdout left.xml right.xml
+fmtview diff left.xml right.xml > formatted.diff
 fmtview diff --type jsonl old.jsonl new.jsonl
 ```
 
@@ -66,7 +66,7 @@ For readability, opt in to recursively pretty-print string values that contain
 JSON or XML:
 
 ```sh
-fmtview --expand-embedded --stdout payload.json
+fmtview --expand-embedded payload.json > readable.json
 ```
 
 This mode is useful for inspection, but it can change string contents by adding

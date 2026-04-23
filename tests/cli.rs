@@ -6,7 +6,7 @@ use tempfile::NamedTempFile;
 #[test]
 fn formats_json_from_stdin() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
-    cmd.args(["--stdout", "--type", "json"])
+    cmd.args(["--type", "json"])
         .write_stdin(r#"{"a":{"b":1}}"#)
         .assert()
         .success()
@@ -16,7 +16,7 @@ fn formats_json_from_stdin() {
 #[test]
 fn formats_jsonl_from_stdin() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
-    cmd.args(["--stdout", "--type", "jsonl"])
+    cmd.args(["--type", "jsonl"])
         .write_stdin("{\"a\":1}\n{\"b\":2}\n")
         .assert()
         .success()
@@ -27,7 +27,7 @@ fn formats_jsonl_from_stdin() {
 #[test]
 fn formats_xml_from_stdin() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
-    cmd.args(["--stdout", "--type", "xml"])
+    cmd.args(["--type", "xml"])
         .write_stdin("<root><child>1</child></root>")
         .assert()
         .success()
@@ -37,7 +37,7 @@ fn formats_xml_from_stdin() {
 #[test]
 fn preserves_embedded_xml_string_by_default() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
-    cmd.args(["--stdout", "--type", "json"])
+    cmd.args(["--type", "json"])
         .write_stdin(r#"{"xml":"<root><child>1</child></root>"}"#)
         .assert()
         .success()
@@ -49,7 +49,7 @@ fn preserves_embedded_xml_string_by_default() {
 #[test]
 fn expands_embedded_xml_string_when_requested() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
-    cmd.args(["--stdout", "--type", "json", "--expand-embedded"])
+    cmd.args(["--type", "json", "--expand-embedded"])
         .write_stdin(r#"{"xml":"<root><child>1</child></root>"}"#)
         .assert()
         .success()
@@ -66,7 +66,6 @@ fn diffs_formatted_json() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
     cmd.args([
         "diff",
-        "--stdout",
         "--type",
         "json",
         left.path().to_str().unwrap(),
