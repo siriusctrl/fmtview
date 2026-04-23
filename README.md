@@ -117,19 +117,19 @@ input:
 
 ```text
 q           quit
-Esc         cancel a pending line jump/search; otherwise quit
+Esc         cancel a prompt/status message; otherwise quit
 Wheel       scroll down/up by logical line
 Trackpad    vertical scroll; horizontal scroll in nowrap mode
 Shift+Wheel horizontal scroll in nowrap mode
-/           search visible formatted text
+/           search formatted text
 n/N         next/previous search match
 Digits+Enter jump to a line number, for example 1200 Enter
-Backspace   edit a pending line jump
+Backspace   edit a pending prompt
 j/k         scroll down/up by logical line
 Up/Down     scroll down/up by logical line
 Space/f     page down
 b           page up
-g/G         top/end when no line jump is pending
+g/G         top/end when no prompt is pending
 w           toggle wrap/nowrap
 h/l         horizontal scroll in nowrap mode
 Left/Right  horizontal scroll in nowrap mode
@@ -143,10 +143,11 @@ To jump to a specific line, type the line number directly and press Enter. While
 a line jump is pending, the footer shows the target line; Backspace edits it and
 Esc cancels it. Out-of-range line numbers are clamped to the file.
 
-To search, press `/`, type a substring, and press Enter. `fmtview` jumps to the
-next matching formatted line, then `n` and `N` repeat the search forward and
-backward. Matches visible in the current viewport are highlighted with a warm
-background without replacing JSON/XML syntax colors.
+To search, press `/`, type a substring, and press Enter. Search is
+case-sensitive and runs over the formatted text you are viewing. `fmtview` jumps
+to the next matching line, then `n` and `N` repeat the search forward and
+backward with wrap-around. Matches visible in the current viewport are
+highlighted with a warm background without replacing JSON/XML syntax colors.
 
 Mouse capture is enabled while the viewer is open so wheel and trackpad events
 go to `fmtview`. If your terminal uses mouse capture for selection, hold the
