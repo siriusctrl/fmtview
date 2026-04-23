@@ -225,12 +225,6 @@ fn handle_key_event(
         KeyCode::PageUp | KeyCode::Char('b') => {
             scroll_by(&mut state.top, line_count, -(page as isize))
         }
-        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-            scroll_by(&mut state.top, line_count, (page / 2).max(1) as isize)
-        }
-        KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-            scroll_by(&mut state.top, line_count, -((page / 2).max(1) as isize))
-        }
         KeyCode::Home | KeyCode::Char('g') => set_top(&mut state.top, 0),
         KeyCode::End | KeyCode::Char('G') => set_top(&mut state.top, line_count.saturating_sub(1)),
         KeyCode::Right | KeyCode::Char('l') if !state.wrap => {
@@ -428,7 +422,8 @@ fn draw_view(
         display_mode
     );
     let footer_text = if state.jump_buffer.is_empty() {
-        " q/Esc quit | wheel/j/k/↑/↓ scroll | digits+Enter line | Space/f page | b page up | Ctrl-d/u half | g/G top/end | w wrap ".to_owned()
+        " q/Esc quit | wheel/j/k scroll | 123 Enter jump | Space/f,b page | g/G top/end | w wrap "
+            .to_owned()
     } else {
         format!(
             " go to line: {} / {} | Enter jump | Backspace edit | Esc cancel ",
@@ -1509,6 +1504,34 @@ mod tests {
         let action = handle_key_event(KeyCode::Esc, KeyModifiers::NONE, &mut state, 20, 10);
         assert!(!action.dirty);
         assert!(action.quit);
+    }
+
+    #[test]
+    fn ctrl_d_and_ctrl_u_are_not_bound() {
+        let mut state = ViewState {
+            top: 10,
+            ..ViewState::default()
+        };
+
+        let action = handle_key_event(
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL,
+            &mut state,
+            100,
+            20,
+        );
+        assert!(!action.dirty);
+        assert_eq!(state.top, 10);
+
+        let action = handle_key_event(
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL,
+            &mut state,
+            100,
+            20,
+        );
+        assert!(!action.dirty);
+        assert_eq!(state.top, 10);
     }
 
     #[test]

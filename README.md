@@ -126,8 +126,6 @@ j/k         scroll down/up by logical line
 Up/Down     scroll down/up by logical line
 Space/f     page down
 b           page up
-Ctrl-d      half page down
-Ctrl-u      half page up
 g/G         top/end when no line jump is pending
 w           toggle wrap/nowrap
 h/l         horizontal scroll in nowrap mode
