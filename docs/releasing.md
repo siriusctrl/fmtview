@@ -152,6 +152,13 @@ When publishing to npm from GitHub Actions:
 npm trust github fmtview --repo siriusctrl/fmtview --file release.yml --yes
 ```
 
+If npm returns `Two-factor authentication is required for this operation`, pass
+the current one-time password locally:
+
+```sh
+npm trust github fmtview --repo siriusctrl/fmtview --file release.yml --yes --otp <code>
+```
+
 The equivalent npmjs.com setup is package settings -> Trusted Publishers ->
 GitHub Actions, with the same owner, repository, and workflow filename. npm CLI
 automatically detects the GitHub Actions OIDC environment during
