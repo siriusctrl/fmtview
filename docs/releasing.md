@@ -76,6 +76,8 @@ The workflow should:
 - Upload the binary archive and checksums as release assets.
 - Publish to crates.io if `CARGO_REGISTRY_TOKEN` is configured.
 - Publish to npm if `NPM_TOKEN` is configured.
+- Support manual reruns for an existing tag and skip registry versions that are
+  already published.
 
 If either registry secret is missing, the workflow still builds the GitHub
 Release artifact and skips that registry publish step.

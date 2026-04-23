@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.1.0"
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 permissions:
   contents: read
@@ -13,8 +22,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -25,12 +37,13 @@ jobs:
           set -euo pipefail
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
           npm_version="$(node -p "require('./npm/fmtview/package.json').version")"
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${RELEASE_TAG#v}"
 
           test "$version" = "$tag"
           test "$npm_version" = "$version"
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
@@ -75,14 +88,17 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.build-linux-x64.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/fmtview-linux-x64.tar.gz dist/sha256sums.txt --clobber
+          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/fmtview-linux-x64.tar.gz dist/sha256sums.txt --clobber --repo "$GH_REPO"
           else
             gh release create "$TAG" dist/fmtview-linux-x64.tar.gz dist/sha256sums.txt \
+              --repo "$GH_REPO" \
+              --verify-tag \
               --title "$TAG" \
               --notes "fmtview $TAG"
           fi
@@ -94,17 +110,49 @@ jobs:
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.build-linux-x64.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Check crates.io package version
+        id: crates-published
+        env:
+          VERSION: ${{ needs.build-linux-x64.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(
+            curl -sS -o /tmp/crate-version.json -w '%{http_code}' \
+              -H "User-Agent: fmtview-release (https://github.com/siriusctrl/fmtview)" \
+              "https://crates.io/api/v1/crates/fmtview/$VERSION"
+          )"
+          case "$status" in
+            200)
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              ;;
+            404)
+              echo "published=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "crates.io version check failed with HTTP $status"
+              sed -n '1,120p' /tmp/crate-version.json
+              exit 1
+              ;;
+          esac
 
       - name: Dry-run crates.io package
         run: cargo publish --dry-run --locked
 
       - name: Publish to crates.io
-        if: env.CARGO_REGISTRY_TOKEN != ''
+        if: env.CARGO_REGISTRY_TOKEN != '' && steps.crates-published.outputs.published != 'true'
         run: cargo publish --locked --token "$CARGO_REGISTRY_TOKEN"
 
+      - name: Skip already published crates.io version
+        if: steps.crates-published.outputs.published == 'true'
+        run: echo "fmtview ${{ needs.build-linux-x64.outputs.version }} is already published on crates.io."
+
       - name: Skip crates.io publish
-        if: env.CARGO_REGISTRY_TOKEN == ''
+        if: env.CARGO_REGISTRY_TOKEN == '' && steps.crates-published.outputs.published != 'true'
         run: echo "CARGO_REGISTRY_TOKEN is not configured; skipped crates.io publish."
 
   npm:
@@ -119,6 +167,8 @@ jobs:
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.build-linux-x64.outputs.tag }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -130,7 +180,26 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
+      - name: Check npm package version
+        id: npm-published
+        env:
+          VERSION: ${{ needs.build-linux-x64.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          npm view "fmtview@$VERSION" version >/tmp/npm-version.txt 2>/tmp/npm-view.err || status=$?
+          if [ "$status" = "0" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          elif grep -q "E404" /tmp/npm-view.err; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            sed -n '1,120p' /tmp/npm-view.err
+            exit "$status"
+          fi
+
       - name: Prepare npm package
+        if: steps.npm-published.outputs.published != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -142,10 +211,14 @@ jobs:
           npm pack --dry-run ./npm/fmtview
 
       - name: Publish to npm
-        if: env.NODE_AUTH_TOKEN != ''
+        if: env.NODE_AUTH_TOKEN != '' && steps.npm-published.outputs.published != 'true'
         working-directory: npm/fmtview
-        run: npm publish --provenance
+        run: npm publish --provenance --access public
+
+      - name: Skip already published npm version
+        if: steps.npm-published.outputs.published == 'true'
+        run: echo "fmtview ${{ needs.build-linux-x64.outputs.version }} is already published on npm."
 
       - name: Skip npm publish
-        if: env.NODE_AUTH_TOKEN == ''
+        if: env.NODE_AUTH_TOKEN == '' && steps.npm-published.outputs.published != 'true'
         run: echo "NPM_TOKEN is not configured; skipped npm publish."
