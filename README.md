@@ -159,7 +159,9 @@ mismatch such as `"<root></item>"` is highlighted as an error.
 
 - Input is formatted into a temporary file.
 - A compact line-offset index is built once.
-- Scrolling reads only the lines needed for the current terminal window.
+- The viewer redraws on input or resize events, not on a fixed idle timer.
+- Scrolling reads and caches nearby lines around the current terminal window.
+- Highlighting and wrapping scan only the visible prefix of long lines.
 - JSONL and XML are processed incrementally.
 - JSON uses streaming JSON-to-JSON transcoding.
 

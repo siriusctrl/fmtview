@@ -47,76 +47,30 @@ fn run_loop(
     let mut top = 0_usize;
     let mut x = 0_usize;
     let mut wrap = true;
+    let mut dirty = true;
+    let mut line_cache = LineWindowCache::default();
 
     loop {
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                let [body, footer] =
-                    Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
-                let visible_height = usize::from(body.height.saturating_sub(2));
-                let visible_width = usize::from(body.width.saturating_sub(2));
-                let gutter_digits = line_number_digits(file.line_count());
-                let gutter_width = gutter_digits + 3;
-                let content_width = visible_width.saturating_sub(gutter_width);
-                let max_top = file.line_count().saturating_sub(visible_height.max(1));
-                top = top.min(max_top);
+        if dirty {
+            draw_view(terminal, file, mode, &mut top, x, wrap, &mut line_cache)?;
+            dirty = false;
+        }
 
-                let lines = file.read_window(top, visible_height).unwrap_or_else(|error| {
-                    vec![format!("failed to read window: {error:#}")]
-                });
-                let render_context = RenderContext {
-                    gutter_digits,
-                    x,
-                    width: content_width,
-                    wrap,
-                    mode,
-                };
-                let styled = render_visible_lines(&lines, top + 1, visible_height, render_context);
-
-                let current = if file.line_count() == 0 { 0 } else { top + 1 };
-                let bottom = top.saturating_add(visible_height).min(file.line_count());
-                let display_mode = if wrap {
-                    "wrap".to_owned()
-                } else {
-                    format!("nowrap x:{x}")
-                };
-                let title = format!(
-                    " {} | {} lines | {}-{} | {:>3}% | {} ",
-                    file.label(),
-                    file.line_count(),
-                    current,
-                    bottom,
-                    progress_percent(bottom, file.line_count()),
-                    display_mode
-                );
-                let paragraph = Paragraph::new(styled).block(
-                    Block::default()
-                        .title(title)
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::DarkGray)),
-                );
-                frame.render_widget(paragraph, body);
-
-                let footer_text =
-                    " q/Esc quit | j/k/↑/↓ line | Space/f page down | b page up | Ctrl-d/u half | g/G top/end | w wrap ";
-                frame.render_widget(
-                    Paragraph::new(footer_text).style(Style::default().fg(Color::DarkGray)),
-                    footer,
-                );
-            })
-            .context("failed to draw terminal frame")?;
-
-        if !event::poll(Duration::from_millis(250)).context("failed to poll terminal event")? {
+        if !event::poll(Duration::from_millis(50)).context("failed to poll terminal event")? {
             continue;
         }
 
-        let Event::Key(key) = event::read().context("failed to read terminal event")? else {
-            continue;
+        let key = match event::read().context("failed to read terminal event")? {
+            Event::Key(key) => key,
+            Event::Resize(_, _) => {
+                dirty = true;
+                continue;
+            }
+            _ => continue,
         };
         if key.kind == KeyEventKind::Release {
             continue;
-        }
+        };
 
         let page = terminal
             .size()
@@ -128,48 +82,165 @@ fn run_loop(
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
             KeyCode::Char('w') => {
                 wrap = !wrap;
+                dirty = true;
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 top = top
                     .saturating_add(1)
                     .min(file.line_count().saturating_sub(1));
+                dirty = true;
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 top = top.saturating_sub(1);
+                dirty = true;
             }
             KeyCode::PageDown | KeyCode::Char(' ') | KeyCode::Char('f') => {
                 top = top
                     .saturating_add(page)
                     .min(file.line_count().saturating_sub(1));
+                dirty = true;
             }
             KeyCode::PageUp | KeyCode::Char('b') => {
                 top = top.saturating_sub(page);
+                dirty = true;
             }
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 top = top
                     .saturating_add((page / 2).max(1))
                     .min(file.line_count().saturating_sub(1));
+                dirty = true;
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 top = top.saturating_sub((page / 2).max(1));
+                dirty = true;
             }
             KeyCode::Home | KeyCode::Char('g') => {
                 top = 0;
+                dirty = true;
             }
             KeyCode::End | KeyCode::Char('G') => {
                 top = file.line_count().saturating_sub(1);
+                dirty = true;
             }
             KeyCode::Right | KeyCode::Char('l') if !wrap => {
                 x = x.saturating_add(4);
+                dirty = true;
             }
             KeyCode::Left | KeyCode::Char('h') if !wrap => {
                 x = x.saturating_sub(4);
+                dirty = true;
             }
             _ => {}
         }
     }
 
     Ok(())
+}
+
+fn draw_view(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    file: &IndexedTempFile,
+    mode: ViewMode,
+    top: &mut usize,
+    x: usize,
+    wrap: bool,
+    line_cache: &mut LineWindowCache,
+) -> Result<()> {
+    let size = terminal.size().context("failed to read terminal size")?;
+    let visible_height = usize::from(size.height.saturating_sub(3));
+    let visible_width = usize::from(size.width.saturating_sub(2));
+    let gutter_digits = line_number_digits(file.line_count());
+    let gutter_width = gutter_digits + 3;
+    let content_width = visible_width.saturating_sub(gutter_width);
+    let max_top = file.line_count().saturating_sub(visible_height.max(1));
+    *top = (*top).min(max_top);
+
+    let lines = line_cache
+        .read(file, *top, visible_height)
+        .unwrap_or_else(|error| vec![format!("failed to read window: {error:#}")]);
+    let render_context = RenderContext {
+        gutter_digits,
+        x,
+        width: content_width,
+        wrap,
+        mode,
+    };
+    let styled = render_visible_lines(&lines, *top + 1, visible_height, render_context);
+
+    let current = if file.line_count() == 0 { 0 } else { *top + 1 };
+    let bottom = (*top).saturating_add(visible_height).min(file.line_count());
+    let display_mode = if wrap {
+        "wrap".to_owned()
+    } else {
+        format!("nowrap x:{x}")
+    };
+    let title = format!(
+        " {} | {} lines | {}-{} | {:>3}% | {} ",
+        file.label(),
+        file.line_count(),
+        current,
+        bottom,
+        progress_percent(bottom, file.line_count()),
+        display_mode
+    );
+    let footer_text = " q/Esc quit | j/k/↑/↓ line | Space/f page down | b page up | Ctrl-d/u half | g/G top/end | w wrap ";
+
+    terminal
+        .draw(move |frame| {
+            let area = frame.area();
+            let [body, footer] =
+                Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
+            let paragraph = Paragraph::new(styled).block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            );
+            frame.render_widget(paragraph, body);
+            frame.render_widget(
+                Paragraph::new(footer_text).style(Style::default().fg(Color::DarkGray)),
+                footer,
+            );
+        })
+        .context("failed to draw terminal frame")?;
+
+    Ok(())
+}
+
+#[derive(Debug, Default)]
+struct LineWindowCache {
+    start: usize,
+    lines: Vec<String>,
+}
+
+impl LineWindowCache {
+    fn read(&mut self, file: &IndexedTempFile, top: usize, height: usize) -> Result<Vec<String>> {
+        if height == 0 || top >= file.line_count() {
+            return Ok(Vec::new());
+        }
+
+        let cached_end = self.start.saturating_add(self.lines.len());
+        let requested_end = top.saturating_add(height).min(file.line_count());
+        if top >= self.start && requested_end <= cached_end {
+            let start = top - self.start;
+            let end = requested_end - self.start;
+            return Ok(self.lines[start..end].to_vec());
+        }
+
+        let margin = height.saturating_mul(2).max(32);
+        let fetch_start = top.saturating_sub(margin);
+        let fetch_count = height
+            .saturating_add(margin.saturating_mul(2))
+            .min(file.line_count().saturating_sub(fetch_start));
+        self.lines = file.read_window(fetch_start, fetch_count)?;
+        self.start = fetch_start;
+
+        let start = top - self.start;
+        let end = requested_end
+            .saturating_sub(self.start)
+            .min(self.lines.len());
+        Ok(self.lines[start..end].to_vec())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -226,13 +297,15 @@ fn render_logical_line(
         )];
     }
 
-    let spans = highlight_content(line, context.mode);
     let ranges = wrap_ranges(
         line,
         context.width,
         continuation_indent(line, context.width),
         max_rows,
     );
+    let highlight_end = ranges.iter().map(|range| range.end).max().unwrap_or(0);
+    let highlight_prefix = slice_chars(line, 0, highlight_end);
+    let spans = highlight_content(&highlight_prefix, context.mode);
     ranges
         .iter()
         .enumerate()
@@ -264,7 +337,12 @@ fn styled_segment(
 ) -> Line<'static> {
     let mut spans = Vec::new();
     spans.push(gutter);
-    spans.extend(slice_spans(&highlight_content(line, mode), start, end));
+    let highlight_prefix = slice_chars(line, 0, end);
+    spans.extend(slice_spans(
+        &highlight_content(&highlight_prefix, mode),
+        start,
+        end,
+    ));
     Line::from(spans)
 }
 
@@ -293,7 +371,12 @@ fn wrap_ranges(
         return Vec::new();
     }
 
-    let char_count = line.chars().count();
+    let max_chars = width.saturating_mul(max_rows).max(1);
+    let chars = line
+        .chars()
+        .take(max_chars.saturating_add(1))
+        .collect::<Vec<_>>();
+    let char_count = chars.len().min(max_chars);
     if char_count == 0 || width == 0 {
         return vec![WrapRange {
             start: 0,
@@ -314,7 +397,7 @@ fn wrap_ranges(
         let row_width = width.saturating_sub(indent).max(1);
         let hard_end = start.saturating_add(row_width).min(char_count);
         let end = if hard_end < char_count {
-            best_wrap_end(line, start, hard_end).unwrap_or(hard_end)
+            best_wrap_end(&chars, start, hard_end).unwrap_or(hard_end)
         } else {
             hard_end
         };
@@ -330,8 +413,7 @@ fn wrap_ranges(
     ranges
 }
 
-fn best_wrap_end(line: &str, start: usize, hard_end: usize) -> Option<usize> {
-    let chars = line.chars().collect::<Vec<_>>();
+fn best_wrap_end(chars: &[char], start: usize, hard_end: usize) -> Option<usize> {
     let min_end = start + ((hard_end - start) / 2).max(1);
 
     for end in (min_end..=hard_end).rev() {
