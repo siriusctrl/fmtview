@@ -1,0 +1,19 @@
+[package]
+name = "fmtview"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.102"
+clap = { version = "4.6.1", features = ["derive"] }
+crossterm = "0.29.0"
+quick-xml = "0.39.2"
+ratatui = { version = "0.30.0", default-features = false, features = ["crossterm"] }
+serde = "1.0.228"
+serde-transcode = "1.1.1"
+serde_json = "1.0.149"
+tempfile = "3.27.0"
+
+[dev-dependencies]
+assert_cmd = "2.2.1"
+predicates = "3.1.4"
