@@ -149,6 +149,10 @@ When publishing to npm from GitHub Actions:
 gh secret set NPM_TOKEN
 ```
 
+The npm token must be able to publish from CI. If the npm account has 2FA
+enabled, use a granular access token that can bypass 2FA for publishing this
+package; a token that only passes `npm whoami` is not enough.
+
 README may list npm installation only after the package has been published and
 smoke-tested:
 
