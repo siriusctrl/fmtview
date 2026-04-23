@@ -1,0 +1,36 @@
+{
+  "tool": "fmtview",
+  "purpose": "Preview JSON, embedded XML, long strings, wrapping, and highlighting in one file.",
+  "features": {
+    "syntax_highlighting": true,
+    "indent_aware_wrap": true,
+    "xml_tag_pairing_in_json_strings": true,
+    "preserve_string_values": true
+  },
+  "nested": {
+    "level_1": {
+      "level_2": {
+        "level_3": {
+          "numbers": [1, 2, 3, 5, 8, 13],
+          "states": [true, false, null],
+          "note": "This deeply nested object is here to make indentation and continuation wrapping easy to see."
+        }
+      }
+    }
+  },
+  "embedded_xml": "<order id=\"A-100\"><customer tier=\"gold\">Ada Lovelace</customer><items><item sku=\"fmt-001\" qty=\"2\">terminal viewer</item><item sku=\"xml-777\" qty=\"1\">pairing-aware tags</item></items><total currency=\"USD\">42.00</total></order>",
+  "embedded_xml_mismatch_demo": "<root><valid>paired</valid></wrong>",
+  "long_line": "This value is intentionally long so the viewer has to wrap it. Press w to toggle nowrap mode, then use h/l or the arrow keys to compare horizontal scrolling with the default soft-wrap view. The content should remain readable without needing PageUp or PageDown keys.",
+  "array_of_objects": [
+    {
+      "id": "evt-001",
+      "kind": "created",
+      "payload": "<event><name>created</name><ok>true</ok></event>"
+    },
+    {
+      "id": "evt-002",
+      "kind": "updated",
+      "payload": "<event><name>updated</name><ok>true</ok></event>"
+    }
+  ]
+}

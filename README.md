@@ -89,6 +89,22 @@ fmtview diff left.xml right.xml > formatted.diff
 fmtview diff --type jsonl old.jsonl new.jsonl
 ```
 
+## Try The Showcase Files
+
+The repository includes small sample files that exercise the viewer features:
+
+```sh
+fmtview examples/showcase.json
+fmtview examples/events.jsonl
+fmtview examples/response.xml
+fmtview diff examples/diff-left.json examples/diff-right.json
+```
+
+Use `Space`/`f` and `b` to page, `w` to toggle wrap/nowrap, and `q` to exit.
+`examples/showcase.json` includes embedded XML, a deliberately mismatched XML
+closing tag, nested JSON, arrays, booleans, nulls, and long strings for wrap
+testing.
+
 ## Viewer
 
 The viewer is intentionally small and keyboard-driven:

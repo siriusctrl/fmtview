@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response requestId="demo-001">
+  <status code="200">ok</status>
+  <body>
+    <order id="A-100">
+      <customer tier="gold">Ada Lovelace</customer>
+      <items>
+        <item sku="fmt-001" qty="2">terminal viewer</item>
+        <item sku="xml-777" qty="1">pairing-aware tags</item>
+      </items>
+      <notes>This XML file is intentionally nested so tag depth coloring is visible.</notes>
+    </order>
+  </body>
+</response>

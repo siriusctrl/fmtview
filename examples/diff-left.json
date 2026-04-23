@@ -1,0 +1,11 @@
+{
+  "id": "A-100",
+  "status": "pending",
+  "items": [
+    {
+      "sku": "fmt-001",
+      "qty": 1
+    }
+  ],
+  "payload": "<order><status>pending</status></order>"
+}

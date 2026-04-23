@@ -1,0 +1,15 @@
+{
+  "id": "A-100",
+  "status": "paid",
+  "items": [
+    {
+      "sku": "fmt-001",
+      "qty": 2
+    },
+    {
+      "sku": "xml-777",
+      "qty": 1
+    }
+  ],
+  "payload": "<order><status>paid</status></order>"
+}
