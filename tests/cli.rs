@@ -35,7 +35,7 @@ fn formats_xml_from_stdin() {
 }
 
 #[test]
-fn preserves_embedded_xml_string_by_default() {
+fn preserves_embedded_xml_string() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
     cmd.args(["--type", "json"])
         .write_stdin(r#"{"xml":"<root><child>1</child></root>"}"#)
@@ -44,16 +44,6 @@ fn preserves_embedded_xml_string_by_default() {
         .stdout(predicate::str::contains(
             r#""xml": "<root><child>1</child></root>""#,
         ));
-}
-
-#[test]
-fn expands_embedded_xml_string_when_requested() {
-    let mut cmd = Command::cargo_bin("fmtview").unwrap();
-    cmd.args(["--type", "json", "--expand-embedded"])
-        .write_stdin(r#"{"xml":"<root><child>1</child></root>"}"#)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(r#"\n"#));
 }
 
 #[test]

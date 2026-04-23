@@ -1,13 +1,12 @@
 use std::{
     ffi::OsStr,
-    io::{BufRead, BufReader, BufWriter, Cursor, Read, Write},
+    io::{BufRead, BufReader, BufWriter, Read, Write},
 };
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::ValueEnum;
 use quick_xml::{Reader as XmlReader, Writer as XmlWriter, events::Event};
-use serde::Serialize;
-use serde_json::{Value, ser::PrettyFormatter};
+use serde_json::ser::PrettyFormatter;
 use tempfile::NamedTempFile;
 
 use crate::input::InputSource;
@@ -24,7 +23,6 @@ pub enum FormatKind {
 pub struct FormatOptions {
     pub kind: FormatKind,
     pub indent: usize,
-    pub expand_embedded: bool,
 }
 
 pub fn format_source_to_temp(
@@ -135,15 +133,6 @@ fn format_json<W: Write>(
     output: &mut W,
     options: &FormatOptions,
 ) -> Result<()> {
-    if options.expand_embedded {
-        let mut value: Value = serde_json::from_reader(BufReader::new(source.open()?))
-            .context("failed to parse JSON")?;
-        expand_embedded_strings(&mut value, options.indent);
-        write_json_value(&value, output, options.indent)?;
-        writeln!(output)?;
-        return Ok(());
-    }
-
     let indent = vec![b' '; options.indent];
     let formatter = PrettyFormatter::with_indent(&indent);
     let mut serializer = serde_json::Serializer::with_formatter(&mut *output, formatter);
@@ -178,16 +167,6 @@ fn format_jsonl<W: Write>(
         line_number += 1;
         let trimmed = trim_line_end(&line);
         if trimmed.iter().all(u8::is_ascii_whitespace) {
-            writeln!(output)?;
-            continue;
-        }
-
-        if options.expand_embedded {
-            let mut value: Value = serde_json::from_slice(trimmed)
-                .with_context(|| format!("failed to parse JSONL line {line_number}"))?;
-            expand_embedded_strings(&mut value, options.indent);
-            write_json_value(&value, output, options.indent)
-                .with_context(|| format!("failed to write JSONL line {line_number}"))?;
             writeln!(output)?;
             continue;
         }
@@ -238,64 +217,6 @@ fn format_xml_reader<R: BufRead, W: Write>(input: R, output: &mut W, indent: usi
     Ok(())
 }
 
-fn write_json_value<W: Write>(value: &Value, output: &mut W, indent: usize) -> Result<()> {
-    let indent = vec![b' '; indent];
-    let formatter = PrettyFormatter::with_indent(&indent);
-    let mut serializer = serde_json::Serializer::with_formatter(output, formatter);
-    value
-        .serialize(&mut serializer)
-        .context("failed to write JSON")
-}
-
-fn expand_embedded_strings(value: &mut Value, indent: usize) {
-    match value {
-        Value::String(text) => {
-            if let Some(expanded) = expand_string(text, indent) {
-                *text = expanded;
-            }
-        }
-        Value::Array(values) => {
-            for value in values {
-                expand_embedded_strings(value, indent);
-            }
-        }
-        Value::Object(values) => {
-            for value in values.values_mut() {
-                expand_embedded_strings(value, indent);
-            }
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) => {}
-    }
-}
-
-fn expand_string(text: &str, indent: usize) -> Option<String> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    if trimmed.starts_with('<') {
-        return pretty_xml_string(trimmed, indent).ok();
-    }
-
-    if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        let mut value: Value = serde_json::from_str(trimmed).ok()?;
-        expand_embedded_strings(&mut value, indent);
-        let mut out = Vec::new();
-        write_json_value(&value, &mut out, indent).ok()?;
-        return String::from_utf8(out).ok();
-    }
-
-    None
-}
-
-fn pretty_xml_string(text: &str, indent: usize) -> Result<String> {
-    let mut out = Vec::new();
-    format_xml_reader(Cursor::new(text.as_bytes()), &mut out, indent)?;
-    let formatted = String::from_utf8(out).context("formatted XML was not UTF-8")?;
-    Ok(formatted.trim_end().to_owned())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,25 +224,6 @@ mod tests {
     #[test]
     fn trims_crlf_line_endings() {
         assert_eq!(trim_line_end(b"{\"a\":1}\r\n"), b"{\"a\":1}");
-    }
-
-    #[test]
-    fn expands_embedded_xml_string_when_requested() {
-        let mut value = serde_json::json!({"xml": "<root><child>1</child></root>"});
-        expand_embedded_strings(&mut value, 2);
-        assert!(
-            value["xml"]
-                .as_str()
-                .expect("xml value should stay a string")
-                .contains("<child>1</child>")
-        );
-    }
-
-    #[test]
-    fn does_not_expand_invalid_xml_like_string() {
-        let mut value = serde_json::json!({"xml": "<root>"});
-        expand_embedded_strings(&mut value, 2);
-        assert_eq!(value["xml"], "<root>");
     }
 
     #[test]

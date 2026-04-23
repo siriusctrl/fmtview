@@ -41,12 +41,6 @@ struct FormatCommand {
     #[arg(long, value_name = "STRING")]
     literal: Option<String>,
 
-    /// Recursively pretty-print JSON string values that contain JSON or XML.
-    ///
-    /// This is intentionally opt-in because it changes string values for readability.
-    #[arg(long)]
-    expand_embedded: bool,
-
     /// Number of spaces used when pretty-printing JSON and XML.
     #[arg(long, default_value_t = 2)]
     indent: usize,
@@ -70,10 +64,6 @@ struct DiffCommand {
     #[arg(short = 't', long = "type", value_enum, default_value_t = FormatKind::Auto)]
     kind: FormatKind,
 
-    /// Recursively pretty-print JSON string values that contain JSON or XML.
-    #[arg(long)]
-    expand_embedded: bool,
-
     /// Number of spaces used when pretty-printing JSON and XML.
     #[arg(long, default_value_t = 2)]
     indent: usize,
@@ -96,7 +86,6 @@ fn run_format(command: FormatCommand) -> Result<()> {
     let options = FormatOptions {
         kind: command.kind,
         indent: command.indent,
-        expand_embedded: command.expand_embedded,
     };
 
     let formatted = format::format_source_to_temp(&input, &options)?;
@@ -118,7 +107,6 @@ fn run_diff(command: DiffCommand) -> Result<()> {
     let options = FormatOptions {
         kind: command.kind,
         indent: command.indent,
-        expand_embedded: command.expand_embedded,
     };
 
     let diffed = diff::diff_sources(&left, &right, &options)?;

@@ -65,24 +65,9 @@ string values that contain XML tags use the same pairing-aware highlighter
 without changing the underlying string. That keeps very large files responsive
 while still making nested structures easier to scan.
 
-## Embedded Strings
-
-JSON strings are preserved by default, even if a value contains XML or JSON.
-That keeps stdout output semantically safe.
-
-For readability, opt in to recursively pretty-print string values that contain
-JSON or XML:
-
-```sh
-fmtview --expand-embedded payload.json > readable.json
-```
-
-This mode is useful for inspection, but it can change string contents by adding
-whitespace and newlines.
-
 ## Large Files
 
 `fmtview` formats inputs into temporary files, builds a compact line-offset
 index, and only reads the visible terminal window while scrolling. JSONL and XML
 are processed incrementally. Regular JSON uses streaming JSON-to-JSON
-transcoding unless `--expand-embedded` is enabled.
+transcoding, so embedded string values are preserved exactly.

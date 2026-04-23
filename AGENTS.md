@@ -32,7 +32,7 @@ Principles for agents contributing to this repository.
 
 - Keep stdout output valid and scriptable.
 - Keep interactive behavior behind TTY detection.
-- Preserve JSON string values by default. Embedded JSON/XML expansion must stay opt-in.
+- Preserve JSON string values. The viewer may highlight embedded XML, but formatted output must not rewrite string contents.
 - Update `README.md` when CLI flags, install steps, or user-visible behavior changes.
 - Prefer Linux-first behavior, but avoid unnecessary non-portable code when portable Rust is simple.
 
