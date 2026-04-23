@@ -18,6 +18,23 @@ Principles for agents contributing to this repository.
    - Use Conventional Commits for every commit.
    - Include a body that explains what changed and why.
 
+## Navigation
+
+Use README for user-facing behavior. Use docs for maintainer workflows and
+durable project decisions.
+
+Keep this file coarse-grained. Do not mirror every implementation detail here.
+
+### Read these docs first
+
+- `README.md`
+- `docs/INDEX.md`
+
+### Read these docs when the task matches
+
+- Release, packaging, crates.io, npm, GitHub Releases, or version tags:
+  - Read `docs/releasing.md`
+
 ## Source Map
 
 - `src/main.rs` - CLI argument parsing and command routing.
@@ -34,6 +51,7 @@ Principles for agents contributing to this repository.
 - Keep interactive behavior behind TTY detection.
 - Preserve JSON string values. The viewer may highlight embedded XML, but formatted output must not rewrite string contents.
 - Update `README.md` when CLI flags, install steps, or user-visible behavior changes.
+- Update `docs/releasing.md` when release, packaging, npm, crates.io, or artifact policy changes.
 - Prefer Linux-first behavior, but avoid unnecessary non-portable code when portable Rust is simple.
 
 ## Verification Requirements
