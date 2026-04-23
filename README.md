@@ -115,17 +115,20 @@ The viewer is intentionally small and works with both keyboard and pointer
 input:
 
 ```text
-q/Esc       quit
+q           quit
+Esc         cancel a pending line jump; otherwise quit
 Wheel       scroll down/up by logical line
 Trackpad    vertical scroll; horizontal scroll in nowrap mode
 Shift+Wheel horizontal scroll in nowrap mode
+Digits+Enter jump to a line number, for example 1200 Enter
+Backspace   edit a pending line jump
 j/k         scroll down/up by logical line
 Up/Down     scroll down/up by logical line
 Space/f     page down
 b           page up
 Ctrl-d      half page down
 Ctrl-u      half page up
-g/G         top/end
+g/G         top/end when no line jump is pending
 w           toggle wrap/nowrap
 h/l         horizontal scroll in nowrap mode
 Left/Right  horizontal scroll in nowrap mode
@@ -134,6 +137,10 @@ Left/Right  horizontal scroll in nowrap mode
 The title bar shows the source label, total line count, visible line range,
 scroll percentage, and whether wrapping is enabled. The left gutter shows line
 numbers, and wrapped continuation rows use a lighter continuation gutter.
+
+To jump to a specific line, type the line number directly and press Enter. While
+a line jump is pending, the footer shows the target line; Backspace edits it and
+Esc cancels it. Out-of-range line numbers are clamped to the file.
 
 Mouse capture is enabled while the viewer is open so wheel and trackpad events
 go to `fmtview`. If your terminal uses mouse capture for selection, hold the

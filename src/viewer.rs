@@ -34,6 +34,7 @@ const RENDER_CACHE_MAX_ROWS_PER_LINE: usize = 256;
 const PREWARM_PAGES: usize = 2;
 const PREWARM_MAX_LINES: usize = 192;
 const PREWARM_BUDGET: Duration = Duration::from_millis(4);
+const JUMP_BUFFER_MAX_DIGITS: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -104,11 +105,12 @@ fn run_loop(
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct ViewState {
     top: usize,
     x: usize,
     wrap: bool,
+    jump_buffer: String,
 }
 
 impl Default for ViewState {
@@ -117,6 +119,7 @@ impl Default for ViewState {
             top: 0,
             x: 0,
             wrap: true,
+            jump_buffer: String::new(),
         }
     }
 }
@@ -165,7 +168,10 @@ fn handle_event(
     match event {
         Event::Key(key) if key.kind == KeyEventKind::Release => EventAction::default(),
         Event::Key(key) => handle_key_event(key.code, key.modifiers, state, line_count, page),
-        Event::Mouse(mouse) => handle_mouse_event(mouse.kind, mouse.modifiers, state, line_count),
+        Event::Mouse(mouse) if state.jump_buffer.is_empty() => {
+            handle_mouse_event(mouse.kind, mouse.modifiers, state, line_count)
+        }
+        Event::Mouse(_) => EventAction::default(),
         Event::Resize(_, _) => EventAction {
             dirty: true,
             quit: false,
@@ -181,14 +187,27 @@ fn handle_key_event(
     line_count: usize,
     page: usize,
 ) -> EventAction {
+    if matches!(code, KeyCode::Char('c')) && modifiers.contains(KeyModifiers::CONTROL) {
+        return EventAction {
+            dirty: false,
+            quit: true,
+        };
+    }
+
+    if !state.jump_buffer.is_empty() {
+        return EventAction {
+            dirty: handle_jump_input_key(code, modifiers, state, line_count),
+            quit: false,
+        };
+    }
+
     let dirty = match code {
-        KeyCode::Char('q') | KeyCode::Esc => {
-            return EventAction {
-                dirty: false,
-                quit: true,
-            };
+        KeyCode::Char(ch) if accepts_jump_digit(ch, modifiers) => {
+            push_jump_digit(state, ch);
+            true
         }
-        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+        KeyCode::Enter => false,
+        KeyCode::Char('q') | KeyCode::Esc => {
             return EventAction {
                 dirty: false,
                 quit: true,
@@ -224,6 +243,67 @@ fn handle_key_event(
     };
 
     EventAction { dirty, quit: false }
+}
+
+fn handle_jump_input_key(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    state: &mut ViewState,
+    line_count: usize,
+) -> bool {
+    match code {
+        KeyCode::Char(ch) if accepts_jump_digit(ch, modifiers) => {
+            push_jump_digit(state, ch);
+            true
+        }
+        KeyCode::Enter => jump_to_buffered_line(state, line_count),
+        KeyCode::Backspace => pop_jump_digit(state),
+        KeyCode::Esc => clear_jump_buffer(state),
+        _ => false,
+    }
+}
+
+fn accepts_jump_digit(ch: char, modifiers: KeyModifiers) -> bool {
+    ch.is_ascii_digit()
+        && !modifiers.contains(KeyModifiers::CONTROL)
+        && !modifiers.contains(KeyModifiers::ALT)
+}
+
+fn push_jump_digit(state: &mut ViewState, ch: char) {
+    if state.jump_buffer.len() < JUMP_BUFFER_MAX_DIGITS {
+        state.jump_buffer.push(ch);
+    }
+}
+
+fn pop_jump_digit(state: &mut ViewState) -> bool {
+    let old_len = state.jump_buffer.len();
+    state.jump_buffer.pop();
+    state.jump_buffer.len() != old_len
+}
+
+fn clear_jump_buffer(state: &mut ViewState) -> bool {
+    let was_active = !state.jump_buffer.is_empty();
+    state.jump_buffer.clear();
+    was_active
+}
+
+fn jump_to_buffered_line(state: &mut ViewState, line_count: usize) -> bool {
+    if state.jump_buffer.is_empty() {
+        return false;
+    }
+
+    let requested = state.jump_buffer.parse::<usize>().unwrap_or(usize::MAX);
+    state.jump_buffer.clear();
+    state.top = target_top_for_line(requested, line_count);
+    true
+}
+
+fn target_top_for_line(requested: usize, line_count: usize) -> usize {
+    if line_count == 0 {
+        return 0;
+    }
+
+    requested.max(1).min(line_count).saturating_sub(1)
 }
 
 fn handle_mouse_event(
@@ -347,7 +427,15 @@ fn draw_view(
         progress_percent(bottom, file.line_count()),
         display_mode
     );
-    let footer_text = " q/Esc quit | wheel/j/k/↑/↓ scroll | Space/f page | b page up | Ctrl-d/u half | g/G top/end | w wrap ";
+    let footer_text = if state.jump_buffer.is_empty() {
+        " q/Esc quit | wheel/j/k/↑/↓ scroll | digits+Enter line | Space/f page | b page up | Ctrl-d/u half | g/G top/end | w wrap ".to_owned()
+    } else {
+        format!(
+            " go to line: {} / {} | Enter jump | Backspace edit | Esc cancel ",
+            state.jump_buffer,
+            file.line_count()
+        )
+    };
 
     terminal
         .draw(move |frame| {
@@ -1369,6 +1457,58 @@ mod tests {
 
         assert!(action.dirty);
         assert_eq!(state.top, 0);
+    }
+
+    #[test]
+    fn digits_plus_enter_jumps_to_line_number() {
+        let mut state = ViewState::default();
+
+        handle_key_event(KeyCode::Char('1'), KeyModifiers::NONE, &mut state, 100, 10);
+        handle_key_event(KeyCode::Char('2'), KeyModifiers::NONE, &mut state, 100, 10);
+        assert_eq!(state.jump_buffer, "12");
+        assert_eq!(state.top, 0);
+
+        let action = handle_key_event(KeyCode::Enter, KeyModifiers::NONE, &mut state, 100, 10);
+
+        assert!(action.dirty);
+        assert!(!action.quit);
+        assert_eq!(state.jump_buffer, "");
+        assert_eq!(state.top, 11);
+    }
+
+    #[test]
+    fn line_jump_clamps_to_valid_range() {
+        let mut state = ViewState::default();
+
+        for ch in "999".chars() {
+            handle_key_event(KeyCode::Char(ch), KeyModifiers::NONE, &mut state, 5, 10);
+        }
+        handle_key_event(KeyCode::Enter, KeyModifiers::NONE, &mut state, 5, 10);
+        assert_eq!(state.top, 4);
+
+        handle_key_event(KeyCode::Char('0'), KeyModifiers::NONE, &mut state, 5, 10);
+        handle_key_event(KeyCode::Enter, KeyModifiers::NONE, &mut state, 5, 10);
+        assert_eq!(state.top, 0);
+    }
+
+    #[test]
+    fn line_jump_supports_backspace_and_escape_cancel() {
+        let mut state = ViewState::default();
+
+        handle_key_event(KeyCode::Char('4'), KeyModifiers::NONE, &mut state, 20, 10);
+        handle_key_event(KeyCode::Char('2'), KeyModifiers::NONE, &mut state, 20, 10);
+        let action = handle_key_event(KeyCode::Backspace, KeyModifiers::NONE, &mut state, 20, 10);
+        assert!(action.dirty);
+        assert_eq!(state.jump_buffer, "4");
+
+        let action = handle_key_event(KeyCode::Esc, KeyModifiers::NONE, &mut state, 20, 10);
+        assert!(action.dirty);
+        assert!(!action.quit);
+        assert_eq!(state.jump_buffer, "");
+
+        let action = handle_key_event(KeyCode::Esc, KeyModifiers::NONE, &mut state, 20, 10);
+        assert!(!action.dirty);
+        assert!(action.quit);
     }
 
     #[test]
