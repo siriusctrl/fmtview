@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque, hash_map::Entry},
     io,
+    ops::Range,
     time::{Duration, Instant},
 };
 
@@ -35,6 +36,7 @@ const PREWARM_PAGES: usize = 2;
 const PREWARM_MAX_LINES: usize = 192;
 const PREWARM_BUDGET: Duration = Duration::from_millis(4);
 const JUMP_BUFFER_MAX_DIGITS: usize = 20;
+const SEARCH_CHUNK_LINES: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -75,6 +77,10 @@ fn run_loop(
     let mut render_cache = RenderedLineCache::default();
 
     loop {
+        if state.search_task.is_some() {
+            dirty |= process_search_step(file, &mut state)?;
+        }
+
         if dirty {
             draw_view(
                 terminal,
@@ -87,7 +93,12 @@ fn run_loop(
             dirty = false;
         }
 
-        if !event::poll(EVENT_POLL_INTERVAL).context("failed to poll terminal event")? {
+        let poll_interval = if state.search_task.is_some() {
+            Duration::ZERO
+        } else {
+            EVENT_POLL_INTERVAL
+        };
+        if !event::poll(poll_interval).context("failed to poll terminal event")? {
             continue;
         }
 
@@ -111,6 +122,11 @@ struct ViewState {
     x: usize,
     wrap: bool,
     jump_buffer: String,
+    search_active: bool,
+    search_buffer: String,
+    search_query: String,
+    search_message: Option<String>,
+    search_task: Option<SearchTask>,
 }
 
 impl Default for ViewState {
@@ -120,8 +136,27 @@ impl Default for ViewState {
             x: 0,
             wrap: true,
             jump_buffer: String::new(),
+            search_active: false,
+            search_buffer: String::new(),
+            search_query: String::new(),
+            search_message: None,
+            search_task: None,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct SearchTask {
+    query: String,
+    direction: SearchDirection,
+    next_line: usize,
+    remaining: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchDirection {
+    Forward,
+    Backward,
 }
 
 #[derive(Debug, Default)]
@@ -168,7 +203,7 @@ fn handle_event(
     match event {
         Event::Key(key) if key.kind == KeyEventKind::Release => EventAction::default(),
         Event::Key(key) => handle_key_event(key.code, key.modifiers, state, line_count, page),
-        Event::Mouse(mouse) if state.jump_buffer.is_empty() => {
+        Event::Mouse(mouse) if !state.has_active_prompt() => {
             handle_mouse_event(mouse.kind, mouse.modifiers, state, line_count)
         }
         Event::Mouse(_) => EventAction::default(),
@@ -194,6 +229,13 @@ fn handle_key_event(
         };
     }
 
+    if state.search_active {
+        return EventAction {
+            dirty: handle_search_input_key(code, modifiers, state, line_count),
+            quit: false,
+        };
+    }
+
     if !state.jump_buffer.is_empty() {
         return EventAction {
             dirty: handle_jump_input_key(code, modifiers, state, line_count),
@@ -206,7 +248,16 @@ fn handle_key_event(
             push_jump_digit(state, ch);
             true
         }
+        KeyCode::Char('/') if plain_key(modifiers) => start_search_prompt(state),
+        KeyCode::Char('n') if plain_key(modifiers) => {
+            start_repeat_search(state, line_count, SearchDirection::Forward)
+        }
+        KeyCode::Char('N') if plain_key(modifiers) => {
+            start_repeat_search(state, line_count, SearchDirection::Backward)
+        }
         KeyCode::Enter => false,
+        KeyCode::Esc if state.search_task.is_some() => cancel_search_task(state),
+        KeyCode::Esc if state.search_message.is_some() => clear_search_message(state),
         KeyCode::Char('q') | KeyCode::Esc => {
             return EventAction {
                 dirty: false,
@@ -239,6 +290,12 @@ fn handle_key_event(
     EventAction { dirty, quit: false }
 }
 
+impl ViewState {
+    fn has_active_prompt(&self) -> bool {
+        self.search_active || !self.jump_buffer.is_empty()
+    }
+}
+
 fn handle_jump_input_key(
     code: KeyCode,
     modifiers: KeyModifiers,
@@ -257,10 +314,36 @@ fn handle_jump_input_key(
     }
 }
 
+fn handle_search_input_key(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    state: &mut ViewState,
+    line_count: usize,
+) -> bool {
+    match code {
+        KeyCode::Char(ch) if accepts_search_char(modifiers) => {
+            state.search_buffer.push(ch);
+            true
+        }
+        KeyCode::Enter => submit_search_buffer(state, line_count),
+        KeyCode::Backspace => pop_search_char(state),
+        KeyCode::Esc => cancel_search_prompt(state),
+        _ => false,
+    }
+}
+
 fn accepts_jump_digit(ch: char, modifiers: KeyModifiers) -> bool {
     ch.is_ascii_digit()
         && !modifiers.contains(KeyModifiers::CONTROL)
         && !modifiers.contains(KeyModifiers::ALT)
+}
+
+fn accepts_search_char(modifiers: KeyModifiers) -> bool {
+    !modifiers.contains(KeyModifiers::CONTROL) && !modifiers.contains(KeyModifiers::ALT)
+}
+
+fn plain_key(modifiers: KeyModifiers) -> bool {
+    !modifiers.contains(KeyModifiers::CONTROL) && !modifiers.contains(KeyModifiers::ALT)
 }
 
 fn push_jump_digit(state: &mut ViewState, ch: char) {
@@ -298,6 +381,239 @@ fn target_top_for_line(requested: usize, line_count: usize) -> usize {
     }
 
     requested.max(1).min(line_count).saturating_sub(1)
+}
+
+fn start_search_prompt(state: &mut ViewState) -> bool {
+    state.search_active = true;
+    state.search_buffer.clear();
+    state.search_message = None;
+    state.search_task = None;
+    true
+}
+
+fn pop_search_char(state: &mut ViewState) -> bool {
+    let old_len = state.search_buffer.len();
+    state.search_buffer.pop();
+    state.search_buffer.len() != old_len
+}
+
+fn cancel_search_prompt(state: &mut ViewState) -> bool {
+    state.search_active = false;
+    state.search_buffer.clear();
+    true
+}
+
+fn submit_search_buffer(state: &mut ViewState, line_count: usize) -> bool {
+    if state.search_buffer.is_empty() {
+        return false;
+    }
+
+    let query = state.search_buffer.clone();
+    state.search_active = false;
+    state.search_buffer.clear();
+    start_search(
+        state,
+        query,
+        SearchDirection::Forward,
+        state.top,
+        line_count,
+    )
+}
+
+fn start_repeat_search(
+    state: &mut ViewState,
+    line_count: usize,
+    direction: SearchDirection,
+) -> bool {
+    if state.search_query.is_empty() {
+        state.search_message = Some("no search query".to_owned());
+        return true;
+    }
+
+    let start = repeat_search_start(state.top, line_count, direction);
+    start_search(
+        state,
+        state.search_query.clone(),
+        direction,
+        start,
+        line_count,
+    )
+}
+
+fn repeat_search_start(top: usize, line_count: usize, direction: SearchDirection) -> usize {
+    if line_count == 0 {
+        return 0;
+    }
+
+    match direction {
+        SearchDirection::Forward => top.saturating_add(1) % line_count,
+        SearchDirection::Backward => top.checked_sub(1).unwrap_or(line_count - 1),
+    }
+}
+
+fn start_search(
+    state: &mut ViewState,
+    query: String,
+    direction: SearchDirection,
+    start_line: usize,
+    line_count: usize,
+) -> bool {
+    if query.is_empty() {
+        return false;
+    }
+
+    state.search_query = query.clone();
+    state.search_message = Some(format!("searching: {query}"));
+    if line_count == 0 {
+        state.search_task = None;
+        state.search_message = Some(format!("not found: {query}"));
+        return true;
+    }
+
+    state.search_task = Some(SearchTask {
+        query,
+        direction,
+        next_line: start_line.min(line_count.saturating_sub(1)),
+        remaining: line_count,
+    });
+    true
+}
+
+fn cancel_search_task(state: &mut ViewState) -> bool {
+    state.search_task = None;
+    state.search_message = Some("search canceled".to_owned());
+    true
+}
+
+fn clear_search_message(state: &mut ViewState) -> bool {
+    let was_active = state.search_message.is_some();
+    state.search_message = None;
+    was_active
+}
+
+fn process_search_step(file: &IndexedTempFile, state: &mut ViewState) -> Result<bool> {
+    let Some(mut task) = state.search_task.take() else {
+        return Ok(false);
+    };
+
+    let step = scan_search_chunk(file, &task)?;
+    if let Some(line) = step.found_line {
+        state.top = line;
+        state.search_message = Some(format!("match: {}", task.query));
+        return Ok(true);
+    }
+
+    task.next_line = step.next_line;
+    task.remaining = task.remaining.saturating_sub(step.scanned);
+    if task.remaining == 0 || step.scanned == 0 {
+        state.search_message = Some(format!("not found: {}", task.query));
+        return Ok(true);
+    }
+
+    state.search_task = Some(task);
+    Ok(false)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SearchStep {
+    found_line: Option<usize>,
+    next_line: usize,
+    scanned: usize,
+}
+
+fn scan_search_chunk(file: &IndexedTempFile, task: &SearchTask) -> Result<SearchStep> {
+    match task.direction {
+        SearchDirection::Forward => scan_search_forward(file, task),
+        SearchDirection::Backward => scan_search_backward(file, task),
+    }
+}
+
+fn scan_search_forward(file: &IndexedTempFile, task: &SearchTask) -> Result<SearchStep> {
+    let line_count = file.line_count();
+    if line_count == 0 || task.remaining == 0 {
+        return Ok(SearchStep {
+            found_line: None,
+            next_line: 0,
+            scanned: 0,
+        });
+    }
+
+    let mut next_line = task.next_line.min(line_count - 1);
+    let mut scanned = 0;
+    let limit = task.remaining.min(SEARCH_CHUNK_LINES);
+
+    while scanned < limit {
+        let count = (line_count - next_line).min(limit - scanned);
+        let lines = file.read_window(next_line, count)?;
+        if lines.is_empty() {
+            break;
+        }
+
+        for (offset, line) in lines.iter().enumerate() {
+            if line.contains(&task.query) {
+                return Ok(SearchStep {
+                    found_line: Some(next_line + offset),
+                    next_line: next_line + offset,
+                    scanned: scanned + offset + 1,
+                });
+            }
+        }
+
+        scanned += lines.len();
+        next_line = next_line.saturating_add(lines.len());
+        if next_line >= line_count {
+            next_line = 0;
+        }
+    }
+
+    Ok(SearchStep {
+        found_line: None,
+        next_line,
+        scanned,
+    })
+}
+
+fn scan_search_backward(file: &IndexedTempFile, task: &SearchTask) -> Result<SearchStep> {
+    let line_count = file.line_count();
+    if line_count == 0 || task.remaining == 0 {
+        return Ok(SearchStep {
+            found_line: None,
+            next_line: 0,
+            scanned: 0,
+        });
+    }
+
+    let mut next_line = task.next_line.min(line_count - 1);
+    let mut scanned = 0;
+    let limit = task.remaining.min(SEARCH_CHUNK_LINES);
+
+    while scanned < limit {
+        let count = (next_line + 1).min(limit - scanned);
+        let start = next_line + 1 - count;
+        let lines = file.read_window(start, count)?;
+        if lines.is_empty() {
+            break;
+        }
+
+        for (offset, line) in lines.iter().enumerate().rev() {
+            if line.contains(&task.query) {
+                return Ok(SearchStep {
+                    found_line: Some(start + offset),
+                    next_line: start + offset,
+                    scanned: scanned + (count - offset),
+                });
+            }
+        }
+
+        scanned += lines.len();
+        next_line = start.checked_sub(1).unwrap_or(line_count - 1);
+    }
+
+    Ok(SearchStep {
+        found_line: None,
+        next_line,
+        scanned,
+    })
 }
 
 fn handle_mouse_event(
@@ -396,6 +712,7 @@ fn draw_view(
         visible_height,
         render_request,
         render_cache,
+        active_search_query(state),
     );
 
     let current = if file.line_count() == 0 {
@@ -421,15 +738,22 @@ fn draw_view(
         progress_percent(bottom, file.line_count()),
         display_mode
     );
-    let footer_text = if state.jump_buffer.is_empty() {
-        " q/Esc quit | wheel/j/k scroll | 123 Enter jump | Space/f,b page | g/G top/end | w wrap "
-            .to_owned()
-    } else {
+    let footer_text = if state.search_active {
+        format!(
+            " search: {} | Enter find | Backspace edit | Esc cancel ",
+            state.search_buffer
+        )
+    } else if !state.jump_buffer.is_empty() {
         format!(
             " go to line: {} / {} | Enter jump | Backspace edit | Esc cancel ",
             state.jump_buffer,
             file.line_count()
         )
+    } else if let Some(message) = &state.search_message {
+        format!(" {message} | / search | n/N | Esc clear ")
+    } else {
+        " q/Esc quit | / search n/N | wheel/j/k scroll | 123 Enter jump | Space/f,b page | w wrap "
+            .to_owned()
     };
 
     terminal
@@ -461,6 +785,10 @@ fn draw_view(
     );
 
     Ok(())
+}
+
+fn active_search_query(state: &ViewState) -> Option<&str> {
+    (!state.search_query.is_empty()).then_some(state.search_query.as_str())
 }
 
 #[derive(Debug, Default)]
@@ -568,6 +896,7 @@ fn render_visible_lines(
     height: usize,
     request: RenderRequest,
     cache: &mut RenderedLineCache,
+    search_query: Option<&str>,
 ) -> Vec<Line<'static>> {
     let mut rendered = Vec::with_capacity(height);
 
@@ -578,10 +907,121 @@ fn render_visible_lines(
 
         let remaining = height - rendered.len();
         let rows = cache.get_or_render(line, first_line_number + index, request);
-        rendered.extend(rows.iter().take(remaining).cloned());
+        rendered.extend(
+            rows.iter().take(remaining).cloned().map(|row| {
+                apply_search_highlight(row, search_query, request.context.gutter_digits)
+            }),
+        );
     }
 
     rendered
+}
+
+fn apply_search_highlight(
+    line: Line<'static>,
+    query: Option<&str>,
+    gutter_digits: usize,
+) -> Line<'static> {
+    let Some(query) = query else {
+        return line;
+    };
+    if query.is_empty() {
+        return line;
+    }
+
+    let visual_text = line
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    let ranges = search_match_ranges(&visual_text, query, gutter_digits + 3);
+    if ranges.is_empty() {
+        return line;
+    }
+
+    Line {
+        style: line.style,
+        alignment: line.alignment,
+        spans: apply_search_ranges_to_spans(&line.spans, &ranges),
+    }
+}
+
+fn search_match_ranges(text: &str, query: &str, start_char: usize) -> Vec<Range<usize>> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+
+    let total_chars = text.chars().count();
+    if start_char >= total_chars {
+        return Vec::new();
+    }
+
+    let search_text = slice_chars(text, start_char, total_chars);
+    let query_len = query.chars().count();
+    search_text
+        .match_indices(query)
+        .map(|(byte_index, _)| {
+            let start = start_char + search_text[..byte_index].chars().count();
+            start..start + query_len
+        })
+        .collect()
+}
+
+fn apply_search_ranges_to_spans(
+    spans: &[Span<'static>],
+    ranges: &[Range<usize>],
+) -> Vec<Span<'static>> {
+    let mut highlighted = Vec::new();
+    let mut cursor = 0;
+
+    for span in spans {
+        let text = span.content.as_ref();
+        let len = text.chars().count();
+        let span_start = cursor;
+        let span_end = cursor + len;
+        cursor = span_end;
+
+        let split_points = search_split_points(span_start, span_end, ranges);
+        for window in split_points.windows(2) {
+            let start = window[0];
+            let end = window[1];
+            if start == end {
+                continue;
+            }
+
+            let mut style = span.style;
+            if range_is_highlighted(start, end, ranges) {
+                style = style.bg(search_match_bg());
+            }
+            highlighted.push(Span::styled(
+                slice_chars(text, start - span_start, end - span_start),
+                style,
+            ));
+        }
+    }
+
+    highlighted
+}
+
+fn search_split_points(span_start: usize, span_end: usize, ranges: &[Range<usize>]) -> Vec<usize> {
+    let mut points = vec![span_start, span_end];
+    for range in ranges {
+        let start = range.start.max(span_start).min(span_end);
+        let end = range.end.max(span_start).min(span_end);
+        if start < end {
+            points.push(start);
+            points.push(end);
+        }
+    }
+    points.sort_unstable();
+    points.dedup();
+    points
+}
+
+fn range_is_highlighted(start: usize, end: usize, ranges: &[Range<usize>]) -> bool {
+    ranges
+        .iter()
+        .any(|range| start >= range.start && end <= range.end)
 }
 
 fn prewarm_render_cache(
@@ -1364,8 +1804,16 @@ fn error_style() -> Style {
     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
 }
 
+fn search_match_bg() -> Color {
+    Color::Rgb(222, 196, 121)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
+    use tempfile::NamedTempFile;
+
     use super::*;
 
     #[test]
@@ -1535,6 +1983,117 @@ mod tests {
     }
 
     #[test]
+    fn slash_search_finds_and_repeats_matches() {
+        let file = indexed_lines(&["alpha", "beta needle", "gamma", "needle again"]);
+        let mut state = ViewState::default();
+
+        handle_key_event(KeyCode::Char('/'), KeyModifiers::NONE, &mut state, 4, 10);
+        for ch in "needle".chars() {
+            handle_key_event(KeyCode::Char(ch), KeyModifiers::NONE, &mut state, 4, 10);
+        }
+        assert!(state.search_active);
+
+        handle_key_event(KeyCode::Enter, KeyModifiers::NONE, &mut state, 4, 10);
+        assert!(!state.search_active);
+        assert_eq!(state.search_query, "needle");
+        assert!(state.search_task.is_some());
+
+        assert!(process_search_step(&file, &mut state).unwrap());
+        assert_eq!(state.top, 1);
+        assert_eq!(state.search_message.as_deref(), Some("match: needle"));
+
+        handle_key_event(KeyCode::Char('n'), KeyModifiers::NONE, &mut state, 4, 10);
+        assert!(process_search_step(&file, &mut state).unwrap());
+        assert_eq!(state.top, 3);
+
+        handle_key_event(KeyCode::Char('N'), KeyModifiers::NONE, &mut state, 4, 10);
+        assert!(process_search_step(&file, &mut state).unwrap());
+        assert_eq!(state.top, 1);
+    }
+
+    #[test]
+    fn search_reports_not_found_and_can_clear_message() {
+        let file = indexed_lines(&["alpha", "beta"]);
+        let mut state = ViewState::default();
+
+        start_search(
+            &mut state,
+            "missing".to_owned(),
+            SearchDirection::Forward,
+            0,
+            file.line_count(),
+        );
+        assert!(process_search_step(&file, &mut state).unwrap());
+
+        assert_eq!(state.top, 0);
+        assert_eq!(state.search_message.as_deref(), Some("not found: missing"));
+
+        let action = handle_key_event(KeyCode::Esc, KeyModifiers::NONE, &mut state, 2, 10);
+        assert!(action.dirty);
+        assert!(!action.quit);
+        assert_eq!(state.search_message, None);
+    }
+
+    #[test]
+    fn repeated_search_wraps_around_file_edges() {
+        let file = indexed_lines(&["needle first", "middle", "needle last"]);
+        let mut state = ViewState {
+            top: 2,
+            search_query: "needle".to_owned(),
+            ..ViewState::default()
+        };
+
+        handle_key_event(
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+            &mut state,
+            file.line_count(),
+            10,
+        );
+        assert!(process_search_step(&file, &mut state).unwrap());
+        assert_eq!(state.top, 0);
+
+        handle_key_event(
+            KeyCode::Char('N'),
+            KeyModifiers::NONE,
+            &mut state,
+            file.line_count(),
+            10,
+        );
+        assert!(process_search_step(&file, &mut state).unwrap());
+        assert_eq!(state.top, 2);
+    }
+
+    #[test]
+    fn search_highlight_adds_background_without_replacing_foreground() {
+        let line = render_logical_line(
+            r#"  "needle": "needle","#,
+            1,
+            1,
+            RenderContext {
+                gutter_digits: 1,
+                x: 0,
+                width: 80,
+                wrap: false,
+                mode: ViewMode::Plain,
+            },
+        )
+        .remove(0);
+
+        let highlighted = apply_search_highlight(line, Some("needle"), 1);
+        let styles = styles_for_text(&highlighted.spans, "needle");
+
+        assert_eq!(styles.len(), 2);
+        assert!(
+            styles
+                .iter()
+                .all(|style| style.bg == Some(search_match_bg()))
+        );
+        assert!(styles.iter().any(|style| style.fg == Some(Color::Cyan)));
+        assert!(styles.iter().any(|style| style.fg == Some(Color::Green)));
+    }
+
+    #[test]
     fn shifted_wheel_scrolls_horizontally_in_nowrap() {
         let mut state = ViewState {
             wrap: false,
@@ -1678,5 +2237,13 @@ mod tests {
             row: 0,
             modifiers,
         })
+    }
+
+    fn indexed_lines(lines: &[&str]) -> IndexedTempFile {
+        let mut temp = NamedTempFile::new().unwrap();
+        for line in lines {
+            writeln!(temp, "{line}").unwrap();
+        }
+        IndexedTempFile::new("test".to_owned(), temp).unwrap()
     }
 }

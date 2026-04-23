@@ -38,6 +38,7 @@ XML payloads or nested markup.
   `\\`.
 - Pair XML opening and closing tags by depth, including XML embedded inside JSON
   string values.
+- Search formatted text from inside the viewer with visible match highlighting.
 - Preserve data semantics. JSON strings are highlighted for readability, not
   rewritten.
 - Keep large outputs responsive by indexing a temporary formatted file and only
@@ -116,10 +117,12 @@ input:
 
 ```text
 q           quit
-Esc         cancel a pending line jump; otherwise quit
+Esc         cancel a pending line jump/search; otherwise quit
 Wheel       scroll down/up by logical line
 Trackpad    vertical scroll; horizontal scroll in nowrap mode
 Shift+Wheel horizontal scroll in nowrap mode
+/           search visible formatted text
+n/N         next/previous search match
 Digits+Enter jump to a line number, for example 1200 Enter
 Backspace   edit a pending line jump
 j/k         scroll down/up by logical line
@@ -139,6 +142,11 @@ numbers, and wrapped continuation rows use a lighter continuation gutter.
 To jump to a specific line, type the line number directly and press Enter. While
 a line jump is pending, the footer shows the target line; Backspace edits it and
 Esc cancels it. Out-of-range line numbers are clamped to the file.
+
+To search, press `/`, type a substring, and press Enter. `fmtview` jumps to the
+next matching formatted line, then `n` and `N` repeat the search forward and
+backward. Matches visible in the current viewport are highlighted with a warm
+background without replacing JSON/XML syntax colors.
 
 Mouse capture is enabled while the viewer is open so wheel and trackpad events
 go to `fmtview`. If your terminal uses mouse capture for selection, hold the
@@ -181,6 +189,7 @@ mismatch such as `"<root></item>"` is highlighted as an error.
 - Rendered visual rows are cached with a bounded, context-aware cache and
   prewarmed around the current viewport.
 - Highlighting and wrapping scan only the visible prefix of long lines.
+- Viewer search scans the indexed formatted file in bounded chunks.
 - JSONL and XML are processed incrementally.
 - JSON uses streaming JSON-to-JSON transcoding.
 
