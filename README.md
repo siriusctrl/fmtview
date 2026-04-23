@@ -1,7 +1,8 @@
 # fmtview
 
-`fmtview` is a Linux-first CLI for formatting, diffing, and scroll-viewing JSON,
-JSONL, and XML without loading the rendered output into memory.
+`fmtview` is a Linux-first CLI for formatting, diffing, and syntax-highlighted
+scroll-viewing JSON, JSONL, and XML without loading the rendered output into
+memory.
 
 ## Install
 
@@ -56,6 +57,10 @@ g/G        top/end
 h/l        horizontal scroll
 Left/Right horizontal scroll
 ```
+
+The viewer renders line numbers, scroll progress, and lightweight JSON/XML/diff
+syntax highlighting for the visible window only. That keeps very large files
+responsive while still making nested structures easier to scan.
 
 ## Embedded Strings
 
