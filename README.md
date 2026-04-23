@@ -31,6 +31,8 @@ XML payloads or nested markup.
 - Format JSON, JSONL, and XML from files, stdin, or literal strings.
 - Preview in a terminal UI with line numbers, progress, and indent-aware soft
   wrap.
+- Scroll with the keyboard, mouse wheel, or a trackpad without re-rendering on
+  every individual input event.
 - Highlight JSON, XML, and unified diff output.
 - Highlight JSON string escape tokens such as `\n`, `\t`, `\r`, `\"`, and
   `\\`.
@@ -102,17 +104,21 @@ fmtview examples/response.xml
 fmtview diff examples/diff-left.json examples/diff-right.json
 ```
 
-Use `Space`/`f` and `b` to page, `w` to toggle wrap/nowrap, and `q` to exit.
-`examples/showcase.json` includes embedded XML, a deliberately mismatched XML
-closing tag, escaped special tokens, nested JSON, arrays, booleans, nulls, and
-long strings for wrap testing.
+Use the mouse wheel or trackpad to scroll, `Space`/`f` and `b` to page, `w` to
+toggle wrap/nowrap, and `q` to exit. `examples/showcase.json` includes embedded
+XML, a deliberately mismatched XML closing tag, escaped special tokens, nested
+JSON, arrays, booleans, nulls, and long strings for wrap testing.
 
 ## Viewer
 
-The viewer is intentionally small and keyboard-driven:
+The viewer is intentionally small and works with both keyboard and pointer
+input:
 
 ```text
 q/Esc       quit
+Wheel       scroll down/up by logical line
+Trackpad    vertical scroll; horizontal scroll in nowrap mode
+Shift+Wheel horizontal scroll in nowrap mode
 j/k         scroll down/up by logical line
 Up/Down     scroll down/up by logical line
 Space/f     page down
@@ -128,6 +134,10 @@ Left/Right  horizontal scroll in nowrap mode
 The title bar shows the source label, total line count, visible line range,
 scroll percentage, and whether wrapping is enabled. The left gutter shows line
 numbers, and wrapped continuation rows use a lighter continuation gutter.
+
+Mouse capture is enabled while the viewer is open so wheel and trackpad events
+go to `fmtview`. If your terminal uses mouse capture for selection, hold the
+terminal's normal bypass modifier, usually Shift.
 
 Soft wrap is enabled by default. Continuation rows preserve the original
 indentation, with a capped extra indent so deeply nested documents still have
@@ -160,7 +170,11 @@ mismatch such as `"<root></item>"` is highlighted as an error.
 - Input is formatted into a temporary file.
 - A compact line-offset index is built once.
 - The viewer redraws on input or resize events, not on a fixed idle timer.
+- Bursty keyboard, mouse wheel, and trackpad events are coalesced before redraw,
+  so fast scrolling does not render one frame per raw terminal event.
 - Scrolling reads and caches nearby lines around the current terminal window.
+- Rendered visual rows are cached with a bounded, context-aware cache and
+  prewarmed around the current viewport.
 - Highlighting and wrapping scan only the visible prefix of long lines.
 - JSONL and XML are processed incrementally.
 - JSON uses streaming JSON-to-JSON transcoding.

@@ -1,8 +1,15 @@
-use std::{io, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque, hash_map::Entry},
+    io,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+        MouseEventKind,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -17,7 +24,18 @@ use ratatui::{
 
 use crate::line_index::IndexedTempFile;
 
-#[derive(Debug, Clone, Copy)]
+const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const EVENT_DRAIN_BUDGET: Duration = Duration::from_millis(8);
+const EVENT_DRAIN_LIMIT: usize = 512;
+const MOUSE_SCROLL_LINES: usize = 1;
+const MOUSE_HORIZONTAL_COLUMNS: usize = 4;
+const RENDER_CACHE_MAX_LINES: usize = 512;
+const RENDER_CACHE_MAX_ROWS_PER_LINE: usize = 256;
+const PREWARM_PAGES: usize = 2;
+const PREWARM_MAX_LINES: usize = 192;
+const PREWARM_BUDGET: Duration = Duration::from_millis(4);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
     Plain,
     Diff,
@@ -26,14 +44,20 @@ pub enum ViewMode {
 pub fn run(file: IndexedTempFile, mode: ViewMode) -> Result<()> {
     let mut stdout = io::stdout();
     enable_raw_mode().context("failed to enable raw mode")?;
-    execute!(stdout, EnterAlternateScreen).context("failed to enter alternate screen")?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
+        .context("failed to enter alternate screen")?;
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("failed to create terminal")?;
     let result = run_loop(&mut terminal, &file, mode);
 
     disable_raw_mode().ok();
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).ok();
+    execute!(
+        terminal.backend_mut(),
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    )
+    .ok();
     terminal.show_cursor().ok();
 
     result
@@ -44,107 +68,230 @@ fn run_loop(
     file: &IndexedTempFile,
     mode: ViewMode,
 ) -> Result<()> {
-    let mut top = 0_usize;
-    let mut x = 0_usize;
-    let mut wrap = true;
+    let mut state = ViewState::default();
     let mut dirty = true;
     let mut line_cache = LineWindowCache::default();
+    let mut render_cache = RenderedLineCache::default();
 
     loop {
         if dirty {
-            draw_view(terminal, file, mode, &mut top, x, wrap, &mut line_cache)?;
+            draw_view(
+                terminal,
+                file,
+                mode,
+                &mut state,
+                &mut line_cache,
+                &mut render_cache,
+            )?;
             dirty = false;
         }
 
-        if !event::poll(Duration::from_millis(50)).context("failed to poll terminal event")? {
+        if !event::poll(EVENT_POLL_INTERVAL).context("failed to poll terminal event")? {
             continue;
         }
-
-        let key = match event::read().context("failed to read terminal event")? {
-            Event::Key(key) => key,
-            Event::Resize(_, _) => {
-                dirty = true;
-                continue;
-            }
-            _ => continue,
-        };
-        if key.kind == KeyEventKind::Release {
-            continue;
-        };
 
         let page = terminal
             .size()
             .map(|size| usize::from(size.height.saturating_sub(4)).max(1))
             .unwrap_or(20);
-
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => break,
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
-            KeyCode::Char('w') => {
-                wrap = !wrap;
-                dirty = true;
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                top = top
-                    .saturating_add(1)
-                    .min(file.line_count().saturating_sub(1));
-                dirty = true;
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                top = top.saturating_sub(1);
-                dirty = true;
-            }
-            KeyCode::PageDown | KeyCode::Char(' ') | KeyCode::Char('f') => {
-                top = top
-                    .saturating_add(page)
-                    .min(file.line_count().saturating_sub(1));
-                dirty = true;
-            }
-            KeyCode::PageUp | KeyCode::Char('b') => {
-                top = top.saturating_sub(page);
-                dirty = true;
-            }
-            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                top = top
-                    .saturating_add((page / 2).max(1))
-                    .min(file.line_count().saturating_sub(1));
-                dirty = true;
-            }
-            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                top = top.saturating_sub((page / 2).max(1));
-                dirty = true;
-            }
-            KeyCode::Home | KeyCode::Char('g') => {
-                top = 0;
-                dirty = true;
-            }
-            KeyCode::End | KeyCode::Char('G') => {
-                top = file.line_count().saturating_sub(1);
-                dirty = true;
-            }
-            KeyCode::Right | KeyCode::Char('l') if !wrap => {
-                x = x.saturating_add(4);
-                dirty = true;
-            }
-            KeyCode::Left | KeyCode::Char('h') if !wrap => {
-                x = x.saturating_sub(4);
-                dirty = true;
-            }
-            _ => {}
+        let action = drain_events(&mut state, file.line_count(), page)?;
+        if action.quit {
+            break;
         }
+        dirty |= action.dirty;
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ViewState {
+    top: usize,
+    x: usize,
+    wrap: bool,
+}
+
+impl Default for ViewState {
+    fn default() -> Self {
+        Self {
+            top: 0,
+            x: 0,
+            wrap: true,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct EventAction {
+    dirty: bool,
+    quit: bool,
+}
+
+impl EventAction {
+    fn merge(&mut self, next: Self) {
+        self.dirty |= next.dirty;
+        self.quit |= next.quit;
+    }
+}
+
+fn drain_events(state: &mut ViewState, line_count: usize, page: usize) -> Result<EventAction> {
+    let started = Instant::now();
+    let mut action = EventAction::default();
+    let mut processed = 0;
+
+    loop {
+        let event = event::read().context("failed to read terminal event")?;
+        action.merge(handle_event(event, state, line_count, page));
+        processed += 1;
+
+        if action.quit
+            || processed >= EVENT_DRAIN_LIMIT
+            || started.elapsed() >= EVENT_DRAIN_BUDGET
+            || !event::poll(Duration::ZERO).context("failed to poll terminal event")?
+        {
+            break;
+        }
+    }
+
+    Ok(action)
+}
+
+fn handle_event(
+    event: Event,
+    state: &mut ViewState,
+    line_count: usize,
+    page: usize,
+) -> EventAction {
+    match event {
+        Event::Key(key) if key.kind == KeyEventKind::Release => EventAction::default(),
+        Event::Key(key) => handle_key_event(key.code, key.modifiers, state, line_count, page),
+        Event::Mouse(mouse) => handle_mouse_event(mouse.kind, mouse.modifiers, state, line_count),
+        Event::Resize(_, _) => EventAction {
+            dirty: true,
+            quit: false,
+        },
+        _ => EventAction::default(),
+    }
+}
+
+fn handle_key_event(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    state: &mut ViewState,
+    line_count: usize,
+    page: usize,
+) -> EventAction {
+    let dirty = match code {
+        KeyCode::Char('q') | KeyCode::Esc => {
+            return EventAction {
+                dirty: false,
+                quit: true,
+            };
+        }
+        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+            return EventAction {
+                dirty: false,
+                quit: true,
+            };
+        }
+        KeyCode::Char('w') => {
+            state.wrap = !state.wrap;
+            true
+        }
+        KeyCode::Down | KeyCode::Char('j') => scroll_by(&mut state.top, line_count, 1),
+        KeyCode::Up | KeyCode::Char('k') => scroll_by(&mut state.top, line_count, -1),
+        KeyCode::PageDown | KeyCode::Char(' ') | KeyCode::Char('f') => {
+            scroll_by(&mut state.top, line_count, page as isize)
+        }
+        KeyCode::PageUp | KeyCode::Char('b') => {
+            scroll_by(&mut state.top, line_count, -(page as isize))
+        }
+        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+            scroll_by(&mut state.top, line_count, (page / 2).max(1) as isize)
+        }
+        KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+            scroll_by(&mut state.top, line_count, -((page / 2).max(1) as isize))
+        }
+        KeyCode::Home | KeyCode::Char('g') => set_top(&mut state.top, 0),
+        KeyCode::End | KeyCode::Char('G') => set_top(&mut state.top, line_count.saturating_sub(1)),
+        KeyCode::Right | KeyCode::Char('l') if !state.wrap => {
+            scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
+        }
+        KeyCode::Left | KeyCode::Char('h') if !state.wrap => {
+            scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
+        }
+        _ => false,
+    };
+
+    EventAction { dirty, quit: false }
+}
+
+fn handle_mouse_event(
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+    state: &mut ViewState,
+    line_count: usize,
+) -> EventAction {
+    let dirty = match kind {
+        MouseEventKind::ScrollDown if modifiers.contains(KeyModifiers::SHIFT) && !state.wrap => {
+            scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
+        }
+        MouseEventKind::ScrollUp if modifiers.contains(KeyModifiers::SHIFT) && !state.wrap => {
+            scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
+        }
+        MouseEventKind::ScrollDown => {
+            scroll_by(&mut state.top, line_count, MOUSE_SCROLL_LINES as isize)
+        }
+        MouseEventKind::ScrollUp => {
+            scroll_by(&mut state.top, line_count, -(MOUSE_SCROLL_LINES as isize))
+        }
+        MouseEventKind::ScrollRight if !state.wrap => {
+            scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
+        }
+        MouseEventKind::ScrollLeft if !state.wrap => {
+            scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
+        }
+        _ => false,
+    };
+
+    EventAction { dirty, quit: false }
+}
+
+fn scroll_by(top: &mut usize, line_count: usize, delta: isize) -> bool {
+    let old = *top;
+    if delta >= 0 {
+        *top = top
+            .saturating_add(delta as usize)
+            .min(line_count.saturating_sub(1));
+    } else {
+        *top = top.saturating_sub(delta.unsigned_abs());
+    }
+    *top != old
+}
+
+fn set_top(top: &mut usize, value: usize) -> bool {
+    let old = *top;
+    *top = value;
+    *top != old
+}
+
+fn scroll_x_by(x: &mut usize, delta: isize) -> bool {
+    let old = *x;
+    if delta >= 0 {
+        *x = x.saturating_add(delta as usize);
+    } else {
+        *x = x.saturating_sub(delta.unsigned_abs());
+    }
+    *x != old
 }
 
 fn draw_view(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     file: &IndexedTempFile,
     mode: ViewMode,
-    top: &mut usize,
-    x: usize,
-    wrap: bool,
+    state: &mut ViewState,
     line_cache: &mut LineWindowCache,
+    render_cache: &mut RenderedLineCache,
 ) -> Result<()> {
     let size = terminal.size().context("failed to read terminal size")?;
     let visible_height = usize::from(size.height.saturating_sub(3));
@@ -153,26 +300,43 @@ fn draw_view(
     let gutter_width = gutter_digits + 3;
     let content_width = visible_width.saturating_sub(gutter_width);
     let max_top = file.line_count().saturating_sub(visible_height.max(1));
-    *top = (*top).min(max_top);
+    state.top = state.top.min(max_top);
 
     let lines = line_cache
-        .read(file, *top, visible_height)
+        .read(file, state.top, visible_height)
         .unwrap_or_else(|error| vec![format!("failed to read window: {error:#}")]);
     let render_context = RenderContext {
         gutter_digits,
-        x,
+        x: state.x,
         width: content_width,
-        wrap,
+        wrap: state.wrap,
         mode,
     };
-    let styled = render_visible_lines(&lines, *top + 1, visible_height, render_context);
+    let render_request = RenderRequest {
+        context: render_context,
+        row_limit: render_row_limit(visible_height),
+    };
+    let styled = render_visible_lines(
+        &lines,
+        state.top + 1,
+        visible_height,
+        render_request,
+        render_cache,
+    );
 
-    let current = if file.line_count() == 0 { 0 } else { *top + 1 };
-    let bottom = (*top).saturating_add(visible_height).min(file.line_count());
-    let display_mode = if wrap {
+    let current = if file.line_count() == 0 {
+        0
+    } else {
+        state.top + 1
+    };
+    let bottom = state
+        .top
+        .saturating_add(visible_height)
+        .min(file.line_count());
+    let display_mode = if state.wrap {
         "wrap".to_owned()
     } else {
-        format!("nowrap x:{x}")
+        format!("nowrap x:{}", state.x)
     };
     let title = format!(
         " {} | {} lines | {}-{} | {:>3}% | {} ",
@@ -183,7 +347,7 @@ fn draw_view(
         progress_percent(bottom, file.line_count()),
         display_mode
     );
-    let footer_text = " q/Esc quit | j/k/↑/↓ line | Space/f page down | b page up | Ctrl-d/u half | g/G top/end | w wrap ";
+    let footer_text = " q/Esc quit | wheel/j/k/↑/↓ scroll | Space/f page | b page up | Ctrl-d/u half | g/G top/end | w wrap ";
 
     terminal
         .draw(move |frame| {
@@ -203,6 +367,15 @@ fn draw_view(
             );
         })
         .context("failed to draw terminal frame")?;
+
+    prewarm_render_cache(
+        file,
+        line_cache,
+        render_cache,
+        state.top,
+        visible_height,
+        render_request,
+    );
 
     Ok(())
 }
@@ -243,7 +416,61 @@ impl LineWindowCache {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default)]
+struct RenderedLineCache {
+    request: Option<RenderRequest>,
+    lines: HashMap<usize, Vec<Line<'static>>>,
+    order: VecDeque<usize>,
+}
+
+impl RenderedLineCache {
+    fn get_or_render(
+        &mut self,
+        line: &str,
+        line_number: usize,
+        request: RenderRequest,
+    ) -> &[Line<'static>] {
+        if self.request != Some(request) {
+            self.request = Some(request);
+            self.lines.clear();
+            self.order.clear();
+        }
+
+        let inserted = if let Entry::Vacant(entry) = self.lines.entry(line_number) {
+            let rows = render_logical_line(line, line_number, request.row_limit, request.context);
+            entry.insert(rows);
+            true
+        } else {
+            false
+        };
+        if inserted {
+            self.order.push_back(line_number);
+            self.evict_oldest();
+        }
+
+        self.lines
+            .get(&line_number)
+            .expect("rendered line should exist")
+    }
+
+    fn evict_oldest(&mut self) {
+        while self.lines.len() > RENDER_CACHE_MAX_LINES {
+            if let Some(line_number) = self.order.pop_front() {
+                self.lines.remove(&line_number);
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RenderRequest {
+    context: RenderContext,
+    row_limit: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RenderContext {
     gutter_digits: usize,
     x: usize,
@@ -256,7 +483,8 @@ fn render_visible_lines(
     lines: &[String],
     first_line_number: usize,
     height: usize,
-    context: RenderContext,
+    request: RenderRequest,
+    cache: &mut RenderedLineCache,
 ) -> Vec<Line<'static>> {
     let mut rendered = Vec::with_capacity(height);
 
@@ -266,15 +494,48 @@ fn render_visible_lines(
         }
 
         let remaining = height - rendered.len();
-        rendered.extend(render_logical_line(
-            line,
-            first_line_number + index,
-            remaining,
-            context,
-        ));
+        let rows = cache.get_or_render(line, first_line_number + index, request);
+        rendered.extend(rows.iter().take(remaining).cloned());
     }
 
     rendered
+}
+
+fn prewarm_render_cache(
+    file: &IndexedTempFile,
+    line_cache: &mut LineWindowCache,
+    render_cache: &mut RenderedLineCache,
+    top: usize,
+    visible_height: usize,
+    request: RenderRequest,
+) {
+    if visible_height == 0 || file.line_count() == 0 {
+        return;
+    }
+
+    let side = visible_height.saturating_mul(PREWARM_PAGES);
+    let start = top.saturating_sub(side);
+    let count = visible_height
+        .saturating_add(side.saturating_mul(2))
+        .min(PREWARM_MAX_LINES)
+        .min(file.line_count().saturating_sub(start));
+    let Ok(lines) = line_cache.read(file, start, count) else {
+        return;
+    };
+
+    let started = Instant::now();
+    for (index, line) in lines.iter().enumerate() {
+        render_cache.get_or_render(line, start + index + 1, request);
+        if started.elapsed() >= PREWARM_BUDGET {
+            break;
+        }
+    }
+}
+
+fn render_row_limit(visible_height: usize) -> usize {
+    visible_height
+        .saturating_mul(2)
+        .clamp(32, RENDER_CACHE_MAX_ROWS_PER_LINE)
 }
 
 fn render_logical_line(
@@ -1086,6 +1347,98 @@ mod tests {
     }
 
     #[test]
+    fn mouse_wheel_scrolls_by_logical_line() {
+        let mut state = ViewState::default();
+        let action = handle_event(
+            mouse_event(MouseEventKind::ScrollDown, KeyModifiers::NONE),
+            &mut state,
+            10,
+            5,
+        );
+
+        assert!(action.dirty);
+        assert!(!action.quit);
+        assert_eq!(state.top, MOUSE_SCROLL_LINES);
+
+        let action = handle_event(
+            mouse_event(MouseEventKind::ScrollUp, KeyModifiers::NONE),
+            &mut state,
+            10,
+            5,
+        );
+
+        assert!(action.dirty);
+        assert_eq!(state.top, 0);
+    }
+
+    #[test]
+    fn shifted_wheel_scrolls_horizontally_in_nowrap() {
+        let mut state = ViewState {
+            wrap: false,
+            ..ViewState::default()
+        };
+        let action = handle_event(
+            mouse_event(MouseEventKind::ScrollDown, KeyModifiers::SHIFT),
+            &mut state,
+            10,
+            5,
+        );
+
+        assert!(action.dirty);
+        assert_eq!(state.top, 0);
+        assert_eq!(state.x, MOUSE_HORIZONTAL_COLUMNS);
+
+        let action = handle_event(
+            mouse_event(MouseEventKind::ScrollUp, KeyModifiers::SHIFT),
+            &mut state,
+            10,
+            5,
+        );
+
+        assert!(action.dirty);
+        assert_eq!(state.x, 0);
+    }
+
+    #[test]
+    fn rendered_line_cache_reuses_until_context_changes() {
+        let mut cache = RenderedLineCache::default();
+        let request = RenderRequest {
+            context: RenderContext {
+                gutter_digits: 1,
+                x: 0,
+                width: 3,
+                wrap: false,
+                mode: ViewMode::Plain,
+            },
+            row_limit: 8,
+        };
+
+        let first = {
+            let rows = cache.get_or_render("abcdef", 1, request);
+            span_text(&rows[0].spans)
+        };
+        assert_eq!(first, "1 │ abc");
+
+        cache.get_or_render("abcdef", 1, request);
+        assert_eq!(cache.lines.len(), 1);
+
+        let shifted = RenderRequest {
+            context: RenderContext {
+                x: 2,
+                ..request.context
+            },
+            ..request
+        };
+        let second = {
+            let rows = cache.get_or_render("abcdef", 1, shifted);
+            span_text(&rows[0].spans)
+        };
+
+        assert_eq!(second, "1 │ cde");
+        assert_eq!(cache.lines.len(), 1);
+    }
+
+    #[test]
     fn json_highlight_preserves_visible_text() {
         let spans = highlight_json_like(r#"  "ok": true, "n": 42, "none": null"#);
         assert_eq!(span_text(&spans), r#"  "ok": true, "n": 42, "none": null"#);
@@ -1153,5 +1506,14 @@ mod tests {
             .filter(|span| span.content.as_ref() == text)
             .map(|span| span.style)
             .collect()
+    }
+
+    fn mouse_event(kind: MouseEventKind, modifiers: KeyModifiers) -> Event {
+        Event::Mouse(crossterm::event::MouseEvent {
+            kind,
+            column: 0,
+            row: 0,
+            modifiers,
+        })
     }
 }
