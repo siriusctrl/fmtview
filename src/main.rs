@@ -109,9 +109,10 @@ fn run_diff(command: DiffCommand) -> Result<()> {
         indent: command.indent,
     };
 
-    let diffed = diff::diff_sources(&left, &right, &options)?;
+    let view = should_view();
+    let diffed = diff::diff_sources(&left, &right, &options, view)?;
 
-    if should_view() {
+    if view {
         let label = format!("{} <-> {}", left.label(), right.label());
         let indexed = line_index::IndexedTempFile::new(label, diffed)?;
         viewer::run(indexed, viewer::ViewMode::Diff)

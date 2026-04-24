@@ -25,6 +25,43 @@ fn formats_jsonl_from_stdin() {
 }
 
 #[test]
+fn keeps_jsonl_records_line_delimited() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    let assert = cmd
+        .args(["--type", "jsonl"])
+        .write_stdin("{\"a\":{\"b\":1}}\n[1,{\"c\":2}]\n")
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+
+    assert_eq!(stdout, "{\"a\": {\"b\": 1}}\n[1, {\"c\": 2}]\n");
+    assert_eq!(stdout.lines().count(), 2);
+}
+
+#[test]
+fn preserves_large_json_numbers() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["--type", "json"])
+        .write_stdin(r#"{"n":123456789012345678901234567890}"#)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            r#""n": 123456789012345678901234567890"#,
+        ))
+        .stdout(predicate::str::contains("1.2345678901234568e+29").not());
+}
+
+#[test]
+fn preserves_large_jsonl_numbers() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["--type", "jsonl"])
+        .write_stdin("{\"n\":123456789012345678901234567890}\n")
+        .assert()
+        .success()
+        .stdout(predicate::eq("{\"n\": 123456789012345678901234567890}\n"));
+}
+
+#[test]
 fn formats_xml_from_stdin() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
     cmd.args(["--type", "xml"])
@@ -65,4 +102,24 @@ fn diffs_formatted_json() {
     .success()
     .stdout(predicate::str::contains("-  \"a\": 1"))
     .stdout(predicate::str::contains("+  \"a\": 2"));
+}
+
+#[test]
+fn equal_diff_stdout_is_empty() {
+    let mut left = NamedTempFile::new().unwrap();
+    let mut right = NamedTempFile::new().unwrap();
+    write!(left, r#"{{"a":1}}"#).unwrap();
+    write!(right, r#"{{"a":1}}"#).unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args([
+        "diff",
+        "--type",
+        "json",
+        left.path().to_str().unwrap(),
+        right.path().to_str().unwrap(),
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::eq(""));
 }

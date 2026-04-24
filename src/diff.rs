@@ -1,5 +1,5 @@
 use std::{
-    io::{Read, Write},
+    io::Write,
     process::{Command, Stdio},
 };
 
@@ -15,6 +15,7 @@ pub fn diff_sources(
     left: &InputSource,
     right: &InputSource,
     options: &FormatOptions,
+    show_equal_message: bool,
 ) -> Result<NamedTempFile> {
     let left_formatted = format::format_source_to_temp(left, options)
         .with_context(|| format!("failed to format left input {}", left.label()))?;
@@ -22,17 +23,14 @@ pub fn diff_sources(
         .with_context(|| format!("failed to format right input {}", right.label()))?;
 
     let mut output = NamedTempFile::new().context("failed to create diff temp file")?;
-    match run_external_diff(left, right, &left_formatted, &right_formatted, &mut output) {
-        Ok(()) => {}
-        Err(error) => {
-            writeln!(
-                output,
-                "external diff failed ({error:#}); falling back to streaming line comparison"
-            )
-            .context("failed to write diff fallback header")?;
-            streaming_diff(left, right, &left_formatted, &right_formatted, &mut output)?;
-        }
-    }
+    run_external_diff(
+        left,
+        right,
+        &left_formatted,
+        &right_formatted,
+        &mut output,
+        show_equal_message,
+    )?;
     output.flush().context("failed to flush diff temp file")?;
     Ok(output)
 }
@@ -43,6 +41,7 @@ fn run_external_diff(
     left_formatted: &NamedTempFile,
     right_formatted: &NamedTempFile,
     output: &mut NamedTempFile,
+    show_equal_message: bool,
 ) -> Result<()> {
     let mut child = Command::new("diff")
         .arg("-u")
@@ -68,7 +67,9 @@ fn run_external_diff(
         .context("failed to wait for diff")?;
     match result.status.code() {
         Some(0) => {
-            writeln!(output, "No differences").context("failed to write empty diff message")?;
+            if show_equal_message {
+                writeln!(output, "No differences").context("failed to write empty diff message")?;
+            }
             Ok(())
         }
         Some(1) => Ok(()),
@@ -77,56 +78,4 @@ fn run_external_diff(
             bail!("diff exited with {}: {}", result.status, stderr.trim())
         }
     }
-}
-
-fn streaming_diff(
-    left: &InputSource,
-    right: &InputSource,
-    left_formatted: &NamedTempFile,
-    right_formatted: &NamedTempFile,
-    output: &mut NamedTempFile,
-) -> Result<()> {
-    let mut left_reader = std::io::BufReader::new(std::fs::File::open(left_formatted.path())?);
-    let mut right_reader = std::io::BufReader::new(std::fs::File::open(right_formatted.path())?);
-    let mut left_line = String::new();
-    let mut right_line = String::new();
-    let mut line_number = 1_usize;
-    let mut differences = 0_usize;
-
-    writeln!(output, "--- {}", left.label()).context("failed to write diff header")?;
-    writeln!(output, "+++ {}", right.label()).context("failed to write diff header")?;
-
-    loop {
-        left_line.clear();
-        right_line.clear();
-        let left_read = read_line(&mut left_reader, &mut left_line)?;
-        let right_read = read_line(&mut right_reader, &mut right_line)?;
-        if left_read == 0 && right_read == 0 {
-            break;
-        }
-
-        if left_line != right_line {
-            differences += 1;
-            writeln!(output, "@@ line {} @@", line_number).context("failed to write diff hunk")?;
-            if left_read != 0 {
-                write!(output, "-{}", left_line).context("failed to write left diff line")?;
-            }
-            if right_read != 0 {
-                write!(output, "+{}", right_line).context("failed to write right diff line")?;
-            }
-        }
-        line_number += 1;
-    }
-
-    if differences == 0 {
-        writeln!(output, "No differences").context("failed to write empty diff message")?;
-    }
-
-    Ok(())
-}
-
-fn read_line<R: Read>(reader: &mut std::io::BufReader<R>, line: &mut String) -> Result<usize> {
-    use std::io::BufRead;
-
-    reader.read_line(line).context("failed to read diff line")
 }

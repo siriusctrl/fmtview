@@ -108,6 +108,9 @@ fmtview data.xml > pretty.xml
 cat events.jsonl | fmtview --type jsonl > pretty.jsonl
 ```
 
+Redirected JSONL output stays JSONL: each input record is written as one
+physical output line so downstream line-oriented tools can continue reading it.
+
 Diff after formatting both sides:
 
 ```sh
@@ -213,8 +216,9 @@ mismatch such as `"<root></item>"` is highlighted as an error.
   prewarmed around the current viewport.
 - Highlighting and wrapping scan only the visible prefix of long lines.
 - Viewer search scans the indexed formatted file in bounded chunks.
-- JSONL and XML are processed incrementally.
-- JSON uses streaming JSON-to-JSON transcoding.
+- JSON, JSONL, and XML are processed incrementally.
+- JSON numbers are written from their original tokens instead of being coerced
+  through native integer or floating-point types.
 
 This keeps the viewer usable for large files while preserving scriptable stdout
 behavior when you redirect output.

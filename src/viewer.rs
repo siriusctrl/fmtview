@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque, hash_map::Entry},
-    io,
+    io::{self, Write},
     ops::Range,
     time::{Duration, Instant},
 };
@@ -47,6 +47,7 @@ pub enum ViewMode {
 pub fn run(file: IndexedTempFile, mode: ViewMode) -> Result<()> {
     let mut stdout = io::stdout();
     enable_raw_mode().context("failed to enable raw mode")?;
+    let mut cleanup = TerminalCleanup::active();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
         .context("failed to enter alternate screen")?;
 
@@ -61,9 +62,37 @@ pub fn run(file: IndexedTempFile, mode: ViewMode) -> Result<()> {
         LeaveAlternateScreen
     )
     .ok();
+    cleanup.disarm();
     terminal.show_cursor().ok();
 
     result
+}
+
+struct TerminalCleanup {
+    active: bool,
+}
+
+impl TerminalCleanup {
+    fn active() -> Self {
+        Self { active: true }
+    }
+
+    fn disarm(&mut self) {
+        self.active = false;
+    }
+}
+
+impl Drop for TerminalCleanup {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+
+        disable_raw_mode().ok();
+        let mut stdout = io::stdout();
+        execute!(stdout, DisableMouseCapture, LeaveAlternateScreen).ok();
+        stdout.flush().ok();
+    }
 }
 
 fn run_loop(
@@ -692,9 +721,7 @@ fn draw_view(
     let max_top = file.line_count().saturating_sub(visible_height.max(1));
     state.top = state.top.min(max_top);
 
-    let lines = line_cache
-        .read(file, state.top, visible_height)
-        .unwrap_or_else(|error| vec![format!("failed to read window: {error:#}")]);
+    let lines = line_cache.read(file, state.top, visible_height)?;
     let render_context = RenderContext {
         gutter_digits,
         x: state.x,
@@ -847,25 +874,23 @@ impl RenderedLineCache {
             self.order.clear();
         }
 
-        let inserted = if let Entry::Vacant(entry) = self.lines.entry(line_number) {
-            let rows = render_logical_line(line, line_number, request.row_limit, request.context);
-            entry.insert(rows);
-            true
-        } else {
-            false
-        };
-        if inserted {
-            self.order.push_back(line_number);
-            self.evict_oldest();
+        if !self.lines.contains_key(&line_number) {
+            self.evict_until_room();
         }
 
-        self.lines
-            .get(&line_number)
-            .expect("rendered line should exist")
+        match self.lines.entry(line_number) {
+            Entry::Occupied(entry) => entry.into_mut().as_slice(),
+            Entry::Vacant(entry) => {
+                let rows =
+                    render_logical_line(line, line_number, request.row_limit, request.context);
+                self.order.push_back(line_number);
+                entry.insert(rows).as_slice()
+            }
+        }
     }
 
-    fn evict_oldest(&mut self) {
-        while self.lines.len() > RENDER_CACHE_MAX_LINES {
+    fn evict_until_room(&mut self) {
+        while self.lines.len() >= RENDER_CACHE_MAX_LINES {
             if let Some(line_number) = self.order.pop_front() {
                 self.lines.remove(&line_number);
             } else {
@@ -1314,7 +1339,9 @@ fn highlight_json_like(line: &str) -> Vec<Span<'static>> {
 
     while index < line.len() {
         let rest = &line[index..];
-        let ch = rest.chars().next().expect("index should point to a char");
+        let Some(ch) = rest.chars().next() else {
+            break;
+        };
 
         if ch.is_whitespace() {
             let end = take_while(line, index, char::is_whitespace);
@@ -1401,10 +1428,9 @@ fn highlight_string_segment(text: &str) -> Vec<Span<'static>> {
             continue;
         }
 
-        let ch = text[index..]
-            .chars()
-            .next()
-            .expect("index should point to a char");
+        let Some(ch) = text[index..].chars().next() else {
+            break;
+        };
         index += ch.len_utf8();
     }
 
@@ -1459,7 +1485,9 @@ fn highlight_xml_tag(tag: &str, state: &mut XmlPairState, base_depth: usize) -> 
 
     while index < tag.len() {
         let rest = &tag[index..];
-        let ch = rest.chars().next().expect("index should point to a char");
+        let Some(ch) = rest.chars().next() else {
+            break;
+        };
 
         if let Some((start, end)) = name_range
             && index == start
@@ -1482,7 +1510,7 @@ fn highlight_xml_tag(tag: &str, state: &mut XmlPairState, base_depth: usize) -> 
         }
 
         if rest.starts_with("\\\"") || rest.starts_with("\\'") {
-            let quote = rest.chars().nth(1).expect("escaped quote should exist");
+            let quote = if rest.starts_with("\\\"") { '"' } else { '\'' };
             let end = escaped_quoted_end(tag, index, quote);
             spans.extend(highlight_string_segment(&tag[index..end]));
             index = end;
@@ -1575,7 +1603,7 @@ impl XmlPairState {
                 Some(open) => {
                     self.stack.push(open);
                     XmlTagState {
-                        depth: base_depth + self.stack.len().saturating_sub(1),
+                        depth: base_depth + self.stack.len() - 1,
                         matched: false,
                     }
                 }

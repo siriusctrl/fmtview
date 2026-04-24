@@ -1,6 +1,6 @@
 [package]
 name = "fmtview"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 description = "Fast terminal formatter and viewer for JSON, JSONL, XML, and formatted diffs"
@@ -17,8 +17,6 @@ clap = { version = "4.6.1", features = ["derive"] }
 crossterm = "0.29.0"
 quick-xml = "0.39.2"
 ratatui = { version = "0.30.0", default-features = false, features = ["crossterm"] }
-serde-transcode = "1.1.1"
-serde_json = "1.0.149"
 tempfile = "3.27.0"
 
 [dev-dependencies]
