@@ -18,7 +18,7 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Layout},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -51,6 +51,17 @@ const LAZY_PRELOAD_BUDGET: Duration = Duration::from_millis(6);
 const JUMP_BUFFER_MAX_DIGITS: usize = 20;
 const SEARCH_CHUNK_LINES: usize = 4096;
 const TAIL_ROW_OFFSET: usize = usize::MAX;
+const PALETTE_BACKGROUND: Color = Color::Rgb(40, 44, 52);
+const PALETTE_TEXT: Color = Color::Rgb(171, 178, 191);
+const PALETTE_MUTED: Color = Color::Rgb(92, 99, 112);
+const PALETTE_BLUE: Color = Color::Rgb(97, 175, 239);
+const PALETTE_CYAN: Color = Color::Rgb(86, 182, 194);
+const PALETTE_GREEN: Color = Color::Rgb(152, 195, 121);
+const PALETTE_PURPLE: Color = Color::Rgb(198, 120, 221);
+const PALETTE_RED: Color = Color::Rgb(224, 108, 117);
+const PALETTE_YELLOW: Color = Color::Rgb(229, 192, 123);
+const PALETTE_ORANGE: Color = Color::Rgb(209, 154, 102);
+const PALETTE_SELECTION: Color = Color::Rgb(62, 68, 81);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -1040,17 +1051,16 @@ fn draw_view(
             let area = frame.area();
             let [body, footer] =
                 Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
-            let paragraph = Paragraph::new(styled).block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::DarkGray)),
-            );
+            let paragraph = Paragraph::new(styled)
+                .block(
+                    Block::default()
+                        .title(title)
+                        .borders(Borders::ALL)
+                        .border_style(gutter_style()),
+                )
+                .style(plain_style());
             frame.render_widget(paragraph, body);
-            frame.render_widget(
-                Paragraph::new(footer_text).style(Style::default().fg(Color::DarkGray)),
-                footer,
-            );
+            frame.render_widget(Paragraph::new(footer_text).style(gutter_style()), footer);
         })
         .context("failed to draw terminal frame")?;
 
@@ -2109,7 +2119,7 @@ fn render_logical_line_window_with_status_indexed(
             if range.continuation_indent > 0 {
                 line_spans.push(Span::styled(
                     " ".repeat(range.continuation_indent),
-                    Style::default(),
+                    plain_style(),
                 ));
             }
             line_spans.extend(slice_spans(
@@ -2539,9 +2549,7 @@ fn highlight_content_window_indexed(
                 line,
                 0,
                 line.len(),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                diff_hunk_style(),
                 window_start,
                 window_end,
             );
@@ -2554,19 +2562,17 @@ fn highlight_content_window_indexed(
                 line,
                 0,
                 line.len(),
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
+                diff_file_style(),
                 window_start,
                 window_end,
             );
             spans
         }
         ViewMode::Diff if line.starts_with('+') => {
-            highlight_diff_payload_window(line, Color::Green, window_start, window_end)
+            highlight_diff_payload_window(line, diff_added_style(), window_start, window_end)
         }
         ViewMode::Diff if line.starts_with('-') => {
-            highlight_diff_payload_window(line, Color::Red, window_start, window_end)
+            highlight_diff_payload_window(line, diff_removed_style(), window_start, window_end)
         }
         ViewMode::Diff => highlight_structured_window(line, window_start, window_end, index),
     }
@@ -2574,7 +2580,7 @@ fn highlight_content_window_indexed(
 
 fn highlight_diff_payload_window(
     line: &str,
-    color: Color,
+    marker_style: Style,
     window_start: usize,
     window_end: usize,
 ) -> Vec<Span<'static>> {
@@ -2584,7 +2590,7 @@ fn highlight_diff_payload_window(
         line,
         0,
         1,
-        Style::default().fg(color).add_modifier(Modifier::BOLD),
+        marker_style,
         window_start,
         window_end,
     );
@@ -2662,7 +2668,7 @@ fn highlight_json_like_window(
                 line,
                 cursor,
                 end,
-                Style::default(),
+                plain_style(),
                 window_start,
                 window_end,
             );
@@ -2767,7 +2773,7 @@ fn highlight_json_like_window(
             line,
             cursor,
             cursor + ch.len_utf8(),
-            Style::default(),
+            plain_style(),
             window_start,
             window_end,
         );
@@ -3144,7 +3150,7 @@ fn highlight_xml_tag_window(
                 source,
                 tag_start + index,
                 tag_start + end,
-                Style::default(),
+                plain_style(),
                 window_start,
                 window_end,
             );
@@ -3215,7 +3221,7 @@ fn highlight_xml_tag_window(
             source,
             tag_start + index,
             tag_start + index + ch.len_utf8(),
-            Style::default(),
+            plain_style(),
             window_start,
             window_end,
         );
@@ -3502,69 +3508,85 @@ fn floor_char_boundary(text: &str, index: usize) -> usize {
     index
 }
 
+fn style_fg(color: Color) -> Style {
+    Style::default().fg(color).bg(PALETTE_BACKGROUND)
+}
+
+fn plain_style() -> Style {
+    style_fg(PALETTE_TEXT)
+}
+
 fn gutter_style() -> Style {
-    Style::default().fg(Color::DarkGray)
+    style_fg(PALETTE_MUTED)
 }
 
 fn punctuation_style() -> Style {
-    Style::default().fg(Color::DarkGray)
+    style_fg(PALETTE_MUTED)
 }
 
 fn key_style() -> Style {
-    Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD)
+    style_fg(PALETTE_BLUE)
 }
 
 fn xml_depth_style(depth: usize) -> Style {
     const COLORS: [Color; 6] = [
-        Color::Cyan,
-        Color::Magenta,
-        Color::Yellow,
-        Color::Green,
-        Color::Blue,
-        Color::LightCyan,
+        PALETTE_CYAN,
+        PALETTE_PURPLE,
+        PALETTE_YELLOW,
+        PALETTE_GREEN,
+        PALETTE_BLUE,
+        PALETTE_ORANGE,
     ];
 
-    Style::default()
-        .fg(COLORS[depth % COLORS.len()])
-        .add_modifier(Modifier::BOLD)
+    style_fg(COLORS[depth % COLORS.len()])
 }
 
 fn attr_style() -> Style {
-    Style::default().fg(Color::Yellow)
+    style_fg(PALETTE_YELLOW)
 }
 
 fn string_style() -> Style {
-    Style::default().fg(Color::Green)
+    style_fg(PALETTE_GREEN)
 }
 
 fn escape_style() -> Style {
-    Style::default()
-        .fg(Color::LightMagenta)
-        .add_modifier(Modifier::BOLD)
+    style_fg(PALETTE_PURPLE)
 }
 
 fn number_style() -> Style {
-    Style::default().fg(Color::Magenta)
+    style_fg(PALETTE_ORANGE)
 }
 
 fn bool_style() -> Style {
-    Style::default()
-        .fg(Color::Yellow)
-        .add_modifier(Modifier::BOLD)
+    style_fg(PALETTE_YELLOW)
 }
 
 fn null_style() -> Style {
-    Style::default().fg(Color::Blue)
+    style_fg(PALETTE_BLUE)
 }
 
 fn error_style() -> Style {
-    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+    style_fg(PALETTE_RED)
 }
 
 fn search_match_bg() -> Color {
-    Color::Rgb(222, 196, 121)
+    PALETTE_SELECTION
+}
+
+fn diff_hunk_style() -> Style {
+    style_fg(PALETTE_CYAN)
+}
+
+fn diff_file_style() -> Style {
+    style_fg(PALETTE_YELLOW)
+}
+
+fn diff_added_style() -> Style {
+    style_fg(PALETTE_GREEN)
+}
+
+fn diff_removed_style() -> Style {
+    style_fg(PALETTE_RED)
 }
 
 #[cfg(test)]
@@ -4284,8 +4306,20 @@ mod tests {
                 .iter()
                 .all(|style| style.bg == Some(search_match_bg()))
         );
-        assert!(styles.iter().any(|style| style.fg == Some(Color::Cyan)));
-        assert!(styles.iter().any(|style| style.fg == Some(Color::Green)));
+        assert!(styles.iter().any(|style| style.fg == Some(PALETTE_BLUE)));
+        assert!(styles.iter().any(|style| style.fg == Some(PALETTE_GREEN)));
+    }
+
+    #[test]
+    fn syntax_palette_uses_muted_rgb_colors() {
+        assert_eq!(plain_style().fg, Some(PALETTE_TEXT));
+        assert_eq!(plain_style().bg, Some(PALETTE_BACKGROUND));
+        assert_eq!(gutter_style().fg, Some(PALETTE_MUTED));
+        assert_eq!(key_style().fg, Some(PALETTE_BLUE));
+        assert_eq!(string_style().fg, Some(PALETTE_GREEN));
+        assert_eq!(number_style().fg, Some(PALETTE_ORANGE));
+        assert_eq!(error_style().fg, Some(PALETTE_RED));
+        assert_eq!(search_match_bg(), PALETTE_SELECTION);
     }
 
     #[test]

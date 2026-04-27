@@ -16,6 +16,10 @@ for GitHub Release notes, so every published version must have a matching
   index during idle time without retaining formatted lines in memory.
 - Keep redirected formatting and diff output on the existing full deterministic
   path while the interactive viewer uses lazy preview data.
+- Use an explicit muted RGB palette and One Dark-style background for the
+  terminal viewer's syntax colors, diff markers, gutters, and search highlights
+  so high-contrast terminal themes do not turn highlights into overly bright
+  ANSI colors.
 
 ## [0.1.5] - 2026-04-27
 
