@@ -23,7 +23,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+#[cfg(test)]
 use crate::line_index::IndexedTempFile;
+use crate::line_index::ViewFile;
 
 const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const EVENT_DRAIN_BUDGET: Duration = Duration::from_millis(8);
@@ -43,6 +45,9 @@ const PREWARM_PAGES: usize = 2;
 const PREWARM_MAX_LINES: usize = 192;
 const PREWARM_MAX_LINE_BYTES: usize = 16 * 1024;
 const PREWARM_BUDGET: Duration = Duration::from_millis(4);
+const LAZY_PRELOAD_LINES: usize = 4096;
+const LAZY_PRELOAD_RECORDS: usize = 64;
+const LAZY_PRELOAD_BUDGET: Duration = Duration::from_millis(6);
 const JUMP_BUFFER_MAX_DIGITS: usize = 20;
 const SEARCH_CHUNK_LINES: usize = 4096;
 const TAIL_ROW_OFFSET: usize = usize::MAX;
@@ -53,7 +58,7 @@ pub enum ViewMode {
     Diff,
 }
 
-pub fn run(file: IndexedTempFile, mode: ViewMode) -> Result<()> {
+pub fn run(file: Box<dyn ViewFile>, mode: ViewMode) -> Result<()> {
     let mut stdout = io::stdout();
     enable_raw_mode().context("failed to enable raw mode")?;
     let mut cleanup = TerminalCleanup::active();
@@ -62,7 +67,7 @@ pub fn run(file: IndexedTempFile, mode: ViewMode) -> Result<()> {
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("failed to create terminal")?;
-    let result = run_loop(&mut terminal, &file, mode);
+    let result = run_loop(&mut terminal, file.as_ref(), mode);
 
     disable_raw_mode().ok();
     execute!(
@@ -106,7 +111,7 @@ impl Drop for TerminalCleanup {
 
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    file: &IndexedTempFile,
+    file: &dyn ViewFile,
     mode: ViewMode,
 ) -> Result<()> {
     let mut state = ViewState::default();
@@ -139,6 +144,11 @@ fn run_loop(
             EVENT_POLL_INTERVAL
         };
         if !event::poll(poll_interval).context("failed to poll terminal event")? {
+            dirty |= file.preload(
+                LAZY_PRELOAD_LINES,
+                LAZY_PRELOAD_RECORDS,
+                LAZY_PRELOAD_BUDGET,
+            )?;
             continue;
         }
 
@@ -539,7 +549,7 @@ fn clear_search_message(state: &mut ViewState) -> bool {
     was_active
 }
 
-fn process_search_step(file: &IndexedTempFile, state: &mut ViewState) -> Result<bool> {
+fn process_search_step(file: &dyn ViewFile, state: &mut ViewState) -> Result<bool> {
     let Some(mut task) = state.search_task.take() else {
         return Ok(false);
     };
@@ -552,7 +562,15 @@ fn process_search_step(file: &IndexedTempFile, state: &mut ViewState) -> Result<
     }
 
     task.next_line = step.next_line;
+    let incomplete_index = !file.line_count_exact();
     task.remaining = task.remaining.saturating_sub(step.scanned);
+    if incomplete_index
+        && task.direction == SearchDirection::Forward
+        && task.remaining == 0
+        && step.scanned > 0
+    {
+        task.remaining = SEARCH_CHUNK_LINES;
+    }
     if task.remaining == 0 || step.scanned == 0 {
         state.search_message = Some(format!("not found: {}", task.query));
         return Ok(true);
@@ -569,15 +587,16 @@ struct SearchStep {
     scanned: usize,
 }
 
-fn scan_search_chunk(file: &IndexedTempFile, task: &SearchTask) -> Result<SearchStep> {
+fn scan_search_chunk(file: &dyn ViewFile, task: &SearchTask) -> Result<SearchStep> {
     match task.direction {
         SearchDirection::Forward => scan_search_forward(file, task),
         SearchDirection::Backward => scan_search_backward(file, task),
     }
 }
 
-fn scan_search_forward(file: &IndexedTempFile, task: &SearchTask) -> Result<SearchStep> {
+fn scan_search_forward(file: &dyn ViewFile, task: &SearchTask) -> Result<SearchStep> {
     let line_count = file.line_count();
+    let exact_line_count = file.line_count_exact();
     if line_count == 0 || task.remaining == 0 {
         return Ok(SearchStep {
             found_line: None,
@@ -610,7 +629,7 @@ fn scan_search_forward(file: &IndexedTempFile, task: &SearchTask) -> Result<Sear
         scanned += lines.len();
         next_line = next_line.saturating_add(lines.len());
         if next_line >= line_count {
-            next_line = 0;
+            next_line = if exact_line_count { 0 } else { line_count };
         }
     }
 
@@ -621,7 +640,7 @@ fn scan_search_forward(file: &IndexedTempFile, task: &SearchTask) -> Result<Sear
     })
 }
 
-fn scan_search_backward(file: &IndexedTempFile, task: &SearchTask) -> Result<SearchStep> {
+fn scan_search_backward(file: &dyn ViewFile, task: &SearchTask) -> Result<SearchStep> {
     let line_count = file.line_count();
     if line_count == 0 || task.remaining == 0 {
         return Ok(SearchStep {
@@ -862,7 +881,7 @@ fn scroll_x_by(x: &mut usize, delta: isize) -> bool {
 
 fn draw_view(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    file: &IndexedTempFile,
+    file: &dyn ViewFile,
     mode: ViewMode,
     state: &mut ViewState,
     line_cache: &mut LineWindowCache,
@@ -872,7 +891,11 @@ fn draw_view(
     let size = terminal.size().context("failed to read terminal size")?;
     let visible_height = usize::from(size.height.saturating_sub(3));
     let visible_width = usize::from(size.width.saturating_sub(2));
-    let gutter_digits = line_number_digits(file.line_count());
+    let gutter_digits = if file.line_count_exact() {
+        line_number_digits(file.line_count())
+    } else {
+        line_number_digits(file.line_count()).max(4)
+    };
     let gutter_width = gutter_digits + 3;
     let content_width = visible_width.saturating_sub(gutter_width);
     let render_context = RenderContext {
@@ -989,7 +1012,7 @@ fn draw_view(
     let title = format!(
         " {} | {} lines | {}-{} | {:>3}% | {} ",
         file.label(),
-        file.line_count(),
+        line_count_text(file),
         current,
         bottom,
         progress,
@@ -1004,7 +1027,7 @@ fn draw_view(
         format!(
             " go to line: {} / {} | Enter jump | Backspace edit | Esc cancel ",
             state.jump_buffer,
-            file.line_count()
+            line_count_text(file)
         )
     } else if let Some(message) = &state.search_message {
         format!(" {message} | / search | n/N | Esc clear ")
@@ -1068,6 +1091,15 @@ fn display_mode_text(state: &ViewState) -> String {
     format!("nowrap x:{}", state.x)
 }
 
+fn line_count_text(file: &dyn ViewFile) -> String {
+    let count = file.line_count();
+    if file.line_count_exact() {
+        count.to_string()
+    } else {
+        format!("{count}+")
+    }
+}
+
 fn wrap_position_text(state: &ViewState) -> Option<String> {
     if !state.wrap || state.top_row_offset == 0 {
         return None;
@@ -1089,17 +1121,21 @@ struct LineWindow<'a> {
 impl LineWindowCache {
     fn read(
         &mut self,
-        file: &IndexedTempFile,
+        file: &dyn ViewFile,
         top: usize,
         height: usize,
         margin: usize,
     ) -> Result<LineWindow<'_>> {
-        if height == 0 || top >= file.line_count() {
+        if height == 0 || (file.line_count_exact() && top >= file.line_count()) {
             return Ok(LineWindow { lines: &[] });
         }
 
         let cached_end = self.start.saturating_add(self.lines.len());
-        let requested_end = top.saturating_add(height).min(file.line_count());
+        let requested_end = if file.line_count_exact() {
+            top.saturating_add(height).min(file.line_count())
+        } else {
+            top.saturating_add(height)
+        };
         if top >= self.start && requested_end <= cached_end {
             let start = top - self.start;
             let end = requested_end - self.start;
@@ -1109,9 +1145,13 @@ impl LineWindowCache {
         }
 
         let fetch_start = top.saturating_sub(margin);
-        let fetch_count = height
-            .saturating_add(margin.saturating_mul(2))
-            .min(file.line_count().saturating_sub(fetch_start));
+        let fetch_count = if file.line_count_exact() {
+            height
+                .saturating_add(margin.saturating_mul(2))
+                .min(file.line_count().saturating_sub(fetch_start))
+        } else {
+            height.saturating_add(margin.saturating_mul(2))
+        };
         self.lines = file.read_window(fetch_start, fetch_count)?;
         self.start = fetch_start;
 
@@ -1452,7 +1492,7 @@ struct TailPositionCache {
 impl TailPositionCache {
     fn position(
         &mut self,
-        file: &IndexedTempFile,
+        file: &dyn ViewFile,
         visible_height: usize,
         context: RenderContext,
     ) -> Result<ViewPosition> {
@@ -1482,7 +1522,7 @@ impl TailPositionCache {
 }
 
 fn compute_tail_position(
-    file: &IndexedTempFile,
+    file: &dyn ViewFile,
     visible_height: usize,
     context: RenderContext,
 ) -> Result<ViewPosition> {
@@ -1808,7 +1848,7 @@ fn range_is_highlighted(start: usize, end: usize, ranges: &[Range<usize>]) -> bo
 }
 
 fn prewarm_render_cache(
-    file: &IndexedTempFile,
+    file: &dyn ViewFile,
     line_cache: &mut LineWindowCache,
     render_cache: &mut RenderedLineCache,
     top: usize,
@@ -1856,7 +1896,7 @@ fn prewarm_render_cache(
 }
 
 fn prewarm_wrapped_render_cache(
-    file: &IndexedTempFile,
+    file: &dyn ViewFile,
     line_cache: &mut LineWindowCache,
     render_cache: &mut RenderedLineCache,
     top: usize,
@@ -2415,7 +2455,7 @@ fn line_number_digits(line_count: usize) -> usize {
 }
 
 fn viewer_progress_percent(
-    file: &IndexedTempFile,
+    file: &dyn ViewFile,
     context: RenderContext,
     logical_bottom: usize,
     viewport_bottom: Option<ViewportBottom>,
@@ -2430,7 +2470,7 @@ fn viewer_progress_percent(
     byte_progress_percent(bottom, file.byte_len())
 }
 
-fn viewport_bottom_byte_offset(file: &IndexedTempFile, bottom: ViewportBottom) -> u64 {
+fn viewport_bottom_byte_offset(file: &dyn ViewFile, bottom: ViewportBottom) -> u64 {
     if bottom.line_end {
         if bottom.line_index + 1 >= file.line_count() {
             return file.byte_len();
@@ -3531,6 +3571,7 @@ fn search_match_bg() -> Color {
 mod tests {
     use std::io::Write;
 
+    use anyhow::Result;
     use tempfile::NamedTempFile;
 
     use super::*;
@@ -4136,6 +4177,56 @@ mod tests {
         assert!(action.dirty);
         assert!(!action.quit);
         assert_eq!(state.search_message, None);
+    }
+
+    #[test]
+    fn backward_search_does_not_rearm_incomplete_lazy_prefix() {
+        struct IncompleteViewFile {
+            lines: Vec<String>,
+        }
+
+        impl ViewFile for IncompleteViewFile {
+            fn label(&self) -> &str {
+                "lazy"
+            }
+
+            fn line_count(&self) -> usize {
+                self.lines.len()
+            }
+
+            fn line_count_exact(&self) -> bool {
+                false
+            }
+
+            fn byte_len(&self) -> u64 {
+                0
+            }
+
+            fn byte_offset_for_line(&self, _line: usize) -> u64 {
+                0
+            }
+
+            fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>> {
+                Ok(self.lines.iter().skip(start).take(count).cloned().collect())
+            }
+        }
+
+        let file = IncompleteViewFile {
+            lines: vec!["alpha".to_owned(), "beta".to_owned()],
+        };
+        let mut state = ViewState::default();
+
+        start_search(
+            &mut state,
+            "missing".to_owned(),
+            SearchDirection::Backward,
+            1,
+            file.line_count(),
+        );
+        assert!(process_search_step(&file, &mut state).unwrap());
+
+        assert!(state.search_task.is_none());
+        assert_eq!(state.search_message.as_deref(), Some("not found: missing"));
     }
 
     #[test]

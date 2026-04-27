@@ -1,6 +1,7 @@
 mod diff;
 mod format;
 mod input;
+mod lazy;
 mod line_index;
 mod viewer;
 
@@ -10,6 +11,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use format::{FormatKind, FormatOptions};
 use input::InputSource;
+use line_index::ViewFile;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -88,12 +90,13 @@ fn run_format(command: FormatCommand) -> Result<()> {
         indent: command.indent,
     };
 
-    let formatted = format::format_source_to_temp(&input, &options)?;
-
     if should_view() {
-        let indexed = line_index::IndexedTempFile::new(input.label().to_owned(), formatted)?;
-        viewer::run(indexed, viewer::ViewMode::Plain)
+        viewer::run(
+            open_preview_file(&input, &options)?,
+            viewer::ViewMode::Plain,
+        )
     } else {
+        let formatted = format::format_source_to_temp(&input, &options)?;
         copy_temp_to_stdout(&formatted)
     }
 }
@@ -115,7 +118,7 @@ fn run_diff(command: DiffCommand) -> Result<()> {
     if view {
         let label = format!("{} <-> {}", left.label(), right.label());
         let indexed = line_index::IndexedTempFile::new(label, diffed)?;
-        viewer::run(indexed, viewer::ViewMode::Diff)
+        viewer::run(Box::new(indexed), viewer::ViewMode::Diff)
     } else {
         copy_temp_to_stdout(&diffed)
     }
@@ -123,6 +126,18 @@ fn run_diff(command: DiffCommand) -> Result<()> {
 
 fn should_view() -> bool {
     io::stdout().is_terminal()
+}
+
+fn open_preview_file(input: &InputSource, options: &FormatOptions) -> Result<Box<dyn ViewFile>> {
+    if lazy::should_use_lazy_preview(input, options)? {
+        return Ok(Box::new(lazy::LazyFormattedFile::new(input, *options)?));
+    }
+
+    let formatted = format::format_source_to_temp(input, options)?;
+    Ok(Box::new(line_index::IndexedTempFile::new(
+        input.label().to_owned(),
+        formatted,
+    )?))
 }
 
 fn copy_temp_to_stdout(temp: &tempfile::NamedTempFile) -> Result<()> {

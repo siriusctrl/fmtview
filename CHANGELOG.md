@@ -8,6 +8,15 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Changed
+
+- Open record-like TTY previews lazily, formatting only the visible records
+  first so very large JSONL/log-style files can show the first screen before the
+  whole file is formatted and indexed, then continue extending the session
+  index during idle time without retaining formatted lines in memory.
+- Keep redirected formatting and diff output on the existing full deterministic
+  path while the interactive viewer uses lazy preview data.
+
 ## [0.1.5] - 2026-04-27
 
 ### Changed

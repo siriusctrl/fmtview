@@ -127,6 +127,29 @@ fn try_format_source_to_temp(
     Ok(temp)
 }
 
+pub fn format_record_to_string(input: &[u8], kind: FormatKind, indent: usize) -> Result<String> {
+    let mut output = Vec::with_capacity(input.len().min(8192));
+    match kind {
+        FormatKind::Auto => unreachable!("auto must be resolved before formatting a record"),
+        FormatKind::Json | FormatKind::Jsonl => {
+            format_json_value(Cursor::new(input), &mut output, indent)
+                .context("failed to parse JSON record")?
+        }
+        FormatKind::Xml => {
+            format_xml_reader(Cursor::new(input), &mut output, indent)
+                .context("failed to parse XML-compatible record")?;
+            while output.ends_with(b"\n") || output.ends_with(b"\r") {
+                output.pop();
+            }
+        }
+    }
+    String::from_utf8(output).context("formatted record was not valid UTF-8")
+}
+
+pub fn trim_record_line_end(line: &[u8]) -> &[u8] {
+    trim_line_end(line)
+}
+
 fn format_json<W: Write>(
     source: &InputSource,
     output: &mut W,

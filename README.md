@@ -182,9 +182,19 @@ content still gives visible scrolling feedback. The left gutter shows line
 numbers, and wrapped continuation rows use a lighter continuation gutter with
 periodic tick marks.
 
+For record-like inputs such as JSONL logs, the terminal viewer formats records
+on demand instead of formatting and indexing the whole file before the first
+screen. While the lazy index is still growing, the title may show a `+` after
+the line count; the viewer continues extending that session index during idle
+time. Redirected output still performs the full deterministic formatting pass.
+
 To jump to a specific line, type the line number directly and press Enter. While
 a line jump is pending, the footer shows the target line; Backspace edits it and
-Esc cancels it. Out-of-range line numbers are clamped to the file.
+Esc cancels it. Out-of-range line numbers are clamped to the file. On fully
+indexed files, jumps seek through the formatted line-offset index instead of
+scanning from the top, so jumping to a deep line only reads the target window.
+On lazy record previews, jumps are bounded by the currently discovered session
+index while background preloading continues to extend it.
 
 To search, press `/`, type a substring, and press Enter. Search is
 case-sensitive and runs over the formatted text you are viewing. `fmtview` jumps
@@ -230,8 +240,16 @@ end tag, should be normalized first.
 
 `fmtview` does not keep the rendered output in memory for browsing.
 
-- Input is formatted into a temporary file.
-- A compact line-offset index is built once.
+- Normal inputs are formatted into a temporary file.
+- A compact byte-offset index is built for formatted lines. The viewer uses that
+  index to seek directly to the current window, which keeps paging and line
+  jumps from rereading earlier content.
+- Record-like TTY previews, such as JSONL logs, use a lazy path: `fmtview`
+  sniffs a small prefix to confirm that the input is independent records, then
+  formats only the records needed for the visible window.
+- Lazy preview writes formatted records into a temporary spool and keeps compact
+  offsets, not formatted strings, in memory. The title shows `N+` lines while
+  the session index is still incomplete and idle time extends the index.
 - The viewer redraws on input or resize events, not on a fixed idle timer.
 - Bursty keyboard, mouse wheel, and trackpad events are coalesced before redraw,
   so fast scrolling does not render one frame per raw terminal event.
@@ -245,7 +263,8 @@ end tag, should be normalized first.
   through native integer or floating-point types.
 
 This keeps the viewer usable for large files while preserving scriptable stdout
-behavior when you redirect output.
+behavior when you redirect output. Redirected formatting and diff output still
+use the full deterministic formatting path rather than the lazy viewer path.
 
 ## CLI
 

@@ -1,10 +1,25 @@
 use std::{
     fs::File,
     io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
 use tempfile::NamedTempFile;
+
+pub trait ViewFile {
+    fn label(&self) -> &str;
+    fn line_count(&self) -> usize;
+    fn line_count_exact(&self) -> bool {
+        true
+    }
+    fn byte_len(&self) -> u64;
+    fn byte_offset_for_line(&self, line: usize) -> u64;
+    fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>>;
+    fn preload(&self, _max_lines: usize, _max_records: usize, _budget: Duration) -> Result<bool> {
+        Ok(false)
+    }
+}
 
 pub struct IndexedTempFile {
     label: String,
@@ -28,24 +43,26 @@ impl IndexedTempFile {
             len,
         })
     }
+}
 
-    pub fn label(&self) -> &str {
+impl ViewFile for IndexedTempFile {
+    fn label(&self) -> &str {
         &self.label
     }
 
-    pub fn line_count(&self) -> usize {
+    fn line_count(&self) -> usize {
         self.offsets.len()
     }
 
-    pub fn byte_len(&self) -> u64 {
+    fn byte_len(&self) -> u64 {
         self.len
     }
 
-    pub fn byte_offset_for_line(&self, line: usize) -> u64 {
+    fn byte_offset_for_line(&self, line: usize) -> u64 {
         self.offsets.get(line).copied().unwrap_or(self.len)
     }
 
-    pub fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>> {
+    fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>> {
         if count == 0 || start >= self.offsets.len() {
             return Ok(Vec::new());
         }
