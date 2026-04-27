@@ -1,6 +1,6 @@
 # fmtview
 
-Fast terminal preview, formatting, and diffing for JSON, JSONL, and XML.
+Fast terminal preview, formatting, and diffing for JSON, JSONL, and XML-compatible markup.
 
 This npm package installs the prebuilt static Linux x64 `fmtview` binary.
 

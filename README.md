@@ -1,6 +1,7 @@
 # fmtview
 
-Fast terminal preview, formatting, and diffing for JSON, JSONL, and XML.
+Fast terminal preview, formatting, and diffing for JSON, JSONL, and
+XML-compatible markup.
 
 `fmtview` is built for the workflow where you want to inspect structured data in
 a terminal first, and only write output when you explicitly redirect it.
@@ -9,6 +10,7 @@ a terminal first, and only write output when you explicitly redirect it.
 fmtview payload.json
 fmtview events.jsonl
 fmtview response.xml
+fmtview page.html
 fmtview diff old.json new.json
 ```
 
@@ -24,20 +26,21 @@ fmtview diff old.json new.json > changes.diff
 
 Pretty-printers are useful, but they usually dump text and hand scrolling to
 your pager. Pagers are useful, but they do not understand JSON strings that hide
-XML payloads or nested markup.
+XML payloads, XHTML snippets, or nested markup.
 
 `fmtview` combines the two:
 
-- Format JSON, JSONL, and XML from files, stdin, or literal strings.
+- Format JSON, JSONL, and XML-compatible markup from files, stdin, or literal
+  strings.
 - Preview in a terminal UI with line numbers, progress, and indent-aware soft
   wrap.
 - Scroll with the keyboard, mouse wheel, or a trackpad without re-rendering on
   every individual input event.
-- Highlight JSON, XML, and unified diff output.
+- Highlight JSON, XML-compatible markup, and unified diff output.
 - Highlight JSON string escape tokens such as `\n`, `\t`, `\r`, `\"`, and
   `\\`.
-- Pair XML opening and closing tags by depth, including XML embedded inside JSON
-  string values.
+- Pair XML-style opening and closing tags by depth, including markup embedded
+  inside JSON string values.
 - Search formatted text from inside the viewer with visible match highlighting.
 - Preserve data semantics. JSON strings are highlighted for readability, not
   rewritten.
@@ -105,11 +108,13 @@ Write formatted output:
 
 ```sh
 fmtview data.xml > pretty.xml
+fmtview page.html > pretty.html
 cat events.jsonl | fmtview --type jsonl > pretty.jsonl
 ```
 
-Redirected JSONL output stays JSONL: each input record is written as one
-physical output line so downstream line-oriented tools can continue reading it.
+JSONL input is still processed one record at a time, but each record is
+pretty-printed with structural indentation. Deeply nested records expand across
+multiple output lines.
 
 Diff after formatting both sides:
 
@@ -127,6 +132,7 @@ The repository includes small sample files that exercise the viewer features:
 fmtview examples/showcase.json
 fmtview examples/events.jsonl
 fmtview examples/response.xml
+fmtview examples/page.html
 fmtview diff examples/diff-left.json examples/diff-right.json
 ```
 
@@ -134,6 +140,10 @@ Use the mouse wheel or trackpad to scroll, `Space`/`f` and `b` to page, `w` to
 toggle wrap/nowrap, and `q` to exit. `examples/showcase.json` includes embedded
 XML, a deliberately mismatched XML closing tag, escaped special tokens, nested
 JSON, arrays, booleans, nulls, and long strings for wrap testing.
+`examples/events.jsonl` includes a single deeply nested JSONL record on one
+physical input line so you can verify that JSONL records are expanded by JSON
+structure during formatting. `examples/page.html` is well-formed HTML that
+exercises the XML-compatible markup formatter.
 
 ## Viewer
 
@@ -172,7 +182,8 @@ To search, press `/`, type a substring, and press Enter. Search is
 case-sensitive and runs over the formatted text you are viewing. `fmtview` jumps
 to the next matching line, then `n` and `N` repeat the search forward and
 backward with wrap-around. Matches visible in the current viewport are
-highlighted with a warm background without replacing JSON/XML syntax colors.
+highlighted with a warm background without replacing JSON or markup syntax
+colors.
 
 Mouse capture is enabled while the viewer is open so wheel and trackpad events
 go to `fmtview`. If your terminal uses mouse capture for selection, hold the
@@ -187,9 +198,9 @@ Syntax highlighting and wrapping are applied only to the visible window. That
 means a very large file does not require a full highlighted render before you
 can start scrolling.
 
-## Embedded XML
+## Markup
 
-JSON often carries XML as string data:
+JSON often carries XML, XHTML, or other tag-shaped markup as string data:
 
 ```json
 {
@@ -198,9 +209,14 @@ JSON often carries XML as string data:
 ```
 
 `fmtview` keeps that string unchanged in formatted output, but the viewer still
-tokenizes the XML inside it. Opening and closing tags are paired by depth, so
+tokenizes the markup inside it. Opening and closing tags are paired by depth, so
 `<root>` and `</root>` share one color while nested tags use another. A local
 mismatch such as `"<root></item>"` is highlighted as an error.
+
+Standalone markup uses XML parsing rules. Well-formed XML, XHTML, and
+XML-compatible HTML snippets are good inputs; browser-tolerant HTML that relies
+on omitted closing tags, such as `<br>` or `<img>` without a closing slash or
+end tag, should be normalized first.
 
 ## Performance Model
 
@@ -216,7 +232,7 @@ mismatch such as `"<root></item>"` is highlighted as an error.
   prewarmed around the current viewport.
 - Highlighting and wrapping scan only the visible prefix of long lines.
 - Viewer search scans the indexed formatted file in bounded chunks.
-- JSON, JSONL, and XML are processed incrementally.
+- JSON, JSONL, and XML-compatible markup are processed incrementally.
 - JSON numbers are written from their original tokens instead of being coerced
   through native integer or floating-point types.
 

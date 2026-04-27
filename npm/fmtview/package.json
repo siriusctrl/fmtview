@@ -1,7 +1,7 @@
 {
   "name": "fmtview",
-  "version": "0.1.2",
-  "description": "Fast terminal formatter and viewer for JSON, JSONL, XML, and formatted diffs",
+  "version": "0.1.3",
+  "description": "Fast terminal formatter and viewer for JSON, JSONL, XML-compatible markup, and formatted diffs",
   "license": "MIT",
   "homepage": "https://github.com/siriusctrl/fmtview#readme",
   "repository": {
@@ -15,6 +15,7 @@
     "json",
     "jsonl",
     "xml",
+    "html",
     "cli",
     "viewer"
   ],

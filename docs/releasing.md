@@ -199,7 +199,7 @@ Before tagging:
 After publishing:
 
 - Install from the published channel and run `fmtview --version`.
-- Open a JSON, JSONL, and XML sample in the viewer.
+- Open a JSON, JSONL, and XML-compatible markup sample in the viewer.
 - Verify GitHub Release checksums.
 - Verify crates.io or npm package pages point to the repository.
 

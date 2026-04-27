@@ -82,7 +82,7 @@ fn detect_kind(source: &InputSource) -> Result<FormatKind> {
     {
         Some("json") => return Ok(FormatKind::Json),
         Some("jsonl" | "ndjson") => return Ok(FormatKind::Jsonl),
-        Some("xml") => return Ok(FormatKind::Xml),
+        Some("xml" | "html" | "htm" | "xhtml") => return Ok(FormatKind::Xml),
         _ => {}
     }
 
@@ -132,13 +132,8 @@ fn format_json<W: Write>(
     output: &mut W,
     options: &FormatOptions,
 ) -> Result<()> {
-    format_json_value(
-        BufReader::new(source.open()?),
-        output,
-        JsonLayout::Pretty,
-        options.indent,
-    )
-    .context("failed to parse JSON")?;
+    format_json_value(BufReader::new(source.open()?), output, options.indent)
+        .context("failed to parse JSON")?;
     writeln!(output)?;
     Ok(())
 }
@@ -146,7 +141,7 @@ fn format_json<W: Write>(
 fn format_jsonl<W: Write>(
     source: &InputSource,
     output: &mut W,
-    _options: &FormatOptions,
+    options: &FormatOptions,
 ) -> Result<()> {
     let mut reader = BufReader::new(source.open()?);
     let mut line = Vec::with_capacity(8192);
@@ -168,18 +163,12 @@ fn format_jsonl<W: Write>(
             continue;
         }
 
-        format_json_value(Cursor::new(trimmed), output, JsonLayout::SingleLine, 0)
+        format_json_value(Cursor::new(trimmed), output, options.indent)
             .with_context(|| format!("failed to parse JSONL line {line_number}"))?;
         writeln!(output)?;
     }
 
     Ok(())
-}
-
-#[derive(Debug, Clone, Copy)]
-enum JsonLayout {
-    Pretty,
-    SingleLine,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -190,15 +179,9 @@ enum JsonSeparator {
 
 // Token-based formatting keeps JSON numbers exact without materializing the
 // whole document or coercing through native numeric types.
-fn format_json_value<R: BufRead, W: Write>(
-    input: R,
-    output: &mut W,
-    layout: JsonLayout,
-    indent: usize,
-) -> Result<()> {
+fn format_json_value<R: BufRead, W: Write>(input: R, output: &mut W, indent: usize) -> Result<()> {
     let mut formatter = JsonFormatter {
         input,
-        layout,
         indent: vec![b' '; indent],
         offset: 0,
     };
@@ -207,7 +190,6 @@ fn format_json_value<R: BufRead, W: Write>(
 
 struct JsonFormatter<R> {
     input: R,
-    layout: JsonLayout,
     indent: Vec<u8>,
     offset: usize,
 }
@@ -251,10 +233,7 @@ impl<R: BufRead> JsonFormatter<R> {
             return Ok(());
         }
 
-        match self.layout {
-            JsonLayout::Pretty => self.write_pretty_object(output, depth),
-            JsonLayout::SingleLine => self.write_single_line_object(output, depth),
-        }
+        self.write_pretty_object(output, depth)
     }
 
     fn write_pretty_object<W: Write>(&mut self, output: &mut W, depth: usize) -> Result<()> {
@@ -280,29 +259,6 @@ impl<R: BufRead> JsonFormatter<R> {
         }
     }
 
-    fn write_single_line_object<W: Write>(&mut self, output: &mut W, depth: usize) -> Result<()> {
-        let mut first = true;
-        loop {
-            if !first {
-                output.write_all(b", ")?;
-            }
-            self.skip_ws()?;
-            self.write_string(output)?;
-            self.skip_ws()?;
-            self.expect_byte(b':')?;
-            output.write_all(b": ")?;
-            self.write_value(output, depth + 1)?;
-
-            match self.read_separator(b'}')? {
-                JsonSeparator::Comma => first = false,
-                JsonSeparator::End => {
-                    output.write_all(b"}")?;
-                    return Ok(());
-                }
-            }
-        }
-    }
-
     fn write_array<W: Write>(&mut self, output: &mut W, depth: usize) -> Result<()> {
         self.expect_byte(b'[')?;
         output.write_all(b"[")?;
@@ -312,10 +268,7 @@ impl<R: BufRead> JsonFormatter<R> {
             return Ok(());
         }
 
-        match self.layout {
-            JsonLayout::Pretty => self.write_pretty_array(output, depth),
-            JsonLayout::SingleLine => self.write_single_line_array(output, depth),
-        }
+        self.write_pretty_array(output, depth)
     }
 
     fn write_pretty_array<W: Write>(&mut self, output: &mut W, depth: usize) -> Result<()> {
@@ -329,24 +282,6 @@ impl<R: BufRead> JsonFormatter<R> {
                 JsonSeparator::End => {
                     output.write_all(b"\n")?;
                     self.write_indent(output, depth)?;
-                    output.write_all(b"]")?;
-                    return Ok(());
-                }
-            }
-        }
-    }
-
-    fn write_single_line_array<W: Write>(&mut self, output: &mut W, depth: usize) -> Result<()> {
-        let mut first = true;
-        loop {
-            if !first {
-                output.write_all(b", ")?;
-            }
-            self.write_value(output, depth + 1)?;
-
-            match self.read_separator(b']')? {
-                JsonSeparator::Comma => first = false,
-                JsonSeparator::End => {
                     output.write_all(b"]")?;
                     return Ok(());
                 }
