@@ -1,11 +1,20 @@
 use std::{
-    io::Write,
+    cell::Cell,
+    io::{self, Write},
+    rc::Rc,
     time::{Duration, Instant},
 };
 
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyModifiers, MouseEventKind};
-use ratatui::{style::Style, text::Span};
+use ratatui::{
+    Terminal, TerminalOptions, Viewport,
+    backend::CrosstermBackend,
+    layout::{Constraint, Layout, Rect},
+    style::Style,
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
+};
 use tempfile::NamedTempFile;
 
 use super::highlight::{highlight_json_like, highlight_xml_line};
@@ -1029,6 +1038,119 @@ fn perf_huge_wrapped_line_paths() {
 }
 
 #[test]
+#[ignore = "performance smoke; run scripts/bench-viewer-performance.sh"]
+fn perf_repeated_viewport_scroll_render() {
+    let mut lines = Vec::new();
+    for index in 0..1_200 {
+        lines.push(format!(
+            r#"{{"index":{index},"level":"debug","message":"scroll performance viewport {}","payload":"<root><item id=\"{index}\">value</item></root>"}}"#,
+            "x".repeat(240)
+        ));
+    }
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter_digits: 4,
+            x: 0,
+            width: 96,
+            wrap: true,
+            mode: ViewMode::Plain,
+        },
+        row_limit: render_row_limit(27),
+    };
+    let mut cache = RenderedLineCache::default();
+    let started = Instant::now();
+    let mut rendered_rows = 0_usize;
+    let mut background_cells = 0_usize;
+
+    for top in 0..400 {
+        let viewport = render_viewport(&lines[top..], top + 1, 0, 27, request, &mut cache, None);
+        rendered_rows += viewport.lines.len();
+        background_cells += background_cell_count(&viewport.lines);
+    }
+
+    let elapsed = started.elapsed();
+    eprintln!(
+        "repeated viewport scroll render: {elapsed:?}, rows={rendered_rows}, background_cells={background_cells}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(1_500),
+        "repeated viewport render took {elapsed:?}"
+    );
+}
+
+#[test]
+#[ignore = "performance smoke; run scripts/bench-viewer-performance.sh"]
+fn perf_terminal_scroll_draw_bytes() {
+    let mut lines = Vec::new();
+    for index in 0..1_200 {
+        lines.push(format!(
+            r#"{{"index":{index},"level":"debug","message":"scroll performance viewport {}","payload":"<root><item id=\"{index}\">value</item></root>"}}"#,
+            "x".repeat(240)
+        ));
+    }
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter_digits: 4,
+            x: 0,
+            width: 111,
+            wrap: true,
+            mode: ViewMode::Plain,
+        },
+        row_limit: render_row_limit(32),
+    };
+    let byte_count = Rc::new(Cell::new(0_usize));
+    let writer = CountingWriter {
+        bytes: Rc::clone(&byte_count),
+    };
+    let backend = CrosstermBackend::new(writer);
+    let mut terminal = Terminal::with_options(
+        backend,
+        TerminalOptions {
+            viewport: Viewport::Fixed(Rect::new(0, 0, 120, 35)),
+        },
+    )
+    .unwrap();
+    let mut cache = RenderedLineCache::default();
+    let started = Instant::now();
+    let mut rendered_rows = 0_usize;
+    let mut background_cells = 0_usize;
+
+    for top in 0..400 {
+        let viewport = render_viewport(&lines[top..], top + 1, 0, 32, request, &mut cache, None);
+        rendered_rows += viewport.lines.len();
+        background_cells += background_cell_count(&viewport.lines);
+        let body_lines = viewport.lines;
+        terminal
+            .draw(|frame| {
+                let [body, footer] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
+                    .areas(frame.area());
+                let paragraph = Paragraph::new(body_lines)
+                    .block(
+                        Block::default()
+                            .title(" perf ")
+                            .borders(Borders::ALL)
+                            .border_style(gutter_style()),
+                    )
+                    .style(plain_style());
+                frame.render_widget(paragraph, body);
+                frame.render_widget(Paragraph::new(" q/Esc quit ").style(gutter_style()), footer);
+            })
+            .unwrap();
+    }
+
+    let elapsed = started.elapsed();
+    eprintln!(
+        "terminal scroll draw: {elapsed:?}, rows={rendered_rows}, bytes={}, background_cells={background_cells}",
+        byte_count.get()
+    );
+    assert!(byte_count.get() > 0);
+    assert!(
+        elapsed < Duration::from_millis(2_000),
+        "terminal scroll draw took {elapsed:?}"
+    );
+}
+
+#[test]
 fn json_highlight_preserves_visible_text() {
     let spans = highlight_json_like(r#"  "ok": true, "n": 42, "none": null"#);
     assert_eq!(span_text(&spans), r#"  "ok": true, "n": 42, "none": null"#);
@@ -1095,6 +1217,30 @@ fn span_text(spans: &[Span<'static>]) -> String {
         .iter()
         .map(|span| span.content.as_ref())
         .collect::<String>()
+}
+
+fn background_cell_count(lines: &[Line<'static>]) -> usize {
+    lines
+        .iter()
+        .flat_map(|line| line.spans.iter())
+        .filter(|span| span.style.bg.is_some())
+        .map(|span| span.content.chars().count())
+        .sum()
+}
+
+struct CountingWriter {
+    bytes: Rc<Cell<usize>>,
+}
+
+impl Write for CountingWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.bytes.set(self.bytes.get().saturating_add(buf.len()));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 fn styles_for_text(spans: &[Span<'static>], text: &str) -> Vec<Style> {

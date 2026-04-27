@@ -14,6 +14,10 @@ Read these when the task matches:
   - GitHub Release artifacts
   - crates.io publishing
   - npm wrapper and platform package strategy
+- `docs/performance.md`
+  - viewer rendering benchmark smoke tests
+  - terminal draw byte-count checks
+  - comparing performance changes outside CI
 
 Code orientation:
 
