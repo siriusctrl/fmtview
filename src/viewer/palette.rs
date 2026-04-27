@@ -10,7 +10,7 @@ pub(super) const PALETTE_PURPLE: Color = Color::Rgb(198, 120, 221);
 pub(super) const PALETTE_RED: Color = Color::Rgb(224, 108, 117);
 pub(super) const PALETTE_YELLOW: Color = Color::Rgb(229, 192, 123);
 pub(super) const PALETTE_ORANGE: Color = Color::Rgb(209, 154, 102);
-pub(super) const PALETTE_SELECTION: Color = Color::Rgb(62, 68, 81);
+pub(super) const PALETTE_SEARCH_MATCH: Color = Color::Rgb(93, 75, 35);
 
 pub(super) fn style_fg(color: Color) -> Style {
     Style::default().fg(color).bg(PALETTE_BACKGROUND)
@@ -74,7 +74,7 @@ pub(super) fn error_style() -> Style {
 }
 
 pub(super) fn search_match_bg() -> Color {
-    PALETTE_SELECTION
+    PALETTE_SEARCH_MATCH
 }
 
 pub(super) fn diff_hunk_style() -> Style {

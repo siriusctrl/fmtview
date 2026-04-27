@@ -735,7 +735,7 @@ fn syntax_palette_uses_muted_rgb_colors() {
     assert_eq!(string_style().fg, Some(PALETTE_GREEN));
     assert_eq!(number_style().fg, Some(PALETTE_ORANGE));
     assert_eq!(error_style().fg, Some(PALETTE_RED));
-    assert_eq!(search_match_bg(), PALETTE_SELECTION);
+    assert_eq!(search_match_bg(), PALETTE_SEARCH_MATCH);
 }
 
 #[test]

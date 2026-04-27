@@ -20,6 +20,8 @@ for GitHub Release notes, so every published version must have a matching
   terminal viewer's syntax colors, diff markers, gutters, and search highlights
   so high-contrast terminal themes do not turn highlights into overly bright
   ANSI colors.
+- Use a muted yellow search-match background so matches remain visible without
+  returning to the previous bright highlight color.
 
 ## [0.1.5] - 2026-04-27
 
