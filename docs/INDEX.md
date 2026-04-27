@@ -10,6 +10,7 @@ Read these when the task matches:
 - `docs/releasing.md`
   - release checklist
   - version and tag policy
+  - changelog and release notes policy
   - GitHub Release artifacts
   - crates.io publishing
   - npm wrapper and platform package strategy

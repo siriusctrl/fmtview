@@ -67,6 +67,8 @@ npm install -g fmtview
 
 Use Cargo or the GitHub Release artifacts for other platforms.
 
+See `CHANGELOG.md` for release notes.
+
 ### Git
 
 Install directly from the repository:

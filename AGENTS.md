@@ -18,6 +18,11 @@ Principles for agents contributing to this repository.
    - Use Conventional Commits for every commit.
    - Include a body that explains what changed and why.
 
+4. **Release notes are part of the release**
+   - Maintain `CHANGELOG.md` for user-facing changes.
+   - Every release version must have a `CHANGELOG.md` entry before tagging.
+   - Do not publish a release with placeholder notes.
+
 ## Navigation
 
 Use README for user-facing behavior. Use docs for maintainer workflows and
@@ -29,6 +34,7 @@ Keep this file coarse-grained. Do not mirror every implementation detail here.
 
 - `README.md`
 - `docs/INDEX.md`
+- `CHANGELOG.md`
 
 ### Read these docs when the task matches
 
@@ -51,6 +57,7 @@ Keep this file coarse-grained. Do not mirror every implementation detail here.
 - Keep interactive behavior behind TTY detection.
 - Preserve JSON string values. The viewer may highlight embedded XML, but formatted output must not rewrite string contents.
 - Update `README.md` when CLI flags, install steps, or user-visible behavior changes.
+- Update `CHANGELOG.md` when user-facing behavior, packaging, or release process changes.
 - Update `docs/releasing.md` when release, packaging, npm, crates.io, or artifact policy changes.
 - Prefer Linux-first behavior, but avoid unnecessary non-portable code when portable Rust is simple.
 

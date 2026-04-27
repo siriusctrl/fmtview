@@ -52,6 +52,24 @@ git tag vX.Y.Z
 git push origin main vX.Y.Z
 ```
 
+## Changelog And Release Notes
+
+`CHANGELOG.md` is the source of truth for user-facing release notes. Every
+release must add a `## [X.Y.Z] - YYYY-MM-DD` section before the tag is pushed.
+
+Use `## [Unreleased]` while changes are accumulating. Before tagging, move the
+relevant entries into the versioned section and keep the release notes concise:
+
+- Mention user-visible behavior changes.
+- Mention packaging, install, and compatibility changes.
+- Mention breaking changes or behavior tradeoffs explicitly.
+- Do not include internal-only refactors unless they affect users or
+  maintainers.
+
+The GitHub Release workflow extracts the matching `CHANGELOG.md` section for
+the tag. If the section is missing or empty, the release job fails instead of
+publishing placeholder notes.
+
 ## GitHub Actions Release Shape
 
 Use a dedicated release workflow triggered by version tags:
@@ -68,6 +86,7 @@ The workflow should:
 - Check out the tagged commit.
 - Verify the tag version matches `Cargo.toml`.
 - Verify the npm package version matches `Cargo.toml`.
+- Verify `CHANGELOG.md` has a non-empty section for the tag.
 - Run `cargo fmt --check`, `cargo test`, and `cargo clippy --all-targets -- -D warnings`.
 - Build the Linux x64 release binary as a static musl binary.
 - Package the binary as `fmtview-linux-x64.tar.gz`.
@@ -189,6 +208,8 @@ npm install -g fmtview
 Before tagging:
 
 - Version updated in `Cargo.toml`.
+- Version updated in `npm/fmtview/package.json`.
+- `CHANGELOG.md` has a section for the release version.
 - `cargo fmt --check` passes.
 - `cargo test` passes.
 - `cargo clippy --all-targets -- -D warnings` passes.
