@@ -1,6 +1,6 @@
 [package]
 name = "fmtview"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.85"
 description = "Fast terminal formatter and viewer for JSON, JSONL, XML, and formatted diffs"

@@ -13,6 +13,7 @@ on:
 
 env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+  LINUX_X64_TARGET: x86_64-unknown-linux-musl
 
 permissions:
   contents: read
@@ -29,6 +30,14 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux x64 static build target
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y musl-tools binutils file
+          rustup target add "$LINUX_X64_TARGET"
 
       - name: Validate tag and package versions
         id: version
@@ -48,16 +57,22 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
-      - run: cargo build --release --locked
+      - run: cargo build --release --locked --target "$LINUX_X64_TARGET"
 
-      - name: Package Linux x64 binary
+      - name: Package Linux x64 static binary
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist/fmtview-linux-x64
-          cp target/release/fmtview dist/fmtview-linux-x64/
-          cp target/release/fmtview dist/fmtview
+          cp "target/$LINUX_X64_TARGET/release/fmtview" dist/fmtview-linux-x64/
+          cp "target/$LINUX_X64_TARGET/release/fmtview" dist/fmtview
           cp README.md LICENSE dist/fmtview-linux-x64/
+          file dist/fmtview-linux-x64/fmtview
+          if readelf -l dist/fmtview-linux-x64/fmtview | grep -q "Requesting program interpreter"; then
+            echo "Expected a static Linux x64 binary without a glibc runtime dependency." >&2
+            exit 1
+          fi
+          dist/fmtview-linux-x64/fmtview --version
           tar -C dist -czf "dist/fmtview-linux-x64.tar.gz" fmtview-linux-x64
 
       - uses: actions/upload-artifact@v4

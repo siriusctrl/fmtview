@@ -69,7 +69,7 @@ The workflow should:
 - Verify the tag version matches `Cargo.toml`.
 - Verify the npm package version matches `Cargo.toml`.
 - Run `cargo fmt --check`, `cargo test`, and `cargo clippy --all-targets -- -D warnings`.
-- Build the Linux x64 release binary.
+- Build the Linux x64 release binary as a static musl binary.
 - Package the binary as `fmtview-linux-x64.tar.gz`.
 - Generate `sha256sums.txt`.
 - Create or update a GitHub Release for the tag.
@@ -85,7 +85,11 @@ Release artifact and skips that registry publish step.
 
 Initial target:
 
-- `x86_64-unknown-linux-gnu`
+- `x86_64-unknown-linux-musl`
+
+The Linux x64 artifact is intentionally built with musl static linking. This is
+the default for GitHub Release and npm Linux x64 binaries so npm installs do not
+inherit the GitHub Actions runner's glibc version requirement.
 
 Potential future targets:
 
@@ -127,11 +131,12 @@ implementation.
 
 Initial package layout:
 
-- `fmtview` - JS shim plus a bundled Linux x64 binary.
+- `fmtview` - JS shim plus a bundled static Linux x64 binary.
 
 The npm package exposes the CLI through `package.json` `bin`, and the shim
 executes `vendor/fmtview`. It is intentionally Linux x64 only for the first
-release.
+release. The bundled binary should come from the `x86_64-unknown-linux-musl`
+release artifact, not from the host `x86_64-unknown-linux-gnu` target.
 
 A future multi-platform npm release should move to a root wrapper package plus
 platform packages in `optionalDependencies`. Prefer that over downloading

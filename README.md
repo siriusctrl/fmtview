@@ -56,7 +56,7 @@ cargo install fmtview --locked
 
 ### npm
 
-Install the prebuilt Linux x64 binary from npm:
+Install the prebuilt static Linux x64 binary from npm:
 
 ```sh
 npm install -g fmtview
