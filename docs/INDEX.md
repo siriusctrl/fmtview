@@ -15,5 +15,22 @@ Read these when the task matches:
   - crates.io publishing
   - npm wrapper and platform package strategy
 
+Code orientation:
+
+- `src/main.rs` wires CLI arguments to formatting, diff, and viewer paths.
+- `src/format.rs`, `src/diff.rs`, `src/input.rs`, `src/lazy.rs`, and
+  `src/line_index.rs` own non-interactive formatting, input materialization,
+  lazy preview indexing, and temp-file indexing.
+- `src/viewer/` owns the interactive TUI:
+  - `mod.rs` runs the terminal loop and frame composition.
+  - `input.rs` handles key/mouse state, scrolling, jumps, and search.
+  - `render.rs` handles line windows, wrapping, visual rows, caches, progress
+    calculation, and the search highlight overlay.
+  - `highlight.rs` handles JSON, diff, and XML-like syntax highlighting.
+  - `palette.rs` owns viewer colors.
+  - `tests.rs` keeps viewer regression and performance smoke coverage close to
+    the private TUI internals.
+- `tests/cli.rs` covers CLI-level behavior.
+
 Keep README user-facing. Keep maintainer-only workflows in docs and link them
 from `AGENTS.md`.

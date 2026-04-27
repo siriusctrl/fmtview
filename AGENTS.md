@@ -29,6 +29,8 @@ Use README for user-facing behavior. Use docs for maintainer workflows and
 durable project decisions.
 
 Keep this file coarse-grained. Do not mirror every implementation detail here.
+Use `docs/INDEX.md` as the navigation entry point when you need code layout or
+workflow-specific docs.
 
 ### Read these docs first
 
@@ -40,16 +42,6 @@ Keep this file coarse-grained. Do not mirror every implementation detail here.
 
 - Release, packaging, crates.io, npm, GitHub Releases, or version tags:
   - Read `docs/releasing.md`
-
-## Source Map
-
-- `src/main.rs` - CLI argument parsing and command routing.
-- `src/input.rs` - file, stdin, and literal input materialization.
-- `src/format.rs` - JSON, JSONL, XML formatting and auto-detection.
-- `src/diff.rs` - formatted unified diff generation.
-- `src/line_index.rs` - temp-file line offset indexing for large outputs.
-- `src/viewer.rs` - interactive terminal viewer.
-- `tests/` - CLI-level behavior tests.
 
 ## Engineering Rules
 
