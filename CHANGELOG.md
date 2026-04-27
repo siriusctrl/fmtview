@@ -8,10 +8,23 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-27
+
 ### Changed
 
 - Documented the changelog as the source of release notes.
 - Updated the release workflow to publish GitHub Release notes from this file.
+- Improved wrapped-line scrolling so an overlong logical line can be inspected
+  before moving to the next line.
+- Fixed mouse-wheel scrolling over wrapped lines so repeated wheel events do
+  not overshoot into an invalid row offset.
+- Fixed the viewer title range and progress percentage to use the logical lines
+  actually rendered after wrapping.
+- Updated wrap-mode progress to use visible byte position, so it advances
+  inside a long wrapped logical line without scanning the whole file.
+- Updated the wrap toggle footer hint to show `w unwrap` while wrapping is on
+  and `w wrap` while wrapping is off.
+- Added an oversized wrapped-line case near the top of `examples/showcase.json`.
 
 ## [0.1.3] - 2026-04-27
 

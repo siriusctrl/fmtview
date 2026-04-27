@@ -37,6 +37,7 @@ const PREWARM_MAX_LINES: usize = 192;
 const PREWARM_BUDGET: Duration = Duration::from_millis(4);
 const JUMP_BUFFER_MAX_DIGITS: usize = 20;
 const SEARCH_CHUNK_LINES: usize = 4096;
+const TAIL_ROW_OFFSET: usize = usize::MAX;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -104,6 +105,7 @@ fn run_loop(
     let mut dirty = true;
     let mut line_cache = LineWindowCache::default();
     let mut render_cache = RenderedLineCache::default();
+    let mut tail_cache = TailPositionCache::default();
 
     loop {
         if state.search_task.is_some() {
@@ -118,6 +120,7 @@ fn run_loop(
                 &mut state,
                 &mut line_cache,
                 &mut render_cache,
+                &mut tail_cache,
             )?;
             dirty = false;
         }
@@ -148,6 +151,9 @@ fn run_loop(
 #[derive(Debug, Clone)]
 struct ViewState {
     top: usize,
+    top_row_offset: usize,
+    top_max_row_offset: usize,
+    wrap_bounds_stale: bool,
     x: usize,
     wrap: bool,
     jump_buffer: String,
@@ -162,6 +168,9 @@ impl Default for ViewState {
     fn default() -> Self {
         Self {
             top: 0,
+            top_row_offset: 0,
+            top_max_row_offset: 0,
+            wrap_bounds_stale: false,
             x: 0,
             wrap: true,
             jump_buffer: String::new(),
@@ -208,10 +217,13 @@ fn drain_events(state: &mut ViewState, line_count: usize, page: usize) -> Result
 
     loop {
         let event = event::read().context("failed to read terminal event")?;
-        action.merge(handle_event(event, state, line_count, page));
+        let next = handle_event(event, state, line_count, page);
+        let needs_layout = next.dirty && state.wrap_bounds_stale;
+        action.merge(next);
         processed += 1;
 
         if action.quit
+            || needs_layout
             || processed >= EVENT_DRAIN_LIMIT
             || started.elapsed() >= EVENT_DRAIN_BUDGET
             || !event::poll(Duration::ZERO).context("failed to poll terminal event")?
@@ -295,18 +307,17 @@ fn handle_key_event(
         }
         KeyCode::Char('w') => {
             state.wrap = !state.wrap;
+            reset_top_row_offset(state);
             true
         }
-        KeyCode::Down | KeyCode::Char('j') => scroll_by(&mut state.top, line_count, 1),
-        KeyCode::Up | KeyCode::Char('k') => scroll_by(&mut state.top, line_count, -1),
+        KeyCode::Down | KeyCode::Char('j') => scroll_down(state, line_count),
+        KeyCode::Up | KeyCode::Char('k') => scroll_up(state, line_count),
         KeyCode::PageDown | KeyCode::Char(' ') | KeyCode::Char('f') => {
-            scroll_by(&mut state.top, line_count, page as isize)
+            page_down(state, line_count, page)
         }
-        KeyCode::PageUp | KeyCode::Char('b') => {
-            scroll_by(&mut state.top, line_count, -(page as isize))
-        }
-        KeyCode::Home | KeyCode::Char('g') => set_top(&mut state.top, 0),
-        KeyCode::End | KeyCode::Char('G') => set_top(&mut state.top, line_count.saturating_sub(1)),
+        KeyCode::PageUp | KeyCode::Char('b') => page_up(state, line_count, page),
+        KeyCode::Home | KeyCode::Char('g') => set_top(state, 0),
+        KeyCode::End | KeyCode::Char('G') => set_top(state, line_count.saturating_sub(1)),
         KeyCode::Right | KeyCode::Char('l') if !state.wrap => {
             scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
         }
@@ -400,7 +411,7 @@ fn jump_to_buffered_line(state: &mut ViewState, line_count: usize) -> bool {
 
     let requested = state.jump_buffer.parse::<usize>().unwrap_or(usize::MAX);
     state.jump_buffer.clear();
-    state.top = target_top_for_line(requested, line_count);
+    set_top(state, target_top_for_line(requested, line_count));
     true
 }
 
@@ -527,7 +538,7 @@ fn process_search_step(file: &IndexedTempFile, state: &mut ViewState) -> Result<
 
     let step = scan_search_chunk(file, &task)?;
     if let Some(line) = step.found_line {
-        state.top = line;
+        set_top(state, line);
         state.search_message = Some(format!("match: {}", task.query));
         return Ok(true);
     }
@@ -658,12 +669,8 @@ fn handle_mouse_event(
         MouseEventKind::ScrollUp if modifiers.contains(KeyModifiers::SHIFT) && !state.wrap => {
             scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
         }
-        MouseEventKind::ScrollDown => {
-            scroll_by(&mut state.top, line_count, MOUSE_SCROLL_LINES as isize)
-        }
-        MouseEventKind::ScrollUp => {
-            scroll_by(&mut state.top, line_count, -(MOUSE_SCROLL_LINES as isize))
-        }
+        MouseEventKind::ScrollDown => scroll_down_by(state, line_count, MOUSE_SCROLL_LINES),
+        MouseEventKind::ScrollUp => scroll_up_by(state, line_count, MOUSE_SCROLL_LINES),
         MouseEventKind::ScrollRight if !state.wrap => {
             scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
         }
@@ -676,22 +683,143 @@ fn handle_mouse_event(
     EventAction { dirty, quit: false }
 }
 
-fn scroll_by(top: &mut usize, line_count: usize, delta: isize) -> bool {
-    let old = *top;
+fn scroll_down(state: &mut ViewState, line_count: usize) -> bool {
+    if line_count == 0 {
+        return false;
+    }
+
+    if state.wrap && state.top_row_offset < state.top_max_row_offset {
+        state.top_row_offset = state.top_row_offset.saturating_add(1);
+        return true;
+    }
+
+    let old = state.top;
+    state.top = state
+        .top
+        .saturating_add(1)
+        .min(line_count.saturating_sub(1));
+    if state.top != old {
+        reset_top_row_offset(state);
+        return true;
+    }
+
+    false
+}
+
+fn scroll_up(state: &mut ViewState, line_count: usize) -> bool {
+    if line_count == 0 {
+        return false;
+    }
+
+    if state.wrap && state.top_row_offset > 0 {
+        state.top_row_offset = state.top_row_offset.saturating_sub(1);
+        return true;
+    }
+
+    let old = state.top;
+    state.top = state.top.saturating_sub(1);
+    if state.top != old {
+        state.top_row_offset = if state.wrap { TAIL_ROW_OFFSET } else { 0 };
+        state.top_max_row_offset = 0;
+        state.wrap_bounds_stale = state.wrap;
+        return true;
+    }
+
+    false
+}
+
+fn scroll_down_by(state: &mut ViewState, line_count: usize, rows: usize) -> bool {
+    let mut dirty = false;
+    for _ in 0..rows {
+        if !scroll_down(state, line_count) {
+            break;
+        }
+        dirty = true;
+        if state.wrap_bounds_stale {
+            break;
+        }
+    }
+    dirty
+}
+
+fn scroll_up_by(state: &mut ViewState, line_count: usize, rows: usize) -> bool {
+    let mut dirty = false;
+    for _ in 0..rows {
+        if !scroll_up(state, line_count) {
+            break;
+        }
+        dirty = true;
+        if state.wrap_bounds_stale {
+            break;
+        }
+    }
+    dirty
+}
+
+fn page_down(state: &mut ViewState, line_count: usize, page: usize) -> bool {
+    if line_count == 0 {
+        return false;
+    }
+
+    if state.wrap && state.top_row_offset < state.top_max_row_offset {
+        state.top_row_offset = state
+            .top_row_offset
+            .saturating_add(page)
+            .min(state.top_max_row_offset);
+        return true;
+    }
+
+    scroll_logical_by(state, line_count, page as isize)
+}
+
+fn page_up(state: &mut ViewState, line_count: usize, page: usize) -> bool {
+    if line_count == 0 {
+        return false;
+    }
+
+    if state.wrap && state.top_row_offset > 0 {
+        state.top_row_offset = state.top_row_offset.saturating_sub(page);
+        return true;
+    }
+
+    scroll_logical_by(state, line_count, -(page as isize))
+}
+
+fn scroll_logical_by(state: &mut ViewState, line_count: usize, delta: isize) -> bool {
+    let old = state.top;
     if delta >= 0 {
-        *top = top
+        state.top = state
+            .top
             .saturating_add(delta as usize)
             .min(line_count.saturating_sub(1));
     } else {
-        *top = top.saturating_sub(delta.unsigned_abs());
+        state.top = state.top.saturating_sub(delta.unsigned_abs());
     }
-    *top != old
+
+    if state.top != old {
+        reset_top_row_offset(state);
+        return true;
+    }
+
+    false
 }
 
-fn set_top(top: &mut usize, value: usize) -> bool {
-    let old = *top;
-    *top = value;
-    *top != old
+fn set_top(state: &mut ViewState, value: usize) -> bool {
+    let old_top = state.top;
+    let old_offset = state.top_row_offset;
+    if old_top == value && old_offset == 0 {
+        return false;
+    }
+
+    state.top = value;
+    reset_top_row_offset(state);
+    true
+}
+
+fn reset_top_row_offset(state: &mut ViewState) {
+    state.top_row_offset = 0;
+    state.top_max_row_offset = 0;
+    state.wrap_bounds_stale = state.wrap;
 }
 
 fn scroll_x_by(x: &mut usize, delta: isize) -> bool {
@@ -711,6 +839,7 @@ fn draw_view(
     state: &mut ViewState,
     line_cache: &mut LineWindowCache,
     render_cache: &mut RenderedLineCache,
+    tail_cache: &mut TailPositionCache,
 ) -> Result<()> {
     let size = terminal.size().context("failed to read terminal size")?;
     let visible_height = usize::from(size.height.saturating_sub(3));
@@ -718,10 +847,6 @@ fn draw_view(
     let gutter_digits = line_number_digits(file.line_count());
     let gutter_width = gutter_digits + 3;
     let content_width = visible_width.saturating_sub(gutter_width);
-    let max_top = file.line_count().saturating_sub(visible_height.max(1));
-    state.top = state.top.min(max_top);
-
-    let lines = line_cache.read(file, state.top, visible_height)?;
     let render_context = RenderContext {
         gutter_digits,
         x: state.x,
@@ -729,28 +854,72 @@ fn draw_view(
         wrap: state.wrap,
         mode,
     };
+    let logical_tail_top = last_full_logical_page_top(file.line_count(), visible_height);
+    let tail = if !state.wrap || state.top > logical_tail_top {
+        Some(tail_cache.position(file, visible_height, render_context)?)
+    } else {
+        None
+    };
+    if let Some(tail) = tail.filter(|tail| is_after_tail(state, *tail)) {
+        state.top = tail.top;
+        state.top_row_offset = tail.row_offset;
+        state.top_max_row_offset = 0;
+        state.wrap_bounds_stale = state.wrap;
+    }
+    let max_top = file.line_count().saturating_sub(1);
+    if state.top > max_top {
+        state.top = max_top;
+        reset_top_row_offset(state);
+    }
+
+    let lines = line_cache.read(file, state.top, visible_height)?;
     let render_request = RenderRequest {
         context: render_context,
         row_limit: render_row_limit(visible_height),
     };
-    let styled = render_visible_lines(
+    let max_top_row_offset = top_line_tail_offset(&lines, visible_height, render_context);
+    if state.top_row_offset == TAIL_ROW_OFFSET || state.top_row_offset > max_top_row_offset {
+        state.top_row_offset = max_top_row_offset;
+    }
+    state.top_max_row_offset = max_top_row_offset;
+    state.wrap_bounds_stale = false;
+
+    let viewport = render_viewport(
         &lines,
         state.top + 1,
+        state.top_row_offset,
         visible_height,
         render_request,
         render_cache,
         active_search_query(state),
     );
+    let viewport = if viewport.lines.is_empty() && state.top_row_offset > 0 {
+        state.top_row_offset = max_top_row_offset;
+        render_viewport(
+            &lines,
+            state.top + 1,
+            state.top_row_offset,
+            visible_height,
+            render_request,
+            render_cache,
+            active_search_query(state),
+        )
+    } else {
+        viewport
+    };
 
     let current = if file.line_count() == 0 {
         0
     } else {
         state.top + 1
     };
-    let bottom = state
-        .top
-        .saturating_add(visible_height)
+    let bottom = viewport
+        .last_line_number
+        .unwrap_or(current)
         .min(file.line_count());
+    let progress =
+        viewer_progress_percent(file, &lines, state, visible_height, render_context, bottom);
+    let styled = viewport.lines;
     let display_mode = if state.wrap {
         "wrap".to_owned()
     } else {
@@ -762,7 +931,7 @@ fn draw_view(
         file.line_count(),
         current,
         bottom,
-        progress_percent(bottom, file.line_count()),
+        progress,
         display_mode
     );
     let footer_text = if state.search_active {
@@ -779,8 +948,7 @@ fn draw_view(
     } else if let Some(message) = &state.search_message {
         format!(" {message} | / search | n/N | Esc clear ")
     } else {
-        " q/Esc quit | / search n/N | wheel/j/k scroll | 123 Enter jump | Space/f,b page | w wrap "
-            .to_owned()
+        idle_footer_text(state)
     };
 
     terminal
@@ -816,6 +984,11 @@ fn draw_view(
 
 fn active_search_query(state: &ViewState) -> Option<&str> {
     (!state.search_query.is_empty()).then_some(state.search_query.as_str())
+}
+
+fn idle_footer_text(state: &ViewState) -> String {
+    let wrap_hint = if state.wrap { "w unwrap" } else { "w wrap" };
+    format!(" q/Esc quit | {wrap_hint} | / search n/N | wheel/j/k | 123 Enter | Space/f,b ")
 }
 
 #[derive(Debug, Default)]
@@ -901,6 +1074,110 @@ impl RenderedLineCache {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ViewPosition {
+    top: usize,
+    row_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TailPositionKey {
+    line_count: usize,
+    visible_height: usize,
+    width: usize,
+}
+
+#[derive(Debug, Default)]
+struct TailPositionCache {
+    key: Option<TailPositionKey>,
+    position: Option<ViewPosition>,
+}
+
+impl TailPositionCache {
+    fn position(
+        &mut self,
+        file: &IndexedTempFile,
+        visible_height: usize,
+        context: RenderContext,
+    ) -> Result<ViewPosition> {
+        if !context.wrap {
+            return Ok(ViewPosition {
+                top: last_full_logical_page_top(file.line_count(), visible_height),
+                row_offset: 0,
+            });
+        }
+
+        let key = TailPositionKey {
+            line_count: file.line_count(),
+            visible_height,
+            width: context.width,
+        };
+        if self.key == Some(key) {
+            if let Some(position) = self.position {
+                return Ok(position);
+            }
+        }
+
+        let position = compute_tail_position(file, visible_height, context)?;
+        self.key = Some(key);
+        self.position = Some(position);
+        Ok(position)
+    }
+}
+
+fn compute_tail_position(
+    file: &IndexedTempFile,
+    visible_height: usize,
+    context: RenderContext,
+) -> Result<ViewPosition> {
+    let line_count = file.line_count();
+    if line_count == 0 || visible_height == 0 {
+        return Ok(ViewPosition {
+            top: 0,
+            row_offset: 0,
+        });
+    }
+
+    if !context.wrap {
+        return Ok(ViewPosition {
+            top: last_full_logical_page_top(line_count, visible_height),
+            row_offset: 0,
+        });
+    }
+
+    let mut needed_rows = visible_height;
+    let mut end = line_count;
+    while end > 0 {
+        let start = end.saturating_sub(visible_height.max(32));
+        let lines = file.read_window(start, end - start)?;
+        for (index, line) in lines.iter().enumerate().rev() {
+            let line_index = start + index;
+            let rows = rendered_row_count(line, context);
+            if rows >= needed_rows {
+                return Ok(ViewPosition {
+                    top: line_index,
+                    row_offset: rows - needed_rows,
+                });
+            }
+            needed_rows -= rows;
+        }
+        end = start;
+    }
+
+    Ok(ViewPosition {
+        top: 0,
+        row_offset: 0,
+    })
+}
+
+fn last_full_logical_page_top(line_count: usize, visible_height: usize) -> usize {
+    line_count.saturating_sub(visible_height.max(1))
+}
+
+fn is_after_tail(state: &ViewState, tail: ViewPosition) -> bool {
+    state.top > tail.top || (state.top == tail.top && state.top_row_offset > tail.row_offset)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RenderRequest {
     context: RenderContext,
     row_limit: usize,
@@ -915,23 +1192,60 @@ struct RenderContext {
     mode: ViewMode,
 }
 
-fn render_visible_lines(
+#[derive(Debug)]
+struct RenderedViewport {
+    lines: Vec<Line<'static>>,
+    last_line_number: Option<usize>,
+}
+
+fn render_viewport(
     lines: &[String],
     first_line_number: usize,
+    top_row_offset: usize,
     height: usize,
     request: RenderRequest,
     cache: &mut RenderedLineCache,
     search_query: Option<&str>,
-) -> Vec<Line<'static>> {
+) -> RenderedViewport {
     let mut rendered = Vec::with_capacity(height);
+    let mut last_line_number = None;
 
-    for (index, line) in lines.iter().enumerate() {
+    let Some((top_line, remaining_lines)) = lines.split_first() else {
+        return RenderedViewport {
+            lines: rendered,
+            last_line_number,
+        };
+    };
+
+    if height > 0 {
+        let top_rows = render_logical_line_window(
+            top_line,
+            first_line_number,
+            top_row_offset,
+            height.saturating_add(1),
+            request.context,
+        );
+        if !top_rows.is_empty() {
+            last_line_number = Some(first_line_number);
+        }
+        rendered.extend(
+            top_rows.iter().take(height).cloned().map(|row| {
+                apply_search_highlight(row, search_query, request.context.gutter_digits)
+            }),
+        );
+    }
+
+    for (index, line) in remaining_lines.iter().enumerate() {
         if rendered.len() >= height {
             break;
         }
 
         let remaining = height - rendered.len();
-        let rows = cache.get_or_render(line, first_line_number + index, request);
+        let rows = cache.get_or_render(line, first_line_number + index + 1, request);
+        let taken = rows.len().min(remaining);
+        if taken > 0 {
+            last_line_number = Some(first_line_number + index + 1);
+        }
         rendered.extend(
             rows.iter().take(remaining).cloned().map(|row| {
                 apply_search_highlight(row, search_query, request.context.gutter_digits)
@@ -939,7 +1253,22 @@ fn render_visible_lines(
         );
     }
 
-    rendered
+    RenderedViewport {
+        lines: rendered,
+        last_line_number,
+    }
+}
+
+fn top_line_tail_offset(lines: &[String], visible_height: usize, context: RenderContext) -> usize {
+    if visible_height == 0 || !context.wrap {
+        return 0;
+    }
+
+    let Some(line) = lines.first() else {
+        return 0;
+    };
+
+    rendered_row_count(line, context).saturating_sub(visible_height)
 }
 
 fn apply_search_highlight(
@@ -1092,11 +1421,24 @@ fn render_logical_line(
     max_rows: usize,
     context: RenderContext,
 ) -> Vec<Line<'static>> {
+    render_logical_line_window(line, line_number, 0, max_rows, context)
+}
+
+fn render_logical_line_window(
+    line: &str,
+    line_number: usize,
+    row_start: usize,
+    max_rows: usize,
+    context: RenderContext,
+) -> Vec<Line<'static>> {
     if max_rows == 0 {
         return Vec::new();
     }
 
     if !context.wrap {
+        if row_start > 0 {
+            return Vec::new();
+        }
         return vec![styled_segment(
             line_number_gutter(line_number, context.gutter_digits),
             line,
@@ -1110,16 +1452,27 @@ fn render_logical_line(
         line,
         context.width,
         continuation_indent(line, context.width),
-        max_rows,
+        row_start.saturating_add(max_rows),
     );
-    let highlight_end = ranges.iter().map(|range| range.end).max().unwrap_or(0);
+    let visible_ranges = ranges
+        .iter()
+        .skip(row_start)
+        .take(max_rows)
+        .copied()
+        .collect::<Vec<_>>();
+    let highlight_end = visible_ranges
+        .iter()
+        .map(|range| range.end)
+        .max()
+        .unwrap_or(0);
     let highlight_prefix = slice_chars(line, 0, highlight_end);
     let spans = highlight_content(&highlight_prefix, context.mode);
-    ranges
+    visible_ranges
         .iter()
         .enumerate()
         .map(|(index, range)| {
-            let gutter = if index == 0 {
+            let row_index = row_start + index;
+            let gutter = if row_index == 0 {
                 line_number_gutter(line_number, context.gutter_digits)
             } else {
                 continuation_gutter(context.gutter_digits)
@@ -1135,6 +1488,48 @@ fn render_logical_line(
             Line::from(line_spans)
         })
         .collect()
+}
+
+fn rendered_row_count(line: &str, context: RenderContext) -> usize {
+    if !context.wrap {
+        return 1;
+    }
+
+    wrapped_row_count(
+        line,
+        context.width,
+        continuation_indent(line, context.width),
+    )
+}
+
+fn wrapped_row_count(line: &str, width: usize, continuation_indent: usize) -> usize {
+    let chars = line.chars().collect::<Vec<_>>();
+    let char_count = chars.len();
+    if char_count == 0 || width == 0 {
+        return 1;
+    }
+
+    let mut rows = 0_usize;
+    let mut start = 0_usize;
+    while start < char_count {
+        let continuation = rows > 0;
+        let indent = if continuation {
+            continuation_indent.min(width.saturating_sub(1))
+        } else {
+            0
+        };
+        let row_width = width.saturating_sub(indent).max(1);
+        let hard_end = start.saturating_add(row_width).min(char_count);
+        let end = if hard_end < char_count {
+            best_wrap_end(&chars, start, hard_end).unwrap_or(hard_end)
+        } else {
+            hard_end
+        };
+        start = end.max(start + 1);
+        rows = rows.saturating_add(1);
+    }
+
+    rows
 }
 
 fn styled_segment(
@@ -1285,11 +1680,110 @@ fn line_number_digits(line_count: usize) -> usize {
     line_count.max(1).to_string().len()
 }
 
+fn viewer_progress_percent(
+    file: &IndexedTempFile,
+    lines: &[String],
+    state: &ViewState,
+    visible_height: usize,
+    context: RenderContext,
+    logical_bottom: usize,
+) -> usize {
+    if !context.wrap {
+        return progress_percent(logical_bottom, file.line_count());
+    }
+
+    let bottom = viewport_bottom_byte_offset(file, lines, state, visible_height, context);
+    byte_progress_percent(bottom, file.byte_len())
+}
+
+fn viewport_bottom_byte_offset(
+    file: &IndexedTempFile,
+    lines: &[String],
+    state: &ViewState,
+    visible_height: usize,
+    context: RenderContext,
+) -> u64 {
+    if visible_height == 0 || lines.is_empty() {
+        return file.byte_offset_for_line(state.top);
+    }
+
+    let mut remaining = visible_height;
+    for (index, line) in lines.iter().enumerate() {
+        let line_index = state.top + index;
+        let row_start = if index == 0 { state.top_row_offset } else { 0 };
+
+        if !context.wrap {
+            if remaining == 1 {
+                return line_end_byte_offset(file, line, line_index, line.chars().count());
+            }
+            remaining -= 1;
+            continue;
+        }
+
+        let ranges = wrap_ranges(
+            line,
+            context.width,
+            continuation_indent(line, context.width),
+            row_start.saturating_add(remaining),
+        );
+        let visible_ranges = ranges.iter().skip(row_start).collect::<Vec<_>>();
+        if visible_ranges.is_empty() {
+            continue;
+        }
+
+        let taken = visible_ranges.len().min(remaining);
+        let range = visible_ranges[taken - 1];
+        if taken >= remaining {
+            return line_end_byte_offset(file, line, line_index, range.end);
+        }
+        remaining -= taken;
+    }
+
+    file.byte_len()
+}
+
+fn line_end_byte_offset(
+    file: &IndexedTempFile,
+    line: &str,
+    line_index: usize,
+    char_end: usize,
+) -> u64 {
+    let char_count = line.chars().count();
+    if char_end >= char_count {
+        if line_index + 1 >= file.line_count() {
+            return file.byte_len();
+        }
+        return file.byte_offset_for_line(line_index + 1);
+    }
+
+    file.byte_offset_for_line(line_index)
+        .saturating_add(byte_index_for_char(line, char_end) as u64)
+}
+
+fn byte_index_for_char(line: &str, char_index: usize) -> usize {
+    line.char_indices()
+        .nth(char_index)
+        .map(|(index, _)| index)
+        .unwrap_or(line.len())
+}
+
 fn progress_percent(bottom: usize, line_count: usize) -> usize {
     bottom
         .saturating_mul(100)
         .checked_div(line_count)
         .unwrap_or(100)
+}
+
+fn byte_progress_percent(position: u64, total: u64) -> usize {
+    if total == 0 {
+        return 100;
+    }
+
+    position
+        .min(total)
+        .saturating_mul(100)
+        .checked_div(total)
+        .unwrap_or(100) as usize
 }
 
 fn highlight_content(line: &str, mode: ViewMode) -> Vec<Span<'static>> {
@@ -1928,6 +2422,210 @@ mod tests {
 
         assert!(action.dirty);
         assert_eq!(state.top, 0);
+    }
+
+    #[test]
+    fn down_scrolls_inside_overflowing_wrapped_line_first() {
+        let mut state = ViewState {
+            top_max_row_offset: 2,
+            ..ViewState::default()
+        };
+
+        let action = handle_key_event(KeyCode::Down, KeyModifiers::NONE, &mut state, 3, 5);
+
+        assert!(action.dirty);
+        assert_eq!(state.top, 0);
+        assert_eq!(state.top_row_offset, 1);
+        assert!(!state.wrap_bounds_stale);
+
+        state.top_row_offset = state.top_max_row_offset;
+        let action = handle_key_event(KeyCode::Down, KeyModifiers::NONE, &mut state, 3, 5);
+
+        assert!(action.dirty);
+        assert_eq!(state.top, 1);
+        assert_eq!(state.top_row_offset, 0);
+        assert!(state.wrap_bounds_stale);
+    }
+
+    #[test]
+    fn batched_scroll_stops_after_crossing_to_unmeasured_wrapped_line() {
+        let mut state = ViewState::default();
+
+        assert!(scroll_down_by(&mut state, 10, 3));
+
+        assert_eq!(state.top, 1);
+        assert_eq!(state.top_row_offset, 0);
+        assert!(state.wrap_bounds_stale);
+    }
+
+    #[test]
+    fn up_from_logical_line_moves_to_previous_line_tail() {
+        let mut state = ViewState {
+            top: 1,
+            ..ViewState::default()
+        };
+
+        let action = handle_key_event(KeyCode::Up, KeyModifiers::NONE, &mut state, 3, 5);
+
+        assert!(action.dirty);
+        assert_eq!(state.top, 0);
+        assert_eq!(state.top_row_offset, TAIL_ROW_OFFSET);
+        assert!(state.wrap_bounds_stale);
+    }
+
+    #[test]
+    fn viewport_can_start_inside_wrapped_logical_line() {
+        let lines = vec!["abcdefghijkl".to_owned(), "next".to_owned()];
+        let request = RenderRequest {
+            context: RenderContext {
+                gutter_digits: 1,
+                x: 0,
+                width: 4,
+                wrap: true,
+                mode: ViewMode::Plain,
+            },
+            row_limit: 8,
+        };
+        let mut cache = RenderedLineCache::default();
+
+        let first = render_viewport(&lines, 1, 0, 2, request, &mut cache, None);
+        assert_eq!(first.last_line_number, Some(1));
+        assert_eq!(span_text(&first.lines[0].spans), "1 │ abcd");
+        assert_eq!(span_text(&first.lines[1].spans), "  ┆ efgh");
+
+        let second = render_viewport(&lines, 1, 1, 2, request, &mut cache, None);
+        assert_eq!(second.last_line_number, Some(1));
+        assert_eq!(span_text(&second.lines[0].spans), "  ┆ efgh");
+        assert_eq!(span_text(&second.lines[1].spans), "  ┆ ijkl");
+    }
+
+    #[test]
+    fn viewport_reports_actual_last_logical_line() {
+        let lines = vec!["abcdefghijkl".to_owned(), "next".to_owned()];
+        let request = RenderRequest {
+            context: RenderContext {
+                gutter_digits: 1,
+                x: 0,
+                width: 4,
+                wrap: true,
+                mode: ViewMode::Plain,
+            },
+            row_limit: 8,
+        };
+        let mut cache = RenderedLineCache::default();
+
+        let viewport = render_viewport(&lines, 1, 2, 3, request, &mut cache, None);
+
+        assert_eq!(viewport.last_line_number, Some(2));
+        assert_eq!(span_text(&viewport.lines[0].spans), "  ┆ ijkl");
+        assert_eq!(span_text(&viewport.lines[1].spans), "2 │ next");
+    }
+
+    #[test]
+    fn wrapped_progress_advances_by_visible_bytes() {
+        let mut temp = NamedTempFile::new().unwrap();
+        writeln!(temp, "abcdefghijkl").unwrap();
+        writeln!(temp, "next").unwrap();
+        let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
+        let context = RenderContext {
+            gutter_digits: 1,
+            x: 0,
+            width: 4,
+            wrap: true,
+            mode: ViewMode::Plain,
+        };
+        let lines = file.read_window(0, 2).unwrap();
+        let mut state = ViewState::default();
+
+        assert_eq!(
+            viewer_progress_percent(&file, &lines, &state, 2, context, 1),
+            44
+        );
+
+        state.top_row_offset = 1;
+        assert_eq!(
+            viewer_progress_percent(&file, &lines, &state, 2, context, 1),
+            72
+        );
+
+        state.top = 1;
+        state.top_row_offset = 0;
+        let lines = file.read_window(1, 2).unwrap();
+        assert_eq!(
+            viewer_progress_percent(&file, &lines, &state, 2, context, 2),
+            100
+        );
+    }
+
+    #[test]
+    fn tail_position_keeps_nowrap_last_page_full() {
+        assert_eq!(last_full_logical_page_top(10, 3), 7);
+        assert_eq!(last_full_logical_page_top(2, 5), 0);
+    }
+
+    #[test]
+    fn wrapped_tail_position_can_start_inside_last_line() {
+        let mut temp = NamedTempFile::new().unwrap();
+        writeln!(temp, "prev").unwrap();
+        writeln!(temp, "abcdefghijkl").unwrap();
+        let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
+        let context = RenderContext {
+            gutter_digits: 1,
+            x: 0,
+            width: 4,
+            wrap: true,
+            mode: ViewMode::Plain,
+        };
+
+        let tail = compute_tail_position(&file, 2, context).unwrap();
+
+        assert_eq!(
+            tail,
+            ViewPosition {
+                top: 1,
+                row_offset: 1
+            }
+        );
+    }
+
+    #[test]
+    fn page_down_clamps_to_known_wrapped_tail() {
+        let mut state = ViewState {
+            top_max_row_offset: 5,
+            ..ViewState::default()
+        };
+
+        let action = handle_key_event(KeyCode::PageDown, KeyModifiers::NONE, &mut state, 3, 10);
+
+        assert!(action.dirty);
+        assert_eq!(state.top, 0);
+        assert_eq!(state.top_row_offset, 5);
+    }
+
+    #[test]
+    fn top_line_tail_offset_points_to_last_full_view() {
+        let lines = vec!["abcdefghijklmnop".to_owned()];
+        let context = RenderContext {
+            gutter_digits: 1,
+            x: 0,
+            width: 4,
+            wrap: true,
+            mode: ViewMode::Plain,
+        };
+
+        assert_eq!(top_line_tail_offset(&lines, 2, context), 2);
+    }
+
+    #[test]
+    fn footer_wrap_hint_matches_current_mode() {
+        let state = ViewState::default();
+        assert!(idle_footer_text(&state).contains("w unwrap"));
+
+        let state = ViewState {
+            wrap: false,
+            ..ViewState::default()
+        };
+        assert!(idle_footer_text(&state).contains("w wrap"));
     }
 
     #[test]

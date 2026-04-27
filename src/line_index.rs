@@ -10,15 +10,22 @@ pub struct IndexedTempFile {
     label: String,
     temp: NamedTempFile,
     offsets: Vec<u64>,
+    len: u64,
 }
 
 impl IndexedTempFile {
     pub fn new(label: String, temp: NamedTempFile) -> Result<Self> {
         let offsets = index_lines(&temp)?;
+        let len = temp
+            .as_file()
+            .metadata()
+            .context("failed to stat indexed temp file")?
+            .len();
         Ok(Self {
             label,
             temp,
             offsets,
+            len,
         })
     }
 
@@ -28,6 +35,14 @@ impl IndexedTempFile {
 
     pub fn line_count(&self) -> usize {
         self.offsets.len()
+    }
+
+    pub fn byte_len(&self) -> u64 {
+        self.len
+    }
+
+    pub fn byte_offset_for_line(&self, line: usize) -> u64 {
+        self.offsets.get(line).copied().unwrap_or(self.len)
     }
 
     pub fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>> {
@@ -111,6 +126,10 @@ mod tests {
         write!(temp, "a\nb\n").unwrap();
         let indexed = IndexedTempFile::new("test".to_owned(), temp).unwrap();
         assert_eq!(indexed.line_count(), 2);
+        assert_eq!(indexed.byte_len(), 4);
+        assert_eq!(indexed.byte_offset_for_line(0), 0);
+        assert_eq!(indexed.byte_offset_for_line(1), 2);
+        assert_eq!(indexed.byte_offset_for_line(2), 4);
         assert_eq!(indexed.read_window(1, 10).unwrap(), vec!["b"]);
     }
 }

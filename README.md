@@ -141,7 +141,8 @@ fmtview diff examples/diff-left.json examples/diff-right.json
 Use the mouse wheel or trackpad to scroll, `Space`/`f` and `b` to page, `w` to
 toggle wrap/nowrap, and `q` to exit. `examples/showcase.json` includes embedded
 XML, a deliberately mismatched XML closing tag, escaped special tokens, nested
-JSON, arrays, booleans, nulls, and long strings for wrap testing.
+JSON, arrays, booleans, nulls, and an oversized single logical line near the top
+of the file for wrapped scroll testing.
 `examples/events.jsonl` includes a single deeply nested JSONL record on one
 physical input line so you can verify that JSONL records are expanded by JSON
 structure during formatting. `examples/page.html` is well-formed HTML that
@@ -173,8 +174,10 @@ Left/Right  horizontal scroll in nowrap mode
 ```
 
 The title bar shows the source label, total line count, visible line range,
-scroll percentage, and whether wrapping is enabled. The left gutter shows line
-numbers, and wrapped continuation rows use a lighter continuation gutter.
+scroll percentage, and whether wrapping is enabled. In wrap mode, the percentage
+tracks the visible byte position so it can advance inside a very long logical
+line without scanning the whole file. The left gutter shows line numbers, and
+wrapped continuation rows use a lighter continuation gutter.
 
 To jump to a specific line, type the line number directly and press Enter. While
 a line jump is pending, the footer shows the target line; Backspace edits it and
