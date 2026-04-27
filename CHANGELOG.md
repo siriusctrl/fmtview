@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-04-27
+
 ### Changed
 
 - Open record-like TTY previews lazily, formatting only the visible records
