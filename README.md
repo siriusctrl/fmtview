@@ -176,8 +176,11 @@ Left/Right  horizontal scroll in nowrap mode
 The title bar shows the source label, total line count, visible line range,
 scroll percentage, and whether wrapping is enabled. In wrap mode, the percentage
 tracks the visible byte position so it can advance inside a very long logical
-line without scanning the whole file. The left gutter shows line numbers, and
-wrapped continuation rows use a lighter continuation gutter.
+line without scanning the whole file. When the viewport starts inside one
+wrapped logical line, the title/footer also show a `+N rows` offset so repetitive
+content still gives visible scrolling feedback. The left gutter shows line
+numbers, and wrapped continuation rows use a lighter continuation gutter with
+periodic tick marks.
 
 To jump to a specific line, type the line number directly and press Enter. While
 a line jump is pending, the footer shows the target line; Backspace edits it and

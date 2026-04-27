@@ -8,6 +8,29 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-04-27
+
+### Changed
+
+- Improved wrapped long-line viewer performance by caching rendered visual row
+  chunks and prewarming nearby chunks without reducing syntax highlight
+  correctness.
+- Added lightweight wrap and XML-like highlight checkpoints for huge logical
+  lines, so repeated deep scrolling rebuilds from nearby state instead of the
+  start of the line.
+- Optimized tail-page calculation and rendering for jumps near huge wrapped
+  lines while keeping the last full page visible.
+- Clamped wrapped EOF row offsets to the actual final full page instead of
+  preserving overscrolled partial pages.
+- Fixed `End`/`G` in wrap mode so single-line long records jump to the real
+  final visual page and report 100% at EOF.
+- Added wrapped-line position feedback with `+N rows` status text and subtle
+  continuation gutter ticks for very long repeated records.
+- Reduced large-record indexing overhead by scanning formatted output in fixed
+  byte buffers instead of allocating per physical line during index creation.
+- Added an ignored release-mode performance smoke test for huge wrapped-line
+  rendering and last-line jump paths.
+
 ## [0.1.4] - 2026-04-27
 
 ### Changed

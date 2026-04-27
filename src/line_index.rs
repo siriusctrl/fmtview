@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufRead, BufReader, Seek, SeekFrom},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
 };
 
 use anyhow::{Context, Result};
@@ -82,24 +82,27 @@ fn index_lines(temp: &NamedTempFile) -> Result<Vec<u64>> {
         return Ok(Vec::new());
     }
 
-    let file = File::open(temp.path()).context("failed to open temp file for indexing")?;
-    let mut reader = BufReader::new(file);
+    let mut file = File::open(temp.path()).context("failed to open temp file for indexing")?;
     let mut offsets = vec![0_u64];
     let mut offset = 0_u64;
-    let mut buf = Vec::with_capacity(8192);
+    let mut buf = [0_u8; 64 * 1024];
 
     loop {
-        buf.clear();
-        let read = reader
-            .read_until(b'\n', &mut buf)
+        let read = file
+            .read(&mut buf)
             .context("failed to index formatted output")?;
         if read == 0 {
             break;
         }
-        offset += read as u64;
-        if offset < len {
-            offsets.push(offset);
+        for (index, byte) in buf[..read].iter().enumerate() {
+            if *byte == b'\n' {
+                let line_start = offset + index as u64 + 1;
+                if line_start < len {
+                    offsets.push(line_start);
+                }
+            }
         }
+        offset += read as u64;
     }
 
     Ok(offsets)
@@ -131,5 +134,19 @@ mod tests {
         assert_eq!(indexed.byte_offset_for_line(1), 2);
         assert_eq!(indexed.byte_offset_for_line(2), 4);
         assert_eq!(indexed.read_window(1, 10).unwrap(), vec!["b"]);
+    }
+
+    #[test]
+    fn indexes_lines_after_long_records() {
+        let mut temp = NamedTempFile::new().unwrap();
+        let long = "a".repeat(70 * 1024);
+        writeln!(temp, "{long}").unwrap();
+        writeln!(temp, "b").unwrap();
+
+        let indexed = IndexedTempFile::new("test".to_owned(), temp).unwrap();
+
+        assert_eq!(indexed.line_count(), 2);
+        assert_eq!(indexed.byte_offset_for_line(1), long.len() as u64 + 1);
+        assert_eq!(indexed.read_window(1, 1).unwrap(), vec!["b"]);
     }
 }
