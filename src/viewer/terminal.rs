@@ -6,7 +6,6 @@ use ratatui::{
     layout::{Constraint, Layout, Rect, Size},
     style::{Color, Modifier},
     text::Line,
-    widgets::{Block, Borders, Paragraph, Widget},
 };
 
 use super::{
@@ -17,7 +16,9 @@ use super::{
 pub(super) struct ViewerTerminal<B> {
     backend: B,
     previous: Option<Buffer>,
+    scratch: Option<Buffer>,
     previous_position: Option<ViewPosition>,
+    output: Vec<u8>,
 }
 
 impl<B> ViewerTerminal<B>
@@ -28,7 +29,9 @@ where
         Self {
             backend,
             previous: None,
+            scratch: None,
             previous_position: None,
+            output: Vec::with_capacity(16 * 1024),
         }
     }
 
@@ -53,17 +56,27 @@ where
         position: ViewPosition,
         scroll_hint: Option<ScrollHint>,
     ) -> io::Result<()> {
-        let mut current = Buffer::empty(area);
+        let mut current = self.scratch.take().unwrap_or_else(|| Buffer::empty(area));
+        current.resize(area);
+        current.reset();
         render_frame(&mut current, styled, title, footer_text);
-        match &self.previous {
+        match self.previous.take() {
             Some(previous) if previous.area == current.area => {
-                draw_diff(&mut self.backend, previous, &current, scroll_hint)?;
+                draw_diff(
+                    &mut self.backend,
+                    &previous,
+                    &current,
+                    scroll_hint,
+                    &mut self.output,
+                )?;
+                self.scratch = Some(previous);
             }
-            _ => {
+            previous => {
                 self.backend.clear()?;
                 let empty = Buffer::empty(area);
-                draw_cells(&mut self.backend, empty.diff(&current))?;
+                draw_cells_with_buffer(&mut self.backend, empty.diff(&current), &mut self.output)?;
                 self.previous_position = None;
+                self.scratch = previous;
             }
         }
         self.backend.hide_cursor()?;
@@ -91,6 +104,10 @@ where
         };
         Some(ScrollHint { amount, direction })
     }
+
+    pub(super) fn previous_position(&self) -> Option<ViewPosition> {
+        self.previous_position
+    }
 }
 
 fn draw_diff<B>(
@@ -98,6 +115,7 @@ fn draw_diff<B>(
     previous: &Buffer,
     current: &Buffer,
     scroll_hint: Option<ScrollHint>,
+    output: &mut Vec<u8>,
 ) -> io::Result<()>
 where
     B: Backend<Error = io::Error> + Write,
@@ -111,19 +129,33 @@ where
         if scroll.area.height > scroll.amount {
             let scrolled_updates = scroll.updates(previous, current);
             scroll.emit(backend)?;
-            return draw_cells(backend, scrolled_updates);
+            return draw_cells_with_buffer(backend, scrolled_updates, output);
         }
     }
 
-    draw_cells(backend, previous.diff(current))
+    draw_cells_with_buffer(backend, previous.diff(current), output)
 }
 
+#[cfg(test)]
 pub(super) fn draw_cells<'a, B, I>(backend: &mut B, content: I) -> io::Result<()>
 where
     B: Write,
     I: IntoIterator<Item = (u16, u16, &'a Cell)>,
 {
     let mut output = Vec::with_capacity(16 * 1024);
+    draw_cells_with_buffer(backend, content, &mut output)
+}
+
+fn draw_cells_with_buffer<'a, B, I>(
+    backend: &mut B,
+    content: I,
+    output: &mut Vec<u8>,
+) -> io::Result<()>
+where
+    B: Write,
+    I: IntoIterator<Item = (u16, u16, &'a Cell)>,
+{
+    output.clear();
     let mut fg = Color::Reset;
     let mut bg = Color::Reset;
     let mut modifier = Modifier::empty();
@@ -132,119 +164,148 @@ where
     for (x, y, cell) in content {
         if !matches!(last_pos, Some((last_x, last_y)) if x == last_x.saturating_add(1) && y == last_y)
         {
-            write!(
-                output,
-                "\x1b[{};{}H",
-                y.saturating_add(1),
-                x.saturating_add(1)
-            )?;
+            push_cursor_move(output, x, y);
         }
         last_pos = Some((x, y));
 
         if cell.modifier != modifier {
-            write!(output, "\x1b[0m")?;
+            output.extend_from_slice(b"\x1b[0m");
             fg = Color::Reset;
             bg = Color::Reset;
-            write_modifier(&mut output, cell.modifier)?;
+            write_modifier(output, cell.modifier);
             modifier = cell.modifier;
         }
         if cell.fg != fg {
-            write_fg(&mut output, cell.fg)?;
+            write_fg(output, cell.fg);
             fg = cell.fg;
         }
         if cell.bg != bg {
-            write_bg(&mut output, cell.bg)?;
+            write_bg(output, cell.bg);
             bg = cell.bg;
         }
         output.extend_from_slice(cell.symbol().as_bytes());
     }
 
     output.extend_from_slice(b"\x1b[0m");
-    backend.write_all(&output)
+    backend.write_all(output)
 }
 
-fn write_modifier<B>(backend: &mut B, modifier: Modifier) -> io::Result<()>
-where
-    B: Write,
-{
+fn push_cursor_move(output: &mut Vec<u8>, x: u16, y: u16) {
+    output.extend_from_slice(b"\x1b[");
+    push_u16(output, y.saturating_add(1));
+    output.push(b';');
+    push_u16(output, x.saturating_add(1));
+    output.push(b'H');
+}
+
+fn write_modifier(output: &mut Vec<u8>, modifier: Modifier) {
     if modifier.contains(Modifier::BOLD) {
-        write!(backend, "\x1b[1m")?;
+        output.extend_from_slice(b"\x1b[1m");
     }
     if modifier.contains(Modifier::DIM) {
-        write!(backend, "\x1b[2m")?;
+        output.extend_from_slice(b"\x1b[2m");
     }
     if modifier.contains(Modifier::ITALIC) {
-        write!(backend, "\x1b[3m")?;
+        output.extend_from_slice(b"\x1b[3m");
     }
     if modifier.contains(Modifier::UNDERLINED) {
-        write!(backend, "\x1b[4m")?;
+        output.extend_from_slice(b"\x1b[4m");
     }
     if modifier.contains(Modifier::SLOW_BLINK) {
-        write!(backend, "\x1b[5m")?;
+        output.extend_from_slice(b"\x1b[5m");
     }
     if modifier.contains(Modifier::RAPID_BLINK) {
-        write!(backend, "\x1b[6m")?;
+        output.extend_from_slice(b"\x1b[6m");
     }
     if modifier.contains(Modifier::REVERSED) {
-        write!(backend, "\x1b[7m")?;
+        output.extend_from_slice(b"\x1b[7m");
     }
     if modifier.contains(Modifier::HIDDEN) {
-        write!(backend, "\x1b[8m")?;
+        output.extend_from_slice(b"\x1b[8m");
     }
     if modifier.contains(Modifier::CROSSED_OUT) {
-        write!(backend, "\x1b[9m")?;
+        output.extend_from_slice(b"\x1b[9m");
     }
-    Ok(())
 }
 
-fn write_fg<B>(backend: &mut B, color: Color) -> io::Result<()>
-where
-    B: Write,
-{
-    write_color(backend, 38, 39, 30, 90, color)
+fn write_fg(output: &mut Vec<u8>, color: Color) {
+    write_color(output, 38, 39, 30, 90, color)
 }
 
-fn write_bg<B>(backend: &mut B, color: Color) -> io::Result<()>
-where
-    B: Write,
-{
-    write_color(backend, 48, 49, 40, 100, color)
+fn write_bg(output: &mut Vec<u8>, color: Color) {
+    write_color(output, 48, 49, 40, 100, color)
 }
 
-fn write_color<B>(
-    backend: &mut B,
+fn write_color(
+    output: &mut Vec<u8>,
     extended_prefix: u8,
     reset: u8,
     base: u8,
     bright_base: u8,
     color: Color,
-) -> io::Result<()>
-where
-    B: Write,
-{
+) {
     match color {
-        Color::Reset => write!(backend, "\x1b[{reset}m"),
-        Color::Black => write!(backend, "\x1b[{}m", base),
-        Color::Red => write!(backend, "\x1b[{}m", base + 1),
-        Color::Green => write!(backend, "\x1b[{}m", base + 2),
-        Color::Yellow => write!(backend, "\x1b[{}m", base + 3),
-        Color::Blue => write!(backend, "\x1b[{}m", base + 4),
-        Color::Magenta => write!(backend, "\x1b[{}m", base + 5),
-        Color::Cyan => write!(backend, "\x1b[{}m", base + 6),
-        Color::Gray => write!(backend, "\x1b[{}m", base + 7),
-        Color::DarkGray => write!(backend, "\x1b[{}m", bright_base),
-        Color::LightRed => write!(backend, "\x1b[{}m", bright_base + 1),
-        Color::LightGreen => write!(backend, "\x1b[{}m", bright_base + 2),
-        Color::LightYellow => write!(backend, "\x1b[{}m", bright_base + 3),
-        Color::LightBlue => write!(backend, "\x1b[{}m", bright_base + 4),
-        Color::LightMagenta => write!(backend, "\x1b[{}m", bright_base + 5),
-        Color::LightCyan => write!(backend, "\x1b[{}m", bright_base + 6),
-        Color::White => write!(backend, "\x1b[{}m", bright_base + 7),
-        Color::Indexed(index) => write!(backend, "\x1b[{extended_prefix};5;{index}m"),
+        Color::Reset => push_sgr(output, reset),
+        Color::Black => push_sgr(output, base),
+        Color::Red => push_sgr(output, base + 1),
+        Color::Green => push_sgr(output, base + 2),
+        Color::Yellow => push_sgr(output, base + 3),
+        Color::Blue => push_sgr(output, base + 4),
+        Color::Magenta => push_sgr(output, base + 5),
+        Color::Cyan => push_sgr(output, base + 6),
+        Color::Gray => push_sgr(output, base + 7),
+        Color::DarkGray => push_sgr(output, bright_base),
+        Color::LightRed => push_sgr(output, bright_base + 1),
+        Color::LightGreen => push_sgr(output, bright_base + 2),
+        Color::LightYellow => push_sgr(output, bright_base + 3),
+        Color::LightBlue => push_sgr(output, bright_base + 4),
+        Color::LightMagenta => push_sgr(output, bright_base + 5),
+        Color::LightCyan => push_sgr(output, bright_base + 6),
+        Color::White => push_sgr(output, bright_base + 7),
+        Color::Indexed(index) => {
+            output.extend_from_slice(b"\x1b[");
+            push_u8(output, extended_prefix);
+            output.extend_from_slice(b";5;");
+            push_u8(output, index);
+            output.push(b'm');
+        }
         Color::Rgb(red, green, blue) => {
-            write!(backend, "\x1b[{extended_prefix};2;{red};{green};{blue}m")
+            output.extend_from_slice(b"\x1b[");
+            push_u8(output, extended_prefix);
+            output.extend_from_slice(b";2;");
+            push_u8(output, red);
+            output.push(b';');
+            push_u8(output, green);
+            output.push(b';');
+            push_u8(output, blue);
+            output.push(b'm');
         }
     }
+}
+
+fn push_sgr(output: &mut Vec<u8>, code: u8) {
+    output.extend_from_slice(b"\x1b[");
+    push_u8(output, code);
+    output.push(b'm');
+}
+
+fn push_u8(output: &mut Vec<u8>, value: u8) {
+    push_u16(output, u16::from(value));
+}
+
+fn push_u16(output: &mut Vec<u8>, value: u16) {
+    let mut buf = [0_u8; 5];
+    let mut index = buf.len();
+    let mut value = value;
+    loop {
+        index -= 1;
+        buf[index] = b'0' + (value % 10) as u8;
+        value /= 10;
+        if value == 0 {
+            break;
+        }
+    }
+    output.extend_from_slice(&buf[index..]);
 }
 
 fn render_frame(
@@ -254,19 +315,127 @@ fn render_frame(
     footer_text: String,
 ) {
     let area = buffer.area;
-    let [body, footer] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
-    let paragraph = Paragraph::new(styled)
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_style(gutter_style()),
-        )
-        .style(plain_style());
-    paragraph.render(body, buffer);
-    Paragraph::new(footer_text)
-        .style(gutter_style())
-        .render(footer, buffer);
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let footer_y = area.y.saturating_add(area.height - 1);
+    let body = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height.saturating_sub(1),
+    };
+    if body.height > 0 {
+        render_body(buffer, body, styled, &title);
+    }
+
+    buffer.set_stringn(
+        area.x,
+        footer_y,
+        footer_text,
+        usize::from(area.width),
+        gutter_style(),
+    );
+}
+
+fn render_body(buffer: &mut Buffer, area: Rect, styled: Vec<Line<'static>>, title: &str) {
+    if area.width < 2 || area.height < 2 {
+        for (row, line) in styled
+            .into_iter()
+            .take(usize::from(area.height))
+            .enumerate()
+        {
+            set_line_fast(
+                buffer,
+                area.x,
+                area.y.saturating_add(row as u16),
+                &line,
+                area.width,
+            );
+        }
+        return;
+    }
+
+    render_border(buffer, area, title);
+    let content_width = area.width.saturating_sub(2);
+    let content_height = area.height.saturating_sub(2);
+    for (row, line) in styled
+        .into_iter()
+        .take(usize::from(content_height))
+        .enumerate()
+    {
+        set_line_fast(
+            buffer,
+            area.x.saturating_add(1),
+            area.y.saturating_add(1).saturating_add(row as u16),
+            &line,
+            content_width,
+        );
+    }
+}
+
+fn set_line_fast(buffer: &mut Buffer, mut x: u16, y: u16, line: &Line<'_>, max_width: u16) {
+    let mut remaining = max_width;
+    for span in &line.spans {
+        if remaining == 0 {
+            break;
+        }
+
+        let style = plain_style().patch(line.style).patch(span.style);
+        let text = span.content.as_ref();
+        if text.is_ascii() {
+            for byte in text.bytes().take(usize::from(remaining)) {
+                if byte.is_ascii_control() {
+                    continue;
+                }
+                buffer[(x, y)].set_char(char::from(byte)).set_style(style);
+                x = x.saturating_add(1);
+                remaining = remaining.saturating_sub(1);
+                if remaining == 0 {
+                    break;
+                }
+            }
+        } else {
+            let next = buffer.set_stringn(x, y, text, usize::from(remaining), style);
+            let written = next.0.saturating_sub(x);
+            x = next.0;
+            remaining = remaining.saturating_sub(written);
+        }
+    }
+}
+
+fn render_border(buffer: &mut Buffer, area: Rect, title: &str) {
+    let style = gutter_style();
+    let left = area.x;
+    let right = area.x.saturating_add(area.width - 1);
+    let top = area.y;
+    let bottom = area.y.saturating_add(area.height - 1);
+
+    buffer[(left, top)].set_symbol("┌").set_style(style);
+    buffer[(right, top)].set_symbol("┐").set_style(style);
+    buffer[(left, bottom)].set_symbol("└").set_style(style);
+    buffer[(right, bottom)].set_symbol("┘").set_style(style);
+
+    for x in left.saturating_add(1)..right {
+        buffer[(x, top)].set_symbol("─").set_style(style);
+        buffer[(x, bottom)].set_symbol("─").set_style(style);
+    }
+    for y in top.saturating_add(1)..bottom {
+        buffer[(left, y)].set_symbol("│").set_style(style);
+        buffer[(right, y)].set_symbol("│").set_style(style);
+    }
+
+    let title_width = area.width.saturating_sub(2);
+    if title_width > 0 {
+        buffer.set_stringn(
+            left.saturating_add(1),
+            top,
+            title,
+            usize::from(title_width),
+            style,
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -279,6 +448,22 @@ enum ScrollDirection {
 pub(super) struct ScrollHint {
     amount: u16,
     direction: ScrollDirection,
+}
+
+impl ScrollHint {
+    pub(super) fn up(amount: u16) -> Self {
+        Self {
+            amount,
+            direction: ScrollDirection::Up,
+        }
+    }
+
+    pub(super) fn down(amount: u16) -> Self {
+        Self {
+            amount,
+            direction: ScrollDirection::Down,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

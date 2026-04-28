@@ -1,5 +1,5 @@
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     io::{self, Write},
     rc::Rc,
     time::{Duration, Instant},
@@ -815,6 +815,33 @@ fn ansi_draw_writes_compact_indexed_colors() {
 }
 
 #[test]
+fn terminal_renderer_applies_plain_style_to_default_spans() {
+    let output = Rc::new(RefCell::new(Vec::new()));
+    let writer = CapturingWriter {
+        output: Rc::clone(&output),
+    };
+    let backend = CrosstermBackend::new(writer);
+    let mut terminal = ViewerTerminal::new(backend);
+
+    terminal
+        .draw(
+            Rect::new(0, 0, 24, 4),
+            vec![Line::from(Span::raw("plain text"))],
+            " test ".to_owned(),
+            " footer ".to_owned(),
+            ViewPosition {
+                top: 0,
+                row_offset: 0,
+            },
+            None,
+        )
+        .unwrap();
+
+    let output = String::from_utf8(output.borrow().clone()).unwrap();
+    assert!(output.contains("\x1b[38;5;145mplain text"));
+}
+
+#[test]
 fn shifted_wheel_scrolls_horizontally_in_nowrap() {
     let mut state = ViewState {
         wrap: false,
@@ -1361,6 +1388,21 @@ struct CountingWriter {
 impl Write for CountingWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.bytes.set(self.bytes.get().saturating_add(buf.len()));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+struct CapturingWriter {
+    output: Rc<RefCell<Vec<u8>>>,
+}
+
+impl Write for CapturingWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.output.borrow_mut().extend_from_slice(buf);
         Ok(buf.len())
     }
 

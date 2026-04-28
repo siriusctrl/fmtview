@@ -44,6 +44,7 @@ const WRAP_RENDER_CHUNK_ROWS: usize = 64;
 const WRAP_RENDER_CHUNKS_PER_LINE: usize = 64;
 const WRAP_CHECKPOINT_INTERVAL_ROWS: usize = 256;
 const HIGHLIGHT_CHECKPOINT_INTERVAL_BYTES: usize = 32 * 1024;
+const TERMINAL_SCROLL_HINT_MAX_ROWS: usize = 12;
 const WRAP_PREWARM_LOGICAL_LINES: usize = 4;
 const WRAP_GUTTER_MINOR_TICK_ROWS: usize = 8;
 const WRAP_GUTTER_MAJOR_TICK_ROWS: usize = 64;
@@ -295,7 +296,9 @@ fn draw_view(
         row_offset: state.top_row_offset,
     };
     let scroll_hint = if state.wrap {
-        terminal.scroll_hint(position)
+        terminal
+            .scroll_hint(position)
+            .or_else(|| logical_scroll_hint(terminal, render_cache, position))
     } else {
         None
     };
@@ -356,6 +359,34 @@ fn draw_view(
 
 fn active_search_query(state: &ViewState) -> Option<&str> {
     (!state.search_query.is_empty()).then_some(state.search_query.as_str())
+}
+
+fn logical_scroll_hint(
+    terminal: &ViewerTerminal<CrosstermBackend<io::Stdout>>,
+    render_cache: &RenderedLineCache,
+    position: ViewPosition,
+) -> Option<terminal::ScrollHint> {
+    let previous = terminal.previous_position()?;
+    if previous.row_offset != 0 || position.row_offset != 0 {
+        return None;
+    }
+
+    if position.top == previous.top.saturating_add(1) {
+        return known_line_rows(render_cache, previous.top).map(terminal::ScrollHint::up);
+    }
+    if previous.top == position.top.saturating_add(1) {
+        return known_line_rows(render_cache, position.top).map(terminal::ScrollHint::down);
+    }
+
+    None
+}
+
+fn known_line_rows(render_cache: &RenderedLineCache, zero_based_line: usize) -> Option<u16> {
+    let rows = render_cache.status(zero_based_line + 1).total_rows?;
+    if rows == 0 || rows > TERMINAL_SCROLL_HINT_MAX_ROWS {
+        return None;
+    }
+    u16::try_from(rows).ok()
 }
 
 fn idle_footer_text(state: &ViewState) -> String {
