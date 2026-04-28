@@ -1,17 +1,15 @@
-mod diff;
-mod format;
-mod input;
-mod lazy;
-mod line_index;
-mod viewer;
-
 use std::io::{self, IsTerminal, Write};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
-use format::{FormatKind, FormatOptions};
-use input::InputSource;
-use line_index::ViewFile;
+
+use crate::{
+    diff,
+    format::{self, FormatKind, FormatOptions},
+    input::InputSource,
+    line_index::{self, ViewFile},
+    preview, viewer,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -71,7 +69,7 @@ struct DiffCommand {
     indent: usize,
 }
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -129,11 +127,11 @@ fn should_view() -> bool {
 }
 
 fn open_preview_file(input: &InputSource, options: &FormatOptions) -> Result<Box<dyn ViewFile>> {
-    match lazy::preview_plan(input, options)? {
-        lazy::PreviewPlan::LazyRecords => {
-            Ok(Box::new(lazy::LazyFormattedFile::new(input, *options)?))
+    match preview::preview_plan(input, options)? {
+        preview::PreviewPlan::LazyRecords => {
+            Ok(Box::new(preview::LazyFormattedFile::new(input, *options)?))
         }
-        lazy::PreviewPlan::EagerDocument => {
+        preview::PreviewPlan::EagerDocument => {
             let formatted = format::format_source_to_temp(input, options)?;
             Ok(Box::new(line_index::IndexedTempFile::new(
                 input.label().to_owned(),

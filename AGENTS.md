@@ -59,6 +59,6 @@ workflow-specific docs.
 - Run `cargo test`.
 - Run `cargo clippy --all-targets -- -D warnings` when Clippy is available.
 - For TUI changes, run the built CLI under a real PTY, for example with `script`, and verify scroll/quit keys.
-- For viewer rendering, wrapping, highlighting, or terminal draw performance changes, run `scripts/bench-viewer-performance.sh` and compare median time/byte counts.
-- For parser, formatter, JSONL record, or lazy-preview performance changes, run `scripts/bench-format-performance.sh` and compare median timings.
-- For alternate complete-output parser or formatter algorithms, run `scripts/bench-format-algorithm.sh --candidate 'name=...'` and require byte-for-byte aligned output.
+- For viewer rendering, wrapping, highlighting, or terminal draw performance changes, run `benches/viewer-performance.sh` and compare median time/byte counts.
+- For parser, formatter, JSONL record, or lazy-preview performance changes, run `benches/format-performance.sh` and compare median timings.
+- For alternate complete-output parser or formatter algorithms, run `benches/format-algorithm.sh --candidate 'name=...'` and require byte-for-byte aligned output.

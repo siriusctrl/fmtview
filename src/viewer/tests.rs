@@ -1105,7 +1105,7 @@ fn perf_huge_wrapped_line_paths() {
 }
 
 #[test]
-#[ignore = "performance smoke; run scripts/bench-viewer-performance.sh"]
+#[ignore = "performance smoke; run benches/viewer-performance.sh"]
 fn perf_repeated_viewport_scroll_render() {
     let mut lines = Vec::new();
     for index in 0..1_200 {
@@ -1150,7 +1150,7 @@ fn perf_repeated_viewport_scroll_render() {
 }
 
 #[test]
-#[ignore = "performance smoke; run scripts/bench-viewer-performance.sh"]
+#[ignore = "performance smoke; run benches/viewer-performance.sh"]
 fn perf_terminal_scroll_draw_bytes() {
     let mut lines = Vec::new();
     for index in 0..1_200 {
@@ -1212,7 +1212,7 @@ fn perf_terminal_scroll_draw_bytes() {
 }
 
 #[test]
-#[ignore = "performance smoke; run scripts/bench-viewer-performance.sh"]
+#[ignore = "performance smoke; run benches/viewer-performance.sh"]
 fn perf_terminal_visual_row_scroll_bytes() {
     let message = (0..2_000)
         .map(|index| format!("chunk-{index:04}-abcdefghijklmnopqrstuvwxyz;"))

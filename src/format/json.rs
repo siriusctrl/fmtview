@@ -1,156 +1,12 @@
-use std::{
-    ffi::OsStr,
-    io::{BufRead, BufReader, BufWriter, Cursor, Read, Write},
-};
+use std::io::{BufRead, BufReader, Cursor, Write};
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::ValueEnum;
-use quick_xml::{Reader as XmlReader, Writer as XmlWriter, events::Event};
-use tempfile::NamedTempFile;
 
 use crate::input::InputSource;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum FormatKind {
-    Auto,
-    Json,
-    Jsonl,
-    Xml,
-}
+use super::types::FormatOptions;
 
-#[derive(Debug, Clone, Copy)]
-pub struct FormatOptions {
-    pub kind: FormatKind,
-    pub indent: usize,
-}
-
-pub fn format_source_to_temp(
-    source: &InputSource,
-    options: &FormatOptions,
-) -> Result<NamedTempFile> {
-    let candidates = candidate_kinds(source, options)?;
-    let mut errors = Vec::new();
-
-    for kind in candidates {
-        match try_format_source_to_temp(source, kind, options) {
-            Ok(temp) => return Ok(temp),
-            Err(error) => errors.push(format!("{kind:?}: {error:#}")),
-        }
-    }
-
-    bail!(
-        "failed to format {} as JSON, JSONL, or XML:\n{}",
-        source.label(),
-        errors.join("\n")
-    )
-}
-
-fn candidate_kinds(source: &InputSource, options: &FormatOptions) -> Result<Vec<FormatKind>> {
-    if options.kind != FormatKind::Auto {
-        return Ok(vec![options.kind]);
-    }
-
-    let detected = detect_kind(source)?;
-    let mut kinds = Vec::with_capacity(3);
-    push_unique(&mut kinds, detected);
-
-    // JSONL is a common ambiguity: the first byte often looks like JSON, but
-    // a whole-file JSON parser will reject the second record as trailing data.
-    if detected == FormatKind::Json {
-        push_unique(&mut kinds, FormatKind::Jsonl);
-    }
-
-    push_unique(&mut kinds, FormatKind::Json);
-    push_unique(&mut kinds, FormatKind::Jsonl);
-    push_unique(&mut kinds, FormatKind::Xml);
-    Ok(kinds)
-}
-
-fn push_unique(kinds: &mut Vec<FormatKind>, kind: FormatKind) {
-    if !kinds.contains(&kind) {
-        kinds.push(kind);
-    }
-}
-
-fn detect_kind(source: &InputSource) -> Result<FormatKind> {
-    match source
-        .path()
-        .extension()
-        .and_then(OsStr::to_str)
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("json") => return Ok(FormatKind::Json),
-        Some("jsonl" | "ndjson") => return Ok(FormatKind::Jsonl),
-        Some("xml" | "html" | "htm" | "xhtml") => return Ok(FormatKind::Xml),
-        _ => {}
-    }
-
-    let mut reader = BufReader::new(source.open()?);
-    let mut buf = [0_u8; 8192];
-    let read = reader
-        .read(&mut buf)
-        .with_context(|| format!("failed to inspect {}", source.label()))?;
-    let first = buf[..read]
-        .iter()
-        .copied()
-        .find(|byte| !byte.is_ascii_whitespace());
-
-    match first {
-        Some(b'<') => Ok(FormatKind::Xml),
-        Some(b'{' | b'[') => Ok(FormatKind::Json),
-        _ => Ok(FormatKind::Jsonl),
-    }
-}
-
-fn try_format_source_to_temp(
-    source: &InputSource,
-    kind: FormatKind,
-    options: &FormatOptions,
-) -> Result<NamedTempFile> {
-    let mut temp = NamedTempFile::new().context("failed to create formatted temp file")?;
-    {
-        let mut output = BufWriter::new(temp.as_file_mut());
-        match kind {
-            FormatKind::Auto => unreachable!("auto is expanded before formatting"),
-            FormatKind::Json => format_json(source, &mut output, options)
-                .with_context(|| format!("failed to format {} as JSON", source.label()))?,
-            FormatKind::Jsonl => format_jsonl(source, &mut output, options)
-                .with_context(|| format!("failed to format {} as JSONL", source.label()))?,
-            FormatKind::Xml => {
-                format_xml_reader(BufReader::new(source.open()?), &mut output, options.indent)
-                    .with_context(|| format!("failed to format {} as XML", source.label()))?
-            }
-        }
-        output.flush().context("failed to flush formatted output")?;
-    }
-    Ok(temp)
-}
-
-pub fn format_record_to_string(input: &[u8], kind: FormatKind, indent: usize) -> Result<String> {
-    let mut output = Vec::with_capacity(input.len().min(8192));
-    match kind {
-        FormatKind::Auto => unreachable!("auto must be resolved before formatting a record"),
-        FormatKind::Json | FormatKind::Jsonl => {
-            format_json_value(Cursor::new(input), &mut output, indent)
-                .context("failed to parse JSON record")?
-        }
-        FormatKind::Xml => {
-            format_xml_reader(Cursor::new(input), &mut output, indent)
-                .context("failed to parse XML-compatible record")?;
-            while output.ends_with(b"\n") || output.ends_with(b"\r") {
-                output.pop();
-            }
-        }
-    }
-    String::from_utf8(output).context("formatted record was not valid UTF-8")
-}
-
-pub fn trim_record_line_end(line: &[u8]) -> &[u8] {
-    trim_line_end(line)
-}
-
-fn format_json<W: Write>(
+pub(super) fn format_json<W: Write>(
     source: &InputSource,
     output: &mut W,
     options: &FormatOptions,
@@ -161,7 +17,7 @@ fn format_json<W: Write>(
     Ok(())
 }
 
-fn format_jsonl<W: Write>(
+pub(super) fn format_jsonl<W: Write>(
     source: &InputSource,
     output: &mut W,
     options: &FormatOptions,
@@ -202,7 +58,11 @@ enum JsonSeparator {
 
 // Token-based formatting keeps JSON numbers exact without materializing the
 // whole document or coercing through native numeric types.
-fn format_json_value<R: BufRead, W: Write>(input: R, output: &mut W, indent: usize) -> Result<()> {
+pub(super) fn format_json_value<R: BufRead, W: Write>(
+    input: R,
+    output: &mut W,
+    indent: usize,
+) -> Result<()> {
     let mut formatter = JsonFormatter {
         input,
         indent: vec![b' '; indent],
@@ -533,7 +393,7 @@ fn describe_byte(byte: u8) -> String {
     }
 }
 
-fn trim_line_end(mut line: &[u8]) -> &[u8] {
+pub(super) fn trim_line_end(mut line: &[u8]) -> &[u8] {
     if line.ends_with(b"\n") {
         line = &line[..line.len() - 1];
     }
@@ -541,156 +401,4 @@ fn trim_line_end(mut line: &[u8]) -> &[u8] {
         line = &line[..line.len() - 1];
     }
     line
-}
-
-fn format_xml_reader<R: BufRead, W: Write>(input: R, output: &mut W, indent: usize) -> Result<()> {
-    let mut reader = XmlReader::from_reader(input);
-    reader.config_mut().trim_text(false);
-    let mut writer = XmlWriter::new_with_indent(&mut *output, b' ', indent);
-    let mut buf = Vec::with_capacity(8192);
-
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Eof) => break,
-            Ok(event) => writer
-                .write_event(event)
-                .context("failed to write XML event")?,
-            Err(error) => return Err(anyhow!(error)),
-        }
-        buf.clear();
-    }
-
-    writeln!(output)?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{
-        io::Write as _,
-        time::{Duration, Instant},
-    };
-
-    use super::*;
-
-    #[test]
-    fn trims_crlf_line_endings() {
-        assert_eq!(trim_line_end(b"{\"a\":1}\r\n"), b"{\"a\":1}");
-    }
-
-    #[test]
-    fn preserves_empty_jsonl_lines() {
-        let line = b"\n";
-        assert!(trim_line_end(line).is_empty());
-    }
-
-    #[test]
-    #[ignore = "performance smoke; run scripts/bench-format-performance.sh"]
-    fn perf_jsonl_record_batch_format() {
-        let records = generated_jsonl_records(16_384, 512);
-        let input_bytes = records.iter().map(Vec::len).sum::<usize>();
-        let started = Instant::now();
-        let mut output_bytes = 0_usize;
-
-        for record in &records {
-            let rendered = format_record_to_string(record, FormatKind::Jsonl, 2).unwrap();
-            output_bytes = output_bytes.saturating_add(rendered.len());
-        }
-
-        let elapsed = started.elapsed();
-        eprintln!(
-            "jsonl record batch format: {elapsed:?}, records={}, input_bytes={input_bytes}, output_bytes={output_bytes}",
-            records.len()
-        );
-        assert!(output_bytes > input_bytes);
-        assert!(
-            elapsed < Duration::from_secs(5),
-            "jsonl record batch format took {elapsed:?}"
-        );
-    }
-
-    #[test]
-    #[ignore = "performance smoke; run scripts/bench-format-performance.sh"]
-    fn perf_jsonl_source_full_format() {
-        let mut temp = NamedTempFile::new().unwrap();
-        let records = generated_jsonl_records(16_384, 512);
-        let mut input_bytes = 0_usize;
-        for record in &records {
-            temp.write_all(record).unwrap();
-            temp.write_all(b"\n").unwrap();
-            input_bytes = input_bytes.saturating_add(record.len()).saturating_add(1);
-        }
-        temp.flush().unwrap();
-        let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
-        let options = FormatOptions {
-            kind: FormatKind::Jsonl,
-            indent: 2,
-        };
-
-        let started = Instant::now();
-        let formatted = format_source_to_temp(&source, &options).unwrap();
-        let elapsed = started.elapsed();
-        let output_bytes = formatted.as_file().metadata().unwrap().len();
-
-        eprintln!(
-            "jsonl source full format: {elapsed:?}, records={}, input_bytes={input_bytes}, output_bytes={output_bytes}",
-            records.len()
-        );
-        assert!(output_bytes > input_bytes as u64);
-        assert!(
-            elapsed < Duration::from_secs(5),
-            "jsonl source full format took {elapsed:?}"
-        );
-    }
-
-    #[test]
-    #[ignore = "performance smoke; run scripts/bench-format-performance.sh"]
-    fn perf_single_huge_json_record_format() {
-        let record = generated_huge_json_record(32_768, 128);
-        let input_bytes = record.len();
-        let started = Instant::now();
-        let rendered = format_record_to_string(&record, FormatKind::Jsonl, 2).unwrap();
-        let elapsed = started.elapsed();
-        let output_bytes = rendered.len();
-        let lines = rendered.lines().count();
-
-        eprintln!(
-            "single huge record format: {elapsed:?}, records=1, lines={lines}, input_bytes={input_bytes}, output_bytes={output_bytes}",
-        );
-        assert!(lines > 32_000);
-        assert!(
-            elapsed < Duration::from_secs(5),
-            "single huge record format took {elapsed:?}"
-        );
-    }
-
-    fn generated_jsonl_records(count: usize, message_len: usize) -> Vec<Vec<u8>> {
-        let message = "x".repeat(message_len);
-        (0..count)
-            .map(|index| {
-                format!(
-                    r#"{{"index":{index},"level":"info","message":"{message}","payload":{{"xml":"<root><item id=\"{index}\"><name>visible</name></item></root>","items":[{{"a":1}},{{"b":2}},{{"c":{{"d":true}}}}]}}}}"#
-                )
-                .into_bytes()
-            })
-            .collect()
-    }
-
-    fn generated_huge_json_record(items: usize, message_len: usize) -> Vec<u8> {
-        let message = "y".repeat(message_len);
-        let mut record = Vec::new();
-        write!(record, r#"{{"kind":"huge","items":["#).unwrap();
-        for index in 0..items {
-            if index > 0 {
-                record.push(b',');
-            }
-            write!(
-                record,
-                r#"{{"index":{index},"message":"{message}","nested":{{"ok":true,"value":{index}}}}}"#
-            )
-            .unwrap();
-        }
-        record.extend_from_slice(b"]}");
-        record
-    }
 }

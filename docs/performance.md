@@ -7,29 +7,29 @@ behavior.
 Run the viewer benchmark smoke suite for TUI rendering and terminal bytes:
 
 ```sh
-scripts/bench-viewer-performance.sh
+benches/viewer-performance.sh
 ```
 
 Run the formatter benchmark smoke suite for parser, record-stream, whole-record,
 and lazy-preview work:
 
 ```sh
-scripts/bench-format-performance.sh
+benches/format-performance.sh
 ```
 
 Run the algorithm comparison harness when testing an alternate complete-output
 formatter implementation:
 
 ```sh
-scripts/bench-format-algorithm.sh --candidate 'experiment=target/release/fmtview --type {type} --indent {indent} {input}'
+benches/format-algorithm.sh --candidate 'experiment=target/release/fmtview --type {type} --indent {indent} {input}'
 ```
 
 Use fewer samples while iterating:
 
 ```sh
-scripts/bench-viewer-performance.sh --samples 3
-scripts/bench-format-performance.sh --samples 3
-scripts/bench-format-algorithm.sh --samples 3 --candidate 'experiment=...'
+benches/viewer-performance.sh --samples 3
+benches/format-performance.sh --samples 3
+benches/format-algorithm.sh --samples 3 --candidate 'experiment=...'
 ```
 
 The script runs ignored release-mode tests, so normal `cargo test` and CI stay
@@ -54,7 +54,7 @@ Formatter metrics:
 
 Algorithm comparison:
 
-- `scripts/bench-format-algorithm.sh` generates fixed JSONL and JSON fixtures,
+- `benches/format-algorithm.sh` generates fixed JSONL and JSON fixtures,
   formats each fixture with the current release `fmtview` as the reference, then
   runs one or more candidate commands.
 - Candidate output must match the reference byte-for-byte. The script reports

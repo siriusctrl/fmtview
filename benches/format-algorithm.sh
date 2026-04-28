@@ -8,7 +8,7 @@ candidates=()
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/bench-format-algorithm.sh [--samples N] [--candidate NAME=COMMAND] [--no-build]
+Usage: benches/format-algorithm.sh [--samples N] [--candidate NAME=COMMAND] [--no-build]
 
 Runs complete-output formatter candidates against generated fixtures. The script
 uses the current release fmtview binary as the reference output, then records
@@ -21,9 +21,9 @@ COMMAND placeholders:
   {indent}  indentation width
 
 Examples:
-  scripts/bench-format-algorithm.sh --samples 3
-  scripts/bench-format-algorithm.sh --candidate 'experiment=target/release/fmtview --type {type} --indent {indent} {input}'
-  scripts/bench-format-algorithm.sh --candidate 'tool=./target/release/my-parser {type} {input} {output}'
+  benches/format-algorithm.sh --samples 3
+  benches/format-algorithm.sh --candidate 'experiment=target/release/fmtview --type {type} --indent {indent} {input}'
+  benches/format-algorithm.sh --candidate 'tool=./target/release/my-parser {type} {input} {output}'
 USAGE
 }
 

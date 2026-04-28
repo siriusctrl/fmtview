@@ -23,20 +23,33 @@ Read these when the task matches:
 
 Code orientation:
 
-- `src/main.rs` wires CLI arguments to formatting, diff, and viewer paths.
-- `src/format.rs`, `src/diff.rs`, `src/input.rs`, `src/lazy.rs`, and
-  `src/line_index.rs` own non-interactive formatting, input materialization,
-  lazy preview indexing, and temp-file indexing.
+- `src/bin/fmtview.rs` is the thin binary entry point.
+- `src/lib.rs` exposes the internal crate modules used by the binary and tests.
+- `src/cli.rs` wires CLI arguments to formatting, diff, preview planning, and
+  viewer paths.
+- `src/format/` owns non-interactive formatting:
+  - `engine.rs` orchestrates whole-source and record formatting.
+  - `detect.rs` handles format candidates and auto-detection.
+  - `json.rs` keeps token-preserving JSON/JSONL formatting.
+  - `xml.rs` wraps XML-compatible formatting.
+- `src/preview/` owns TTY preview planning and lazy record spooling.
+- `src/diff.rs`, `src/input.rs`, and `src/line_index.rs` own diff generation,
+  input materialization, and temp-file indexing.
 - `src/viewer/` owns the interactive TUI:
   - `mod.rs` runs the terminal loop and frame composition.
-  - `input.rs` handles key/mouse state, scrolling, jumps, and search.
-  - `render.rs` handles line windows, wrapping, visual rows, caches, progress
-    calculation, and the search highlight overlay.
-  - `highlight.rs` handles JSON, diff, and XML-like syntax highlighting.
+  - `terminal.rs` handles terminal diffing, ANSI writes, and scroll regions.
+  - `input/` handles key/mouse state, scrolling, jumps, and search.
+  - `render/` handles line windows, wrapping, visual rows, caches, progress,
+    prewarming, and the search highlight overlay.
+  - `highlight/` handles JSON, diff, and XML-like syntax highlighting.
   - `palette.rs` owns viewer colors.
   - `tests.rs` keeps viewer regression and performance smoke coverage close to
     the private TUI internals.
 - `tests/cli.rs` covers CLI-level behavior.
+- `benches/` contains local performance harnesses. They are shell-driven smoke
+  checks rather than Cargo benchmark targets because they exercise the release
+  binary, ignored perf tests, PTY-like terminal writers, and alternate external
+  formatter commands.
 
 Keep README user-facing. Keep maintainer-only workflows in docs and link them
 from `AGENTS.md`.

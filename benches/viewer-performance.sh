@@ -5,13 +5,13 @@ samples=7
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/bench-format-performance.sh [--samples N]
+Usage: benches/viewer-performance.sh [--samples N]
 
-Runs fmtview formatter/lazy-preview performance smoke tests in release mode and
-prints per-sample timings plus median/min/max summaries.
+Runs fmtview viewer performance smoke tests in release mode and prints
+per-sample timings plus median/min/max summaries.
 
-Use this before and after parser, formatter, JSONL, lazy preview, or future
-parallel formatting changes.
+The script unsets NO_COLOR for the benchmark process so terminal draw byte
+counts include the true-color styling path.
 USAGE
 }
 
@@ -49,7 +49,7 @@ run_test() {
   local output line
 
   output="$(
-    cargo test --release "$test_name" -- \
+    env -u NO_COLOR cargo test --release "$test_name" -- \
       --ignored --nocapture --test-threads=1 2>&1
   )"
   line="$(printf '%s\n' "$output" | grep -E "$pattern" | tail -n 1 || true)"
@@ -99,58 +99,74 @@ summarize() {
   ' "$sorted"
 }
 
+summarize_last_field() {
+  local file="$1"
+  local field="$2"
+  local values="$tmpdir/field.$RANDOM"
+  awk -v field="$field" '{ print $field }' "$file" | sort -n > "$values"
+  awk '
+    {
+      values[NR] = $1
+      sum += $1
+    }
+    END {
+      if (NR == 0) {
+        exit 1
+      }
+      mid = int((NR + 1) / 2)
+      if (NR % 2 == 1) {
+        median = values[mid]
+      } else {
+        median = (values[mid] + values[mid + 1]) / 2
+      }
+      printf "median=%d min=%d max=%d avg=%.1f", median, values[1], values[NR], sum / NR
+    }
+  ' "$values"
+}
+
 bench_one() {
   local label="$1"
   local test_name="$2"
   local pattern="$3"
   local result_file="$tmpdir/${test_name}.tsv"
-  local line ms records lines input_bytes output_bytes sample
+  local line ms bytes background sample
 
   echo
   echo "== $label =="
   for sample in $(seq 1 "$samples"); do
     line="$(run_test "$test_name" "$pattern")"
     ms="$(printf '%s\n' "$line" | duration_ms)"
-    records="$(printf '%s\n' "$line" | extract_field records)"
-    lines="$(printf '%s\n' "$line" | extract_field lines)"
-    input_bytes="$(printf '%s\n' "$line" | extract_field input_bytes)"
-    output_bytes="$(printf '%s\n' "$line" | extract_field output_bytes)"
-    records="${records:-0}"
-    lines="${lines:-0}"
-    input_bytes="${input_bytes:-0}"
-    output_bytes="${output_bytes:-0}"
-    printf '%s\n' "$ms" >> "$result_file"
-    printf 'sample %02d: %8.3fms  records=%s  lines=%s  input_bytes=%s  output_bytes=%s\n' \
-      "$sample" "$ms" "$records" "$lines" "$input_bytes" "$output_bytes"
+    bytes="$(printf '%s\n' "$line" | extract_field bytes)"
+    background="$(printf '%s\n' "$line" | extract_field background_cells)"
+    bytes="${bytes:-0}"
+    background="${background:-0}"
+    printf '%s\t%s\t%s\n' "$ms" "$bytes" "$background" >> "$result_file"
+    printf 'sample %02d: %8.3fms  bytes=%s  background_cells=%s\n' \
+      "$sample" "$ms" "$bytes" "$background"
   done
 
-  printf 'time: '; summarize "$result_file"; echo
+  printf 'time: '; cut -f1 "$result_file" | summarize /dev/stdin; echo
+  if grep -qv $'\t0\t' "$result_file"; then
+    printf 'bytes: '; summarize_last_field "$result_file" 2; echo
+  fi
+  printf 'background_cells: '; summarize_last_field "$result_file" 3; echo
 }
 
-echo "fmtview formatter performance smoke"
+echo "fmtview viewer performance smoke"
 echo "samples: $samples"
+echo "command env: NO_COLOR is unset for benchmark subprocesses"
 
 bench_one \
-  "jsonl record batch CPU" \
-  "perf_jsonl_record_batch_format" \
-  "jsonl record batch format"
+  "viewport render CPU" \
+  "perf_repeated_viewport_scroll_render" \
+  "repeated viewport scroll render"
 
 bench_one \
-  "jsonl source full format" \
-  "perf_jsonl_source_full_format" \
-  "jsonl source full format"
+  "terminal draw bytes" \
+  "perf_terminal_scroll_draw_bytes" \
+  "terminal scroll draw"
 
 bench_one \
-  "single huge record format" \
-  "perf_single_huge_json_record_format" \
-  "single huge record format"
-
-bench_one \
-  "lazy first window format" \
-  "perf_lazy_first_window_format" \
-  "lazy first window format"
-
-bench_one \
-  "lazy preload records format" \
-  "perf_lazy_preload_records_format" \
-  "lazy preload records format"
+  "terminal visual-row scroll bytes" \
+  "perf_terminal_visual_row_scroll_bytes" \
+  "terminal visual row scroll"
