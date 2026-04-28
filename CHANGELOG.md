@@ -8,6 +8,23 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-28
+
+### Changed
+
+- Speed up opening large interactive diffs by streaming unified patch parsing
+  into the TTY model, sharing diff text between layouts, and capping eager
+  inline-diff work for very large change sets.
+- Open interactive diffs for record-stream inputs lazily, formatting and
+  comparing bounded record batches for the first draw while redirected stdout
+  still emits the full unified patch.
+
+### Fixed
+
+- Soft-wrap long lines in the interactive diff viewer, including side-by-side
+  rows, and scroll through wrapped visual rows instead of skipping directly to
+  the next diff row.
+
 ## [0.2.0] - 2026-04-28
 
 ### Added

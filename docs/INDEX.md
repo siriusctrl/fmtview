@@ -34,14 +34,20 @@ Code orientation:
   - `xml.rs` wraps XML-compatible formatting.
 - `src/preview/` owns TTY preview planning and lazy record spooling.
 - `src/diff/` owns unified patch generation plus the structured diff model used
-  by the interactive diff viewer.
+  by the interactive diff viewer:
+  - `external.rs` formats both sides and shells out to the platform diff tool.
+  - `stdout.rs` keeps redirected diff output on the unified patch path.
+  - `view.rs` selects the eager or lazy TTY diff model.
+  - `lazy_records/` incrementally formats record streams for large TTY diffs.
+  - `model/` parses unified patch rows, annotates inline changes, and builds
+    the side-by-side row model.
 - `src/input.rs` and `src/line_index.rs` own input materialization and
   temp-file indexing.
 - `src/viewer/` owns the interactive TUI:
   - `mod.rs` runs the terminal loop and frame composition.
   - `breadcrumb.rs` builds compact sticky JSON key breadcrumbs for the viewer.
-  - `diff_view.rs` handles the interactive single-column and side-by-side diff
-    viewer.
+  - `diff_view/` handles the interactive single-column and side-by-side diff
+    viewer, with input handling and rendering split by responsibility.
   - `terminal.rs` handles terminal diffing, ANSI writes, and scroll regions.
   - `input/` handles key/mouse state, scrolling, jumps, and search.
   - `render/` handles line windows, wrapping, visual rows, caches, progress,

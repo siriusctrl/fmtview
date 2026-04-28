@@ -132,10 +132,14 @@ fmtview diff --type jsonl old.jsonl new.jsonl
 
 In a terminal, `fmtview diff` opens an interactive diff viewer. Press `s` to
 switch between single-column and side-by-side layouts, and `]`/`[` to jump to
-the next or previous changed block. When stdout is redirected, diff output
-remains standard unified patch text. The interactive viewer hides patch control
-rows such as `@@` hunks and uses red/green background shading for changed
-chunks, with stronger shading on the changed portion inside each line.
+the next or previous changed block. Long diff rows soft-wrap by default; press
+`w` to switch to nowrap mode when exact columns matter. When stdout is
+redirected, diff output remains standard unified patch text. The interactive
+viewer hides patch control rows such as `@@` hunks and uses red/green
+background shading for changed chunks, with stronger shading on the changed
+portion inside each line. For record-stream inputs such as JSONL, the
+interactive viewer opens lazily and continues scanning records in the
+background instead of formatting both full inputs before the first draw.
 
 ## Try The Showcase Files
 
@@ -191,9 +195,10 @@ Diff viewer keys:
 
 ```text
 s           toggle single-column/side-by-side diff layout
+w           toggle wrap/nowrap
 ]/[         next/previous changed block
-h/l         horizontal scroll
-Left/Right  horizontal scroll
+h/l         horizontal scroll in nowrap mode
+Left/Right  horizontal scroll in nowrap mode
 ```
 
 The title bar shows the source label, total line count, visible line range,
