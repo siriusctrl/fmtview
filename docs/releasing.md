@@ -34,7 +34,7 @@ Recommended release sequence:
 cargo fmt --check
 cargo test
 cargo clippy --all-targets -- -D warnings
-cargo build --release
+cargo build --release --locked
 git status -sb
 ```
 
@@ -213,7 +213,7 @@ Before tagging:
 - `cargo fmt --check` passes.
 - `cargo test` passes.
 - `cargo clippy --all-targets -- -D warnings` passes.
-- `cargo build --release` passes.
+- `cargo build --release --locked` passes.
 - TUI smoke test runs under a real PTY if viewer behavior changed.
 - README lists only installation channels that already work.
 
