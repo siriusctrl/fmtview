@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-28
+
 ### Added
 
 - Show formatted diffs in an interactive TTY diff viewer with single-column and
