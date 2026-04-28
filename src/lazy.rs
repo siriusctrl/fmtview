@@ -663,4 +663,85 @@ mod tests {
             "first window should read only enough records to fill the viewport"
         );
     }
+
+    #[test]
+    #[ignore = "performance smoke; run scripts/bench-format-performance.sh"]
+    fn perf_lazy_first_window_format() {
+        let (_temp, source, input_bytes) = generated_jsonl_source(16_384, 512, ".jsonl");
+        let options = FormatOptions {
+            kind: FormatKind::Auto,
+            indent: 2,
+        };
+
+        let started = Instant::now();
+        let file = LazyFormattedFile::new(&source, options).unwrap();
+        let lines = file.read_window(0, 120).unwrap();
+        let elapsed = started.elapsed();
+
+        eprintln!(
+            "lazy first window format: {elapsed:?}, records={}, lines={}, input_bytes={input_bytes}",
+            file.loaded_record_count(),
+            lines.len(),
+        );
+        assert!(!lines.is_empty());
+        assert!(
+            file.loaded_record_count() < 32,
+            "first window should only format records needed for visible lines"
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "lazy first window format took {elapsed:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "performance smoke; run scripts/bench-format-performance.sh"]
+    fn perf_lazy_preload_records_format() {
+        let (_temp, source, input_bytes) = generated_jsonl_source(16_384, 512, ".jsonl");
+        let options = FormatOptions {
+            kind: FormatKind::Auto,
+            indent: 2,
+        };
+        let file = LazyFormattedFile::new(&source, options).unwrap();
+        file.read_window(0, 40).unwrap();
+
+        let started = Instant::now();
+        let changed = file
+            .preload(20_000, 1_024, Duration::from_secs(30))
+            .unwrap();
+        let elapsed = started.elapsed();
+
+        eprintln!(
+            "lazy preload records format: {elapsed:?}, records={}, lines={}, input_bytes={input_bytes}",
+            file.loaded_record_count(),
+            file.indexed_line_count(),
+        );
+        assert!(changed);
+        assert!(file.loaded_record_count() > 512);
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "lazy preload records format took {elapsed:?}"
+        );
+    }
+
+    fn generated_jsonl_source(
+        count: usize,
+        message_len: usize,
+        suffix: &str,
+    ) -> (NamedTempFile, InputSource, usize) {
+        let mut temp = TempFileBuilder::new().suffix(suffix).tempfile().unwrap();
+        let message = "z".repeat(message_len);
+        let mut input_bytes = 0_usize;
+        for index in 0..count {
+            let record = format!(
+                r#"{{"index":{index},"level":"info","message":"{message}","payload":{{"xml":"<root><item id=\"{index}\"><name>visible</name></item></root>","items":[{{"a":1}},{{"b":2}},{{"c":{{"d":true}}}}]}}}}"#
+            );
+            temp.write_all(record.as_bytes()).unwrap();
+            temp.write_all(b"\n").unwrap();
+            input_bytes = input_bytes.saturating_add(record.len()).saturating_add(1);
+        }
+        temp.flush().unwrap();
+        let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
+        (temp, source, input_bytes)
+    }
 }

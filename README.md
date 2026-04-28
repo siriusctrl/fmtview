@@ -276,6 +276,18 @@ Maintainers can measure viewer rendering and terminal draw changes with:
 scripts/bench-viewer-performance.sh
 ```
 
+Parser, formatter, JSONL record, and lazy-preview changes can be measured with:
+
+```sh
+scripts/bench-format-performance.sh
+```
+
+Alternate complete-output formatter algorithms can be compared with:
+
+```sh
+scripts/bench-format-algorithm.sh --candidate 'experiment=target/release/fmtview --type {type} --indent {indent} {input}'
+```
+
 See `docs/performance.md` for the benchmark metrics and comparison workflow.
 
 ## CLI

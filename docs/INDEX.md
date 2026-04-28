@@ -16,6 +16,8 @@ Read these when the task matches:
   - npm wrapper and platform package strategy
 - `docs/performance.md`
   - viewer rendering benchmark smoke tests
+  - formatter and lazy-preview benchmark smoke tests
+  - complete-output formatter algorithm comparison
   - terminal draw byte-count checks
   - comparing performance changes outside CI
 
