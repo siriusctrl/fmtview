@@ -17,17 +17,28 @@ use crate::{
 
 const SNIFF_BYTES: usize = 1024 * 1024;
 const SNIFF_LINES: usize = 16;
-pub fn should_use_lazy_preview(source: &InputSource, options: &FormatOptions) -> Result<bool> {
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewPlan {
+    LazyRecords,
+    EagerDocument,
+}
+
+pub fn preview_plan(source: &InputSource, options: &FormatOptions) -> Result<PreviewPlan> {
     match options.kind {
-        FormatKind::Jsonl => Ok(true),
-        FormatKind::Json | FormatKind::Xml => Ok(false),
+        FormatKind::Jsonl => Ok(PreviewPlan::LazyRecords),
+        FormatKind::Json | FormatKind::Xml => Ok(PreviewPlan::EagerDocument),
         FormatKind::Auto => {
             if has_record_extension(source) {
-                return Ok(true);
+                return Ok(PreviewPlan::LazyRecords);
             }
 
             let sample = PreviewSample::read(source)?;
-            Ok(sample.looks_like_record_stream())
+            Ok(if sample.looks_like_record_stream() {
+                PreviewPlan::LazyRecords
+            } else {
+                PreviewPlan::EagerDocument
+            })
         }
     }
 }
@@ -405,7 +416,49 @@ mod tests {
             indent: 2,
         };
 
-        assert!(should_use_lazy_preview(&source, &options).unwrap());
+        assert_eq!(
+            preview_plan(&source, &options).unwrap(),
+            PreviewPlan::LazyRecords
+        );
+    }
+
+    #[test]
+    fn explicit_format_kinds_choose_preview_plan_without_sniffing() {
+        let (_temp, source) = temp_source(b"{\"broken\":\n");
+
+        assert_eq!(
+            preview_plan(
+                &source,
+                &FormatOptions {
+                    kind: FormatKind::Jsonl,
+                    indent: 2,
+                }
+            )
+            .unwrap(),
+            PreviewPlan::LazyRecords
+        );
+        assert_eq!(
+            preview_plan(
+                &source,
+                &FormatOptions {
+                    kind: FormatKind::Json,
+                    indent: 2,
+                }
+            )
+            .unwrap(),
+            PreviewPlan::EagerDocument
+        );
+        assert_eq!(
+            preview_plan(
+                &source,
+                &FormatOptions {
+                    kind: FormatKind::Xml,
+                    indent: 2,
+                }
+            )
+            .unwrap(),
+            PreviewPlan::EagerDocument
+        );
     }
 
     #[test]
@@ -419,7 +472,10 @@ mod tests {
             indent: 2,
         };
 
-        assert!(should_use_lazy_preview(&source, &options).unwrap());
+        assert_eq!(
+            preview_plan(&source, &options).unwrap(),
+            PreviewPlan::LazyRecords
+        );
     }
 
     #[test]
@@ -433,7 +489,10 @@ mod tests {
             indent: 2,
         };
 
-        assert!(!should_use_lazy_preview(&source, &options).unwrap());
+        assert_eq!(
+            preview_plan(&source, &options).unwrap(),
+            PreviewPlan::EagerDocument
+        );
     }
 
     #[test]
@@ -447,7 +506,10 @@ mod tests {
             indent: 2,
         };
 
-        assert!(!should_use_lazy_preview(&source, &options).unwrap());
+        assert_eq!(
+            preview_plan(&source, &options).unwrap(),
+            PreviewPlan::EagerDocument
+        );
     }
 
     #[test]
@@ -523,8 +585,14 @@ mod tests {
             indent: 2,
         };
 
-        assert!(!should_use_lazy_preview(&json_source, &options).unwrap());
-        assert!(!should_use_lazy_preview(&xml_source, &options).unwrap());
+        assert_eq!(
+            preview_plan(&json_source, &options).unwrap(),
+            PreviewPlan::EagerDocument
+        );
+        assert_eq!(
+            preview_plan(&xml_source, &options).unwrap(),
+            PreviewPlan::EagerDocument
+        );
     }
 
     #[test]
@@ -555,7 +623,10 @@ mod tests {
             indent: 2,
         };
 
-        assert!(!should_use_lazy_preview(&source, &options).unwrap());
+        assert_eq!(
+            preview_plan(&source, &options).unwrap(),
+            PreviewPlan::EagerDocument
+        );
     }
 
     #[test]

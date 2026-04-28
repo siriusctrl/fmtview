@@ -129,15 +129,18 @@ fn should_view() -> bool {
 }
 
 fn open_preview_file(input: &InputSource, options: &FormatOptions) -> Result<Box<dyn ViewFile>> {
-    if lazy::should_use_lazy_preview(input, options)? {
-        return Ok(Box::new(lazy::LazyFormattedFile::new(input, *options)?));
+    match lazy::preview_plan(input, options)? {
+        lazy::PreviewPlan::LazyRecords => {
+            Ok(Box::new(lazy::LazyFormattedFile::new(input, *options)?))
+        }
+        lazy::PreviewPlan::EagerDocument => {
+            let formatted = format::format_source_to_temp(input, options)?;
+            Ok(Box::new(line_index::IndexedTempFile::new(
+                input.label().to_owned(),
+                formatted,
+            )?))
+        }
     }
-
-    let formatted = format::format_source_to_temp(input, options)?;
-    Ok(Box::new(line_index::IndexedTempFile::new(
-        input.label().to_owned(),
-        formatted,
-    )?))
 }
 
 fn copy_temp_to_stdout(temp: &tempfile::NamedTempFile) -> Result<()> {
