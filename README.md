@@ -250,6 +250,10 @@ end tag, should be normalized first.
 - Lazy preview writes formatted records into a temporary spool and keeps compact
   offsets, not formatted strings, in memory. The title shows `N+` lines while
   the session index is still incomplete and idle time extends the index.
+- The terminal viewer uses compact ANSI redraws and avoids repainting invisible
+  background cells during normal scrolling.
+- Very long wrapped lines use terminal scroll regions for visual-row scrolling,
+  so moving within one logical record only draws the newly visible rows.
 - The viewer redraws on input or resize events, not on a fixed idle timer.
 - Bursty keyboard, mouse wheel, and trackpad events are coalesced before redraw,
   so fast scrolling does not render one frame per raw terminal event.
@@ -265,6 +269,14 @@ end tag, should be normalized first.
 This keeps the viewer usable for large files while preserving scriptable stdout
 behavior when you redirect output. Redirected formatting and diff output still
 use the full deterministic formatting path rather than the lazy viewer path.
+
+Maintainers can measure viewer rendering and terminal draw changes with:
+
+```sh
+scripts/bench-viewer-performance.sh
+```
+
+See `docs/performance.md` for the benchmark metrics and comparison workflow.
 
 ## CLI
 

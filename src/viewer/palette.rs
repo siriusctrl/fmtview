@@ -1,19 +1,18 @@
 use ratatui::style::{Color, Style};
 
-pub(super) const PALETTE_BACKGROUND: Color = Color::Rgb(40, 44, 52);
-pub(super) const PALETTE_TEXT: Color = Color::Rgb(171, 178, 191);
-pub(super) const PALETTE_MUTED: Color = Color::Rgb(92, 99, 112);
-pub(super) const PALETTE_BLUE: Color = Color::Rgb(97, 175, 239);
-pub(super) const PALETTE_CYAN: Color = Color::Rgb(86, 182, 194);
-pub(super) const PALETTE_GREEN: Color = Color::Rgb(152, 195, 121);
-pub(super) const PALETTE_PURPLE: Color = Color::Rgb(198, 120, 221);
-pub(super) const PALETTE_RED: Color = Color::Rgb(224, 108, 117);
-pub(super) const PALETTE_YELLOW: Color = Color::Rgb(229, 192, 123);
-pub(super) const PALETTE_ORANGE: Color = Color::Rgb(209, 154, 102);
-pub(super) const PALETTE_SEARCH_MATCH: Color = Color::Rgb(93, 75, 35);
+pub(super) const PALETTE_TEXT: Color = Color::Indexed(145);
+pub(super) const PALETTE_MUTED: Color = Color::Indexed(59);
+pub(super) const PALETTE_BLUE: Color = Color::Indexed(75);
+pub(super) const PALETTE_CYAN: Color = Color::Indexed(73);
+pub(super) const PALETTE_GREEN: Color = Color::Indexed(114);
+pub(super) const PALETTE_PURPLE: Color = Color::Indexed(176);
+pub(super) const PALETTE_RED: Color = Color::Indexed(168);
+pub(super) const PALETTE_YELLOW: Color = Color::Indexed(180);
+pub(super) const PALETTE_ORANGE: Color = Color::Indexed(173);
+pub(super) const PALETTE_SEARCH_MATCH: Color = Color::Indexed(58);
 
 pub(super) fn style_fg(color: Color) -> Style {
-    Style::default().fg(color).bg(PALETTE_BACKGROUND)
+    Style::default().fg(color)
 }
 
 pub(super) fn plain_style() -> Style {

@@ -1058,10 +1058,8 @@ pub(super) fn push_span_window(
     let overlap_start = start.max(window_start);
     let overlap_end = end.min(window_end);
     if overlap_start < overlap_end {
-        spans.push(Span::styled(
-            source[overlap_start..overlap_end].to_owned(),
-            style,
-        ));
+        let style = normalize_span_style(style);
+        push_text_span(spans, source[overlap_start..overlap_end].to_owned(), style);
     }
 }
 
@@ -1071,4 +1069,28 @@ pub(super) fn floor_char_boundary(text: &str, index: usize) -> usize {
         index -= 1;
     }
     index
+}
+
+fn normalize_span_style(style: Style) -> Style {
+    if style == plain_style() {
+        Style::default()
+    } else {
+        style
+    }
+}
+
+fn push_text_span(spans: &mut Vec<Span<'static>>, text: String, style: Style) {
+    if text.is_empty() {
+        return;
+    }
+
+    if style == Style::default()
+        && let Some(previous) = spans.last_mut()
+        && previous.style == style
+    {
+        previous.content.to_mut().push_str(&text);
+        return;
+    }
+
+    spans.push(Span::styled(text, style));
 }

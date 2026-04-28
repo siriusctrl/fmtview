@@ -8,12 +8,10 @@ use std::{
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::{
-    Terminal, TerminalOptions, Viewport,
     backend::CrosstermBackend,
-    layout::{Constraint, Layout, Rect},
+    layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
 };
 use tempfile::NamedTempFile;
 
@@ -22,6 +20,8 @@ use super::input::*;
 use super::palette::*;
 use super::render::*;
 use super::*;
+
+// Correctness tests run by default and should avoid wall-clock assertions.
 
 #[test]
 fn slices_by_character_not_byte() {
@@ -736,15 +736,82 @@ fn search_highlight_adds_background_without_replacing_foreground() {
 }
 
 #[test]
-fn syntax_palette_uses_muted_rgb_colors() {
+fn non_search_viewport_render_does_not_paint_background_cells() {
+    let lines = vec![
+        r#"{"kind":"alpha","message":"plain viewport line"}"#.to_owned(),
+        r#"{"kind":"beta","message":"another rendered line"}"#.to_owned(),
+    ];
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter_digits: 1,
+            x: 0,
+            width: 80,
+            wrap: true,
+            mode: ViewMode::Plain,
+        },
+        row_limit: 16,
+    };
+    let mut cache = RenderedLineCache::default();
+
+    let viewport = render_viewport(&lines, 1, 0, 16, request, &mut cache, None);
+
+    assert_eq!(background_cell_count(&viewport.lines), 0);
+}
+
+#[test]
+fn search_background_is_scoped_to_match_spans_only() {
+    let line = render_logical_line(
+        r#"  "needle": "needle","#,
+        1,
+        1,
+        RenderContext {
+            gutter_digits: 1,
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: ViewMode::Plain,
+        },
+    )
+    .remove(0);
+
+    let highlighted = apply_search_highlight(line, Some("needle"), 1);
+    let background_spans = highlighted
+        .spans
+        .iter()
+        .filter(|span| span.style.bg == Some(search_match_bg()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(background_spans.len(), 2);
+    assert!(
+        background_spans
+            .iter()
+            .all(|span| span.content.as_ref() == "needle")
+    );
+}
+
+#[test]
+fn syntax_palette_uses_muted_indexed_colors() {
     assert_eq!(plain_style().fg, Some(PALETTE_TEXT));
-    assert_eq!(plain_style().bg, Some(PALETTE_BACKGROUND));
+    assert_eq!(plain_style().bg, None);
     assert_eq!(gutter_style().fg, Some(PALETTE_MUTED));
     assert_eq!(key_style().fg, Some(PALETTE_BLUE));
     assert_eq!(string_style().fg, Some(PALETTE_GREEN));
     assert_eq!(number_style().fg, Some(PALETTE_ORANGE));
     assert_eq!(error_style().fg, Some(PALETTE_RED));
     assert_eq!(search_match_bg(), PALETTE_SEARCH_MATCH);
+}
+
+#[test]
+fn ansi_draw_writes_compact_indexed_colors() {
+    let mut cell = ratatui::buffer::Cell::EMPTY;
+    cell.set_symbol("x").set_fg(PALETTE_BLUE);
+    let mut output = Vec::new();
+
+    draw_cells(&mut output, vec![(0, 0, &cell)]).unwrap();
+
+    let output = String::from_utf8(output).unwrap();
+    assert!(output.contains("\x1b[38;5;75m"));
+    assert!(!output.contains("\x1b[49m"));
 }
 
 #[test]
@@ -950,7 +1017,7 @@ fn wrapped_deep_window_keeps_prefix_xml_state_for_visible_close_tag() {
 }
 
 #[test]
-#[ignore = "performance smoke; run with cargo test --release perf_huge_wrapped_line_paths -- --ignored --nocapture"]
+#[ignore = "performance smoke; run with cargo test --release perf_huge_wrapped_line_paths -- --ignored --nocapture --test-threads=1"]
 fn perf_huge_wrapped_line_paths() {
     let message = format!(
         r#"  "message": "<root>{}</root>""#,
@@ -1072,8 +1139,12 @@ fn perf_repeated_viewport_scroll_render() {
     eprintln!(
         "repeated viewport scroll render: {elapsed:?}, rows={rendered_rows}, background_cells={background_cells}"
     );
+    assert_eq!(
+        background_cells, 0,
+        "non-search scrolling should not repaint styled background cells"
+    );
     assert!(
-        elapsed < Duration::from_millis(1_500),
+        elapsed < Duration::from_millis(750),
         "repeated viewport render took {elapsed:?}"
     );
 }
@@ -1103,13 +1174,8 @@ fn perf_terminal_scroll_draw_bytes() {
         bytes: Rc::clone(&byte_count),
     };
     let backend = CrosstermBackend::new(writer);
-    let mut terminal = Terminal::with_options(
-        backend,
-        TerminalOptions {
-            viewport: Viewport::Fixed(Rect::new(0, 0, 120, 35)),
-        },
-    )
-    .unwrap();
+    let mut terminal = ViewerTerminal::new(backend);
+    let area = Rect::new(0, 0, 120, 35);
     let mut cache = RenderedLineCache::default();
     let started = Instant::now();
     let mut rendered_rows = 0_usize;
@@ -1120,21 +1186,16 @@ fn perf_terminal_scroll_draw_bytes() {
         rendered_rows += viewport.lines.len();
         background_cells += background_cell_count(&viewport.lines);
         let body_lines = viewport.lines;
+        let position = ViewPosition { top, row_offset: 0 };
         terminal
-            .draw(|frame| {
-                let [body, footer] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
-                    .areas(frame.area());
-                let paragraph = Paragraph::new(body_lines)
-                    .block(
-                        Block::default()
-                            .title(" perf ")
-                            .borders(Borders::ALL)
-                            .border_style(gutter_style()),
-                    )
-                    .style(plain_style());
-                frame.render_widget(paragraph, body);
-                frame.render_widget(Paragraph::new(" q/Esc quit ").style(gutter_style()), footer);
-            })
+            .draw(
+                area,
+                body_lines,
+                " perf ".to_owned(),
+                " q/Esc quit ".to_owned(),
+                position,
+                terminal.scroll_hint(position),
+            )
             .unwrap();
     }
 
@@ -1145,8 +1206,73 @@ fn perf_terminal_scroll_draw_bytes() {
     );
     assert!(byte_count.get() > 0);
     assert!(
-        elapsed < Duration::from_millis(2_000),
+        elapsed < Duration::from_millis(1_500),
         "terminal scroll draw took {elapsed:?}"
+    );
+}
+
+#[test]
+#[ignore = "performance smoke; run scripts/bench-viewer-performance.sh"]
+fn perf_terminal_visual_row_scroll_bytes() {
+    let message = (0..2_000)
+        .map(|index| format!("chunk-{index:04}-abcdefghijklmnopqrstuvwxyz;"))
+        .collect::<String>();
+    let line = format!(
+        r#"{{"index":0,"level":"debug","message":"{}","payload":"<root><item id=\"0\">value</item></root>"}}"#,
+        message
+    );
+    let lines = vec![line];
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter_digits: 4,
+            x: 0,
+            width: 111,
+            wrap: true,
+            mode: ViewMode::Plain,
+        },
+        row_limit: render_row_limit(32),
+    };
+    let byte_count = Rc::new(Cell::new(0_usize));
+    let writer = CountingWriter {
+        bytes: Rc::clone(&byte_count),
+    };
+    let backend = CrosstermBackend::new(writer);
+    let mut terminal = ViewerTerminal::new(backend);
+    let area = Rect::new(0, 0, 120, 35);
+    let mut cache = RenderedLineCache::default();
+    let started = Instant::now();
+    let mut rendered_rows = 0_usize;
+    let mut background_cells = 0_usize;
+
+    for row_offset in 0..400 {
+        let viewport = render_viewport(&lines, 1, row_offset, 32, request, &mut cache, None);
+        rendered_rows += viewport.lines.len();
+        background_cells += background_cell_count(&viewport.lines);
+        terminal
+            .draw(
+                area,
+                viewport.lines,
+                " perf ".to_owned(),
+                " q/Esc quit ".to_owned(),
+                ViewPosition { top: 0, row_offset },
+                terminal.scroll_hint(ViewPosition { top: 0, row_offset }),
+            )
+            .unwrap();
+    }
+
+    let elapsed = started.elapsed();
+    eprintln!(
+        "terminal visual row scroll: {elapsed:?}, rows={rendered_rows}, bytes={}, background_cells={background_cells}",
+        byte_count.get()
+    );
+    assert!(byte_count.get() > 0);
+    assert_eq!(
+        background_cells, 0,
+        "non-search scrolling should not repaint styled background cells"
+    );
+    assert!(
+        elapsed < Duration::from_millis(1_500),
+        "terminal visual row scroll took {elapsed:?}"
     );
 }
 

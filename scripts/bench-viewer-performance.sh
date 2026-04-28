@@ -165,3 +165,8 @@ bench_one \
   "terminal draw bytes" \
   "perf_terminal_scroll_draw_bytes" \
   "terminal scroll draw"
+
+bench_one \
+  "terminal visual-row scroll bytes" \
+  "perf_terminal_visual_row_scroll_bytes" \
+  "terminal visual row scroll"

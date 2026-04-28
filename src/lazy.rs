@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    ffi::OsStr,
     fs::File,
     io::{BufRead, BufReader, Seek, SeekFrom, Write},
     time::{Duration, Instant},
@@ -21,11 +22,26 @@ pub fn should_use_lazy_preview(source: &InputSource, options: &FormatOptions) ->
         FormatKind::Jsonl => Ok(true),
         FormatKind::Json | FormatKind::Xml => Ok(false),
         FormatKind::Auto => {
+            if has_record_extension(source) {
+                return Ok(true);
+            }
+
             let sample = PreviewSample::read(source)?;
-            Ok(sample.non_empty_lines >= 2
-                && sample.parseable_record_lines == sample.non_empty_lines)
+            Ok(sample.looks_like_record_stream())
         }
     }
+}
+
+fn has_record_extension(source: &InputSource) -> bool {
+    matches!(
+        source
+            .path()
+            .extension()
+            .and_then(OsStr::to_str)
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("jsonl" | "ndjson")
+    )
 }
 
 pub struct LazyFormattedFile {
@@ -259,6 +275,10 @@ impl PreviewSample {
 
         Ok(sample)
     }
+
+    fn looks_like_record_stream(&self) -> bool {
+        self.non_empty_lines >= 2 && self.parseable_record_lines == self.non_empty_lines
+    }
 }
 
 fn read_line_limited<R: BufRead>(
@@ -356,12 +376,21 @@ fn strip_line_end(line: &mut String) {
 mod tests {
     use std::{io::Write, time::Instant};
 
+    use tempfile::Builder as TempFileBuilder;
     use tempfile::NamedTempFile;
 
     use super::*;
 
     fn temp_source(contents: &[u8]) -> (NamedTempFile, InputSource) {
         let mut temp = NamedTempFile::new().unwrap();
+        temp.write_all(contents).unwrap();
+        temp.flush().unwrap();
+        let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
+        (temp, source)
+    }
+
+    fn temp_source_with_suffix(contents: &[u8], suffix: &str) -> (NamedTempFile, InputSource) {
+        let mut temp = TempFileBuilder::new().suffix(suffix).tempfile().unwrap();
         temp.write_all(contents).unwrap();
         temp.flush().unwrap();
         let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
@@ -377,6 +406,48 @@ mod tests {
         };
 
         assert!(should_use_lazy_preview(&source, &options).unwrap());
+    }
+
+    #[test]
+    fn auto_lazy_preview_honors_jsonl_extension_before_sampling() {
+        let mut data = b"{\"message\":\"".to_vec();
+        data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
+        data.extend_from_slice(b"\"}\n{\"ok\":true}\n");
+        let (_temp, source) = temp_source_with_suffix(&data, ".jsonl");
+        let options = FormatOptions {
+            kind: FormatKind::Auto,
+            indent: 2,
+        };
+
+        assert!(should_use_lazy_preview(&source, &options).unwrap());
+    }
+
+    #[test]
+    fn auto_lazy_preview_rejects_truncated_prefix_without_extension() {
+        let mut data = b"{\"message\":\"".to_vec();
+        data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
+        data.extend_from_slice(b"\"}\n{\"ok\":true}\n");
+        let (_temp, source) = temp_source(&data);
+        let options = FormatOptions {
+            kind: FormatKind::Auto,
+            indent: 2,
+        };
+
+        assert!(!should_use_lazy_preview(&source, &options).unwrap());
+    }
+
+    #[test]
+    fn auto_lazy_preview_keeps_large_multiline_json_eager() {
+        let mut data = b"{\"message\":\"".to_vec();
+        data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
+        data.extend_from_slice(b"\",\n\"ok\":true\n}\n");
+        let (_temp, source) = temp_source(&data);
+        let options = FormatOptions {
+            kind: FormatKind::Auto,
+            indent: 2,
+        };
+
+        assert!(!should_use_lazy_preview(&source, &options).unwrap());
     }
 
     #[test]

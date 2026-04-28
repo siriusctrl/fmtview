@@ -59,3 +59,4 @@ workflow-specific docs.
 - Run `cargo test`.
 - Run `cargo clippy --all-targets -- -D warnings` when Clippy is available.
 - For TUI changes, run the built CLI under a real PTY, for example with `script`, and verify scroll/quit keys.
+- For viewer rendering, wrapping, highlighting, or terminal draw performance changes, run `scripts/bench-viewer-performance.sh` and compare median time/byte counts.

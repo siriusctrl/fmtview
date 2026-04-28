@@ -8,6 +8,17 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep muted viewer syntax colors without painting a full-screen background on
+  every styled cell, reducing visible terminal repaint artifacts and CPU work
+  during scroll.
+- Use compact indexed muted colors and a viewer-specific ANSI draw path to
+  reduce terminal byte output during scrolling without returning to bright
+  terminal-default colors.
+- Improve auto lazy preview detection for `.jsonl`/`.ndjson` files while
+  keeping ambiguous huge multi-line JSON documents on the full formatter path.
+
 ## [0.1.6] - 2026-04-27
 
 ### Changed

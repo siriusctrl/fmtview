@@ -5,7 +5,10 @@ use std::{
 };
 
 use anyhow::Result;
-use ratatui::text::{Line, Span};
+use ratatui::{
+    style::Style,
+    text::{Line, Span},
+};
 
 use crate::line_index::ViewFile;
 
@@ -621,17 +624,17 @@ pub(super) fn search_match_ranges(text: &str, query: &str, start_char: usize) ->
         return Vec::new();
     }
 
-    let total_chars = text.chars().count();
+    let total_chars = char_count(text);
     if start_char >= total_chars {
         return Vec::new();
     }
 
     let search_text = slice_chars(text, start_char, total_chars);
-    let query_len = query.chars().count();
+    let query_len = char_count(query);
     search_text
         .match_indices(query)
         .map(|(byte_index, _)| {
-            let start = start_char + search_text[..byte_index].chars().count();
+            let start = start_char + char_count(&search_text[..byte_index]);
             start..start + query_len
         })
         .collect()
@@ -646,7 +649,7 @@ pub(super) fn apply_search_ranges_to_spans(
 
     for span in spans {
         let text = span.content.as_ref();
-        let len = text.chars().count();
+        let len = char_count(text);
         let span_start = cursor;
         let span_end = cursor + len;
         cursor = span_end;
@@ -663,10 +666,11 @@ pub(super) fn apply_search_ranges_to_spans(
             if range_is_highlighted(start, end, ranges) {
                 style = style.bg(search_match_bg());
             }
-            highlighted.push(Span::styled(
+            push_styled_span(
+                &mut highlighted,
                 slice_chars(text, start - span_start, end - span_start),
                 style,
-            ));
+            );
         }
     }
 
@@ -894,6 +898,7 @@ pub(super) fn render_logical_line_window_with_status_indexed(
                 total_rows: Some(1),
             };
         }
+        let line_chars = char_count(line);
         return RenderedLineWindow {
             rows: vec![RenderedVisualRow {
                 line: styled_segment(
@@ -905,12 +910,9 @@ pub(super) fn render_logical_line_window_with_status_indexed(
                 ),
                 end_byte: byte_index_for_char(
                     line,
-                    context
-                        .x
-                        .saturating_add(context.width)
-                        .min(line.chars().count()),
+                    context.x.saturating_add(context.width).min(line_chars),
                 ),
-                line_end: context.x.saturating_add(context.width) >= line.chars().count(),
+                line_end: context.x.saturating_add(context.width) >= line_chars,
             }],
             total_rows: Some(1),
         };
@@ -958,10 +960,11 @@ pub(super) fn render_logical_line_window_with_status_indexed(
             };
             let mut line_spans = vec![gutter];
             if range.continuation_indent > 0 {
-                line_spans.push(Span::styled(
+                push_styled_span(
+                    &mut line_spans,
                     " ".repeat(range.continuation_indent),
                     plain_style(),
-                ));
+                );
             }
             line_spans.extend(slice_spans(
                 &spans,
@@ -1279,7 +1282,7 @@ pub(super) fn slice_spans(spans: &[Span<'static>], start: usize, end: usize) -> 
 
     for span in spans {
         let text = span.content.as_ref();
-        let len = text.chars().count();
+        let len = char_count(text);
         let span_start = cursor;
         let span_end = cursor + len;
         cursor = span_end;
@@ -1291,14 +1294,56 @@ pub(super) fn slice_spans(spans: &[Span<'static>], start: usize, end: usize) -> 
         }
 
         let text = slice_chars(text, overlap_start - span_start, overlap_end - span_start);
-        sliced.push(Span::styled(text, span.style));
+        push_styled_span(&mut sliced, text, span.style);
     }
 
     sliced
 }
 
+fn push_styled_span(spans: &mut Vec<Span<'static>>, text: String, style: Style) {
+    let style = if style == plain_style() {
+        Style::default()
+    } else {
+        style
+    };
+
+    if text.is_empty() {
+        return;
+    }
+
+    if let Some(previous) = spans.last_mut()
+        && previous.style == style
+    {
+        previous.content.to_mut().push_str(&text);
+        return;
+    }
+
+    spans.push(Span::styled(text, style));
+}
+
 pub(super) fn slice_chars(text: &str, start: usize, end: usize) -> String {
+    if end <= start {
+        return String::new();
+    }
+
+    if text.is_ascii() {
+        let start = start.min(text.len());
+        let end = end.min(text.len());
+        if end <= start {
+            return String::new();
+        }
+        return text[start..end].to_owned();
+    }
+
     text.chars().skip(start).take(end - start).collect()
+}
+
+pub(super) fn char_count(text: &str) -> usize {
+    if text.is_ascii() {
+        text.len()
+    } else {
+        text.chars().count()
+    }
 }
 
 pub(super) fn line_number_digits(line_count: usize) -> usize {
@@ -1334,6 +1379,10 @@ pub(super) fn viewport_bottom_byte_offset(file: &dyn ViewFile, bottom: ViewportB
 }
 
 pub(super) fn byte_index_for_char(line: &str, char_index: usize) -> usize {
+    if line.is_ascii() {
+        return char_index.min(line.len());
+    }
+
     line.char_indices()
         .nth(char_index)
         .map(|(index, _)| index)
