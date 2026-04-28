@@ -326,7 +326,7 @@ fn parseable_record_line(line: &[u8]) -> bool {
         .is_some()
 }
 
-fn format_record_lines(line: &[u8], options: FormatOptions) -> Result<Vec<String>> {
+pub(crate) fn format_record_lines(line: &[u8], options: FormatOptions) -> Result<Vec<String>> {
     let trimmed = format::trim_record_line_end(line);
     if trim_ascii_ws(trimmed).is_empty() {
         return Ok(vec![String::new()]);

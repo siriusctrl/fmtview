@@ -145,6 +145,11 @@ bench_one \
   "diff model build"
 
 bench_one \
+  "lazy record diff view open" \
+  "perf_lazy_record_diff_view_open" \
+  "lazy record diff view open"
+
+bench_one \
   "interactive diff view render" \
   "perf_diff_view_render" \
   "diff view render"

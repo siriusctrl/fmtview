@@ -71,8 +71,8 @@ pub fn run(file: Box<dyn ViewFile>, mode: ViewMode) -> Result<()> {
     run_terminal(|terminal| run_loop(terminal, file.as_ref(), mode))
 }
 
-pub(crate) fn run_diff(model: crate::diff::DiffModel) -> Result<()> {
-    run_terminal(|terminal| diff_view::run_loop(terminal, &model))
+pub(crate) fn run_diff(view: crate::diff::DiffView) -> Result<()> {
+    run_terminal(|terminal| diff_view::run_loop(terminal, view))
 }
 
 fn run_terminal<F>(run_loop: F) -> Result<()>
