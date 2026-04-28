@@ -485,17 +485,28 @@ pub(super) fn render_viewport(
         if !top_rows.is_empty() {
             last_line_number = Some(first_line_number);
         }
-        for row in top_rows.into_iter().take(height) {
-            bottom = Some(ViewportBottom {
-                line_index: first_line_number - 1,
-                byte_end: row.end_byte,
-                line_end: row.line_end,
-            });
-            rendered.push(apply_search_highlight(
-                row.line,
-                search_query,
-                request.context.gutter_digits,
-            ));
+        if search_query.is_some() {
+            for row in top_rows.into_iter().take(height) {
+                bottom = Some(ViewportBottom {
+                    line_index: first_line_number - 1,
+                    byte_end: row.end_byte,
+                    line_end: row.line_end,
+                });
+                rendered.push(apply_search_highlight(
+                    row.line,
+                    search_query,
+                    request.context.gutter_digits,
+                ));
+            }
+        } else {
+            for row in top_rows.into_iter().take(height) {
+                bottom = Some(ViewportBottom {
+                    line_index: first_line_number - 1,
+                    byte_end: row.end_byte,
+                    line_end: row.line_end,
+                });
+                rendered.push(row.line);
+            }
         }
     }
 
@@ -511,17 +522,28 @@ pub(super) fn render_viewport(
         if taken > 0 {
             last_line_number = Some(line_number);
         }
-        for row in rows.into_iter().take(remaining) {
-            bottom = Some(ViewportBottom {
-                line_index: line_number - 1,
-                byte_end: row.end_byte,
-                line_end: row.line_end,
-            });
-            rendered.push(apply_search_highlight(
-                row.line,
-                search_query,
-                request.context.gutter_digits,
-            ));
+        if search_query.is_some() {
+            for row in rows.into_iter().take(remaining) {
+                bottom = Some(ViewportBottom {
+                    line_index: line_number - 1,
+                    byte_end: row.end_byte,
+                    line_end: row.line_end,
+                });
+                rendered.push(apply_search_highlight(
+                    row.line,
+                    search_query,
+                    request.context.gutter_digits,
+                ));
+            }
+        } else {
+            for row in rows.into_iter().take(remaining) {
+                bottom = Some(ViewportBottom {
+                    line_index: line_number - 1,
+                    byte_end: row.end_byte,
+                    line_end: row.line_end,
+                });
+                rendered.push(row.line);
+            }
         }
     }
 
