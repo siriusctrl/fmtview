@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-04-28
+
 ### Fixed
 
 - Place viewer search results with nearby context, including wrapped visual
