@@ -36,12 +36,16 @@ XML payloads, XHTML snippets, or nested markup.
   wrap.
 - Scroll with the keyboard, mouse wheel, or a trackpad without re-rendering on
   every individual input event.
-- Highlight JSON, XML-compatible markup, and unified diff output.
+- Show formatted diffs in a terminal diff viewer with single-column and
+  side-by-side layouts while keeping redirected diff output as unified patch
+  text.
 - Highlight JSON string escape tokens such as `\n`, `\t`, `\r`, `\"`, and
   `\\`.
 - Pair XML-style opening and closing tags by depth, including markup embedded
   inside JSON string values.
 - Search formatted text from inside the viewer with visible match highlighting.
+- Keep a compact sticky JSON key breadcrumb above the viewer body while
+  scrolling nested documents.
 - Preserve data semantics. JSON strings are highlighted for readability, not
   rewritten.
 - Keep large outputs responsive by indexing a temporary formatted file and only
@@ -126,6 +130,13 @@ fmtview diff left.xml right.xml > formatted.diff
 fmtview diff --type jsonl old.jsonl new.jsonl
 ```
 
+In a terminal, `fmtview diff` opens an interactive diff viewer. Press `s` to
+switch between single-column and side-by-side layouts, and `]`/`[` to jump to
+the next or previous changed block. When stdout is redirected, diff output
+remains standard unified patch text. The interactive viewer hides patch control
+rows such as `@@` hunks and uses red/green background shading for changed
+chunks, with stronger shading on the changed portion inside each line.
+
 ## Try The Showcase Files
 
 The repository includes small sample files that exercise the viewer features:
@@ -147,6 +158,9 @@ of the file for wrapped scroll testing.
 physical input line so you can verify that JSONL records are expanded by JSON
 structure during formatting. `examples/page.html` is well-formed HTML that
 exercises the XML-compatible markup formatter.
+`examples/diff-left.json` and `examples/diff-right.json` are a paired diff
+showcase with separated change blocks for trying the single-column/split layout
+toggle, next/previous change navigation, and line/inline diff shading.
 
 ## Viewer
 
@@ -173,6 +187,15 @@ h/l         horizontal scroll in nowrap mode
 Left/Right  horizontal scroll in nowrap mode
 ```
 
+Diff viewer keys:
+
+```text
+s           toggle single-column/side-by-side diff layout
+]/[         next/previous changed block
+h/l         horizontal scroll
+Left/Right  horizontal scroll
+```
+
 The title bar shows the source label, total line count, visible line range,
 scroll percentage, and whether wrapping is enabled. In wrap mode, the percentage
 tracks the visible byte position so it can advance inside a very long logical
@@ -181,6 +204,11 @@ wrapped logical line, the title/footer also show a `+N rows` offset so repetitiv
 content still gives visible scrolling feedback. The left gutter shows line
 numbers, and wrapped continuation rows use a lighter continuation gutter with
 periodic tick marks.
+
+For JSON-like formatted output, the viewer keeps a small key breadcrumb pinned
+above the scrollable body, such as `payload › items › name`. Long paths wrap to
+at most two compact rows and use cached checkpoints so normal scrolling does not
+rescan the document from the beginning.
 
 For record-like inputs such as JSONL logs, the terminal viewer formats records
 on demand instead of formatting and indexing the whole file before the first
@@ -274,6 +302,12 @@ Maintainers can measure viewer rendering and terminal draw changes with:
 
 ```sh
 benches/viewer-performance.sh
+```
+
+Interactive diff model and rendering changes can be measured with:
+
+```sh
+benches/diff-performance.sh
 ```
 
 Parser, formatter, JSONL record, and lazy-preview changes can be measured with:

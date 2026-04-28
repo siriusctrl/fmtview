@@ -10,6 +10,13 @@ Run the viewer benchmark smoke suite for TUI rendering and terminal bytes:
 benches/viewer-performance.sh
 ```
 
+Run the diff benchmark smoke suite for structured diff model building and
+interactive diff-view rendering:
+
+```sh
+benches/diff-performance.sh
+```
+
 Run the formatter benchmark smoke suite for parser, record-stream, whole-record,
 and lazy-preview work:
 
@@ -28,6 +35,7 @@ Use fewer samples while iterating:
 
 ```sh
 benches/viewer-performance.sh --samples 3
+benches/diff-performance.sh --samples 3
 benches/format-performance.sh --samples 3
 benches/format-algorithm.sh --samples 3 --candidate 'experiment=...'
 ```
@@ -77,6 +85,14 @@ Viewer metrics:
   visible terminal repaint artifacts.
 - `background_cells` should move toward zero for normal non-search scrolling.
   Search highlighting may still use background color for match spans.
+
+Diff metrics:
+
+- `diff model build` measures parsing unified patch text into the structured
+  row model used by the TTY diff viewer, including precomputed single-column,
+  side-by-side, and changed-row indexes.
+- `interactive diff view render` measures repeated visible-window rendering for
+  both single-column and side-by-side diff layouts without terminal write noise.
 
 When comparing changes, run the script on both commits with the same
 `--samples` value and compare the median numbers.

@@ -110,14 +110,11 @@ fn run_diff(command: DiffCommand) -> Result<()> {
         indent: command.indent,
     };
 
-    let view = should_view();
-    let diffed = diff::diff_sources(&left, &right, &options, view)?;
-
-    if view {
-        let label = format!("{} <-> {}", left.label(), right.label());
-        let indexed = line_index::IndexedTempFile::new(label, diffed)?;
-        viewer::run(Box::new(indexed), viewer::ViewMode::Diff)
+    if should_view() {
+        let model = diff::diff_view(&left, &right, &options)?;
+        viewer::run_diff(model)
     } else {
+        let diffed = diff::diff_sources(&left, &right, &options, false)?;
         copy_temp_to_stdout(&diffed)
     }
 }

@@ -1,15 +1,80 @@
 {
-  "id": "A-100",
-  "status": "paid",
-  "items": [
+  "scenario": "fmtview diff showcase",
+  "release": {
+    "version": "0.1.9",
+    "status": "ready",
+    "owner": "cli-team",
+    "notes": [
+      "search results keep visual context",
+      "terminal draw uses compact writes",
+      "interactive diff supports single and split layouts"
+    ]
+  },
+  "viewer": {
+    "wrap": {
+      "default": true,
+      "search_context_rows": 6,
+      "breadcrumb": true
+    },
+    "diff": {
+      "mode": "interactive",
+      "layout": "side-by-side",
+      "navigation": [
+        "s",
+        "[",
+        "]"
+      ]
+    },
+    "palette": {
+      "plain": "muted",
+      "added": "green",
+      "removed": "red",
+      "hunk": "blue"
+    }
+  },
+  "orders": [
     {
-      "sku": "fmt-001",
-      "qty": 2
+      "id": "A-100",
+      "status": "paid",
+      "qty": 2,
+      "payload": "<order><status>paid</status></order>"
     },
     {
-      "sku": "xml-777",
-      "qty": 1
+      "id": "B-200",
+      "status": "queued",
+      "qty": 3,
+      "payload": "<order><status>queued</status></order>"
+    },
+    {
+      "id": "C-300",
+      "status": "added",
+      "qty": 1,
+      "payload": "<order><status>added</status></order>"
     }
   ],
-  "payload": "<order><status>paid</status></order>"
+  "unchanged_padding": {
+    "line_01": "This block creates distance between diff hunks.",
+    "line_02": "It keeps the sample useful for next-change navigation.",
+    "line_03": "The content is intentionally boring and stable.",
+    "line_04": "Side-by-side mode should still align this context.",
+    "line_05": "The next change appears after this padding.",
+    "line_06": "Repeated jump keys should skip directly to it."
+  },
+  "metrics": {
+    "formatted_bytes": 48210,
+    "diff_model_ms": 172,
+    "interactive_render_ms": 205,
+    "terminal_write_bytes": 38400
+  },
+  "footer": {
+    "shortcuts": [
+      "q",
+      "s",
+      "[",
+      "]",
+      "h",
+      "l"
+    ],
+    "message": "Diff output is still patch text when redirected."
+  }
 }

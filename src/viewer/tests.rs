@@ -999,17 +999,18 @@ fn terminal_renderer_applies_plain_style_to_default_spans() {
     let mut terminal = ViewerTerminal::new(backend);
 
     terminal
-        .draw(
-            Rect::new(0, 0, 24, 4),
-            vec![Line::from(Span::raw("plain text"))],
-            " test ".to_owned(),
-            " footer ".to_owned(),
-            ViewPosition {
+        .draw(TerminalFrame {
+            area: Rect::new(0, 0, 24, 4),
+            styled: vec![Line::from(Span::raw("plain text"))],
+            sticky: Vec::new(),
+            title: " test ".to_owned(),
+            footer_text: " footer ".to_owned(),
+            position: ViewPosition {
                 top: 0,
                 row_offset: 0,
             },
-            None,
-        )
+            scroll_hint: None,
+        })
         .unwrap();
 
     let output = String::from_utf8(output.borrow().clone()).unwrap();
@@ -1390,14 +1391,15 @@ fn perf_terminal_scroll_draw_bytes() {
         let body_lines = viewport.lines;
         let position = ViewPosition { top, row_offset: 0 };
         terminal
-            .draw(
+            .draw(TerminalFrame {
                 area,
-                body_lines,
-                " perf ".to_owned(),
-                " q/Esc quit ".to_owned(),
+                styled: body_lines,
+                sticky: Vec::new(),
+                title: " perf ".to_owned(),
+                footer_text: " q/Esc quit ".to_owned(),
                 position,
-                terminal.scroll_hint(position),
-            )
+                scroll_hint: terminal.scroll_hint(position),
+            })
             .unwrap();
     }
 
@@ -1450,15 +1452,17 @@ fn perf_terminal_visual_row_scroll_bytes() {
         let viewport = render_viewport(&lines, 1, row_offset, 32, request, &mut cache, None);
         rendered_rows += viewport.lines.len();
         background_cells += background_cell_count(&viewport.lines);
+        let position = ViewPosition { top: 0, row_offset };
         terminal
-            .draw(
+            .draw(TerminalFrame {
                 area,
-                viewport.lines,
-                " perf ".to_owned(),
-                " q/Esc quit ".to_owned(),
-                ViewPosition { top: 0, row_offset },
-                terminal.scroll_hint(ViewPosition { top: 0, row_offset }),
-            )
+                styled: viewport.lines,
+                sticky: Vec::new(),
+                title: " perf ".to_owned(),
+                footer_text: " q/Esc quit ".to_owned(),
+                position,
+                scroll_hint: terminal.scroll_hint(position),
+            })
             .unwrap();
     }
 

@@ -1,3 +1,5 @@
+mod breadcrumb;
+mod diff_view;
 mod highlight;
 mod input;
 mod palette;
@@ -10,13 +12,14 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use breadcrumb::JsonBreadcrumbCache;
 use crossterm::{
     event,
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, layout::Rect};
+use ratatui::{backend::CrosstermBackend, layout::Rect, text::Line};
 
 #[cfg(test)]
 use crate::line_index::IndexedTempFile;
@@ -30,9 +33,9 @@ use render::{
     prewarm_render_cache, render_row_limit, render_viewport, rendered_row_count,
     viewer_progress_percent,
 };
-use terminal::ViewerTerminal;
 #[cfg(test)]
 use terminal::draw_cells;
+use terminal::{TerminalFrame, ViewerTerminal};
 
 const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const EVENT_DRAIN_BUDGET: Duration = Duration::from_millis(8);
@@ -62,10 +65,20 @@ const TAIL_ROW_OFFSET: usize = usize::MAX;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
     Plain,
-    Diff,
 }
 
 pub fn run(file: Box<dyn ViewFile>, mode: ViewMode) -> Result<()> {
+    run_terminal(|terminal| run_loop(terminal, file.as_ref(), mode))
+}
+
+pub(crate) fn run_diff(model: crate::diff::DiffModel) -> Result<()> {
+    run_terminal(|terminal| diff_view::run_loop(terminal, &model))
+}
+
+fn run_terminal<F>(run_loop: F) -> Result<()>
+where
+    F: FnOnce(&mut ViewerTerminal<CrosstermBackend<io::Stdout>>) -> Result<()>,
+{
     let mut stdout = io::stdout();
     enable_raw_mode().context("failed to enable raw mode")?;
     let mut cleanup = TerminalCleanup::active();
@@ -74,7 +87,7 @@ pub fn run(file: Box<dyn ViewFile>, mode: ViewMode) -> Result<()> {
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = ViewerTerminal::new(backend);
-    let result = run_loop(&mut terminal, file.as_ref(), mode);
+    let result = run_loop(&mut terminal);
 
     disable_raw_mode().ok();
     execute!(
@@ -123,9 +136,7 @@ fn run_loop(
 ) -> Result<()> {
     let mut state = ViewState::default();
     let mut dirty = true;
-    let mut line_cache = LineWindowCache::default();
-    let mut render_cache = RenderedLineCache::default();
-    let mut tail_cache = TailPositionCache::default();
+    let mut caches = ViewerCaches::default();
 
     loop {
         if state.search_task.is_some() {
@@ -133,15 +144,7 @@ fn run_loop(
         }
 
         if dirty {
-            draw_view(
-                terminal,
-                file,
-                mode,
-                &mut state,
-                &mut line_cache,
-                &mut render_cache,
-                &mut tail_cache,
-            )?;
+            draw_view(terminal, file, mode, &mut state, &mut caches)?;
             dirty = false;
         }
 
@@ -173,19 +176,25 @@ fn run_loop(
     Ok(())
 }
 
+#[derive(Default)]
+struct ViewerCaches {
+    line: LineWindowCache,
+    render: RenderedLineCache,
+    tail: TailPositionCache,
+    breadcrumb: JsonBreadcrumbCache,
+}
+
 fn draw_view(
     terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,
     file: &dyn ViewFile,
     mode: ViewMode,
     state: &mut ViewState,
-    line_cache: &mut LineWindowCache,
-    render_cache: &mut RenderedLineCache,
-    tail_cache: &mut TailPositionCache,
+    caches: &mut ViewerCaches,
 ) -> Result<()> {
     let size = terminal.size().context("failed to read terminal size")?;
     let area = Rect::new(0, 0, size.width, size.height);
-    let visible_height = usize::from(size.height.saturating_sub(3));
     let visible_width = usize::from(size.width.saturating_sub(2));
+    let base_visible_height = usize::from(size.height.saturating_sub(3));
     let gutter_digits = if file.line_count_exact() {
         line_number_digits(file.line_count())
     } else {
@@ -200,25 +209,32 @@ fn draw_view(
         wrap: state.wrap,
         mode,
     };
-    let logical_tail_top = last_full_logical_page_top(file.line_count(), visible_height);
-    let tail = if !state.wrap || state.top >= logical_tail_top {
-        Some(tail_cache.position(file, visible_height, render_context)?)
-    } else {
-        None
-    };
-    if let Some(tail) = tail.filter(|tail| is_after_tail(state, *tail)) {
-        state.top = tail.top;
-        state.top_row_offset = tail.row_offset;
-        state.top_max_row_offset = 0;
-        state.wrap_bounds_stale = state.wrap;
-    }
-    let max_top = file.line_count().saturating_sub(1);
-    if state.top > max_top {
-        state.top = max_top;
-        reset_top_row_offset(state);
+
+    let mut sticky = Vec::new();
+    let mut visible_height = base_visible_height;
+    let mut tail = None;
+    for _ in 0..3 {
+        tail =
+            adjust_state_for_visible_height(file, state, visible_height, render_context, caches)?;
+        let next_sticky = sticky_lines(
+            mode,
+            &mut caches.breadcrumb,
+            file,
+            state.top,
+            visible_width,
+            gutter_width,
+            base_visible_height,
+        );
+        let next_visible_height = visible_height_for_sticky(base_visible_height, next_sticky.len());
+        let stable = next_visible_height == visible_height;
+        sticky = next_sticky;
+        visible_height = next_visible_height;
+        if stable {
+            break;
+        }
     }
 
-    let mut lines = line_cache.read(
+    let mut lines = caches.line.read(
         file,
         state.top,
         visible_height,
@@ -228,12 +244,55 @@ fn draw_view(
         if !resolve_search_target_position(state, lines.lines, visible_height, render_context) {
             break;
         }
-        lines = line_cache.read(
+        lines = caches.line.read(
             file,
             state.top,
             visible_height,
             visible_height.saturating_mul(2).max(32),
         )?;
+    }
+    let final_sticky = sticky_lines(
+        mode,
+        &mut caches.breadcrumb,
+        file,
+        state.top,
+        visible_width,
+        gutter_width,
+        base_visible_height,
+    );
+    if final_sticky.len() != sticky.len() {
+        sticky = final_sticky;
+        visible_height = visible_height_for_sticky(base_visible_height, sticky.len());
+        tail =
+            adjust_state_for_visible_height(file, state, visible_height, render_context, caches)?;
+        lines = caches.line.read(
+            file,
+            state.top,
+            visible_height,
+            visible_height.saturating_mul(2).max(32),
+        )?;
+        for _ in 0..3 {
+            if !resolve_search_target_position(state, lines.lines, visible_height, render_context) {
+                break;
+            }
+            lines = caches.line.read(
+                file,
+                state.top,
+                visible_height,
+                visible_height.saturating_mul(2).max(32),
+            )?;
+        }
+        sticky = sticky_lines(
+            mode,
+            &mut caches.breadcrumb,
+            file,
+            state.top,
+            visible_width,
+            gutter_width,
+            base_visible_height,
+        );
+    } else {
+        sticky = final_sticky;
     }
     let render_request = RenderRequest {
         context: render_context,
@@ -251,14 +310,14 @@ fn draw_view(
         state.top_row_offset,
         visible_height,
         render_request,
-        render_cache,
+        &mut caches.render,
         active_search_query(state),
     );
     let mut max_top_row_offset = effective_top_row_offset(
         state.top + 1,
         visible_height,
         render_context,
-        render_cache,
+        &caches.render,
         tail,
     );
     if viewport.lines.is_empty() && state.top_row_offset > 0 {
@@ -269,7 +328,7 @@ fn draw_view(
             state.top_row_offset,
             visible_height,
             render_request,
-            render_cache,
+            &mut caches.render,
             active_search_query(state),
         );
     }
@@ -277,11 +336,11 @@ fn draw_view(
         state.top + 1,
         visible_height,
         render_context,
-        render_cache,
+        &caches.render,
         tail,
     );
     if state.top_row_offset > max_top_row_offset
-        && render_cache.status(state.top + 1).total_rows.is_some()
+        && caches.render.status(state.top + 1).total_rows.is_some()
     {
         state.top_row_offset = max_top_row_offset;
         viewport = render_viewport(
@@ -290,14 +349,14 @@ fn draw_view(
             state.top_row_offset,
             visible_height,
             render_request,
-            render_cache,
+            &mut caches.render,
             active_search_query(state),
         );
         max_top_row_offset = effective_top_row_offset(
             state.top + 1,
             visible_height,
             render_context,
-            render_cache,
+            &caches.render,
             tail,
         );
     }
@@ -310,7 +369,7 @@ fn draw_view(
     let scroll_hint = if state.wrap {
         terminal
             .scroll_hint(position)
-            .or_else(|| logical_scroll_hint(terminal, render_cache, position))
+            .or_else(|| logical_scroll_hint(terminal, &caches.render, position))
     } else {
         None
     };
@@ -353,13 +412,21 @@ fn draw_view(
     };
 
     terminal
-        .draw(area, styled, title, footer_text, position, scroll_hint)
+        .draw(TerminalFrame {
+            area,
+            styled,
+            sticky,
+            title,
+            footer_text,
+            position,
+            scroll_hint,
+        })
         .context("failed to draw terminal frame")?;
 
     prewarm_render_cache(
         file,
-        line_cache,
-        render_cache,
+        &mut caches.line,
+        &mut caches.render,
         state.top,
         state.top_row_offset,
         visible_height,
@@ -367,6 +434,53 @@ fn draw_view(
     );
 
     Ok(())
+}
+
+fn adjust_state_for_visible_height(
+    file: &dyn ViewFile,
+    state: &mut ViewState,
+    visible_height: usize,
+    render_context: RenderContext,
+    caches: &mut ViewerCaches,
+) -> Result<Option<ViewPosition>> {
+    let logical_tail_top = last_full_logical_page_top(file.line_count(), visible_height);
+    let tail = if !state.wrap || state.top >= logical_tail_top {
+        Some(caches.tail.position(file, visible_height, render_context)?)
+    } else {
+        None
+    };
+    if let Some(tail) = tail.filter(|tail| is_after_tail(state, *tail)) {
+        state.top = tail.top;
+        state.top_row_offset = tail.row_offset;
+        state.top_max_row_offset = 0;
+        state.wrap_bounds_stale = state.wrap;
+    }
+    let max_top = file.line_count().saturating_sub(1);
+    if state.top > max_top {
+        state.top = max_top;
+        reset_top_row_offset(state);
+    }
+    Ok(tail)
+}
+
+fn sticky_lines(
+    mode: ViewMode,
+    breadcrumb: &mut JsonBreadcrumbCache,
+    file: &dyn ViewFile,
+    top: usize,
+    width: usize,
+    gutter_width: usize,
+    base_visible_height: usize,
+) -> Vec<Line<'static>> {
+    if mode == ViewMode::Plain {
+        breadcrumb.render(file, top, width, gutter_width, base_visible_height)
+    } else {
+        Vec::new()
+    }
+}
+
+fn visible_height_for_sticky(base_visible_height: usize, sticky_rows: usize) -> usize {
+    base_visible_height.saturating_sub(sticky_rows).max(1)
 }
 
 fn active_search_query(state: &ViewState) -> Option<&str> {

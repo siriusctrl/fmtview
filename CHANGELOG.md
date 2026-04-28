@@ -8,6 +8,31 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Show formatted diffs in an interactive TTY diff viewer with single-column and
+  side-by-side layouts, `s` layout switching, and `[`/`]` previous/next change
+  block navigation while keeping redirected diff output as unified patch text.
+- Show a compact sticky JSON key breadcrumb above the viewer body so deeply
+  nested JSON remains anchored to its parent keys while scrolling.
+- Add `benches/diff-performance.sh` for diff model and interactive diff-view
+  rendering performance smoke checks.
+- Expand the paired diff showcase examples so the interactive diff viewer has
+  multiple separated change blocks for layout and jump navigation checks.
+- Hide unified-patch control rows in the interactive diff viewer and add
+  red/green chunk backgrounds with stronger line-local change highlights.
+
+### Changed
+
+- Use softer muted red/green diff backgrounds in the interactive diff viewer.
+
+### Fixed
+
+- Clamp interactive diff scrolling to the last full rendered page instead of
+  allowing the last row to scroll above an otherwise empty body.
+- Base side-by-side diff tail scrolling on the actual rendered diff rows, so
+  inserted or deleted blocks use the longer displayed side.
+
 ## [0.1.8] - 2026-04-28
 
 ### Fixed

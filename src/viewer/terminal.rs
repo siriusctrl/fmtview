@@ -13,11 +13,22 @@ use super::{
     render::ViewPosition,
 };
 
+pub(super) struct TerminalFrame {
+    pub(super) area: Rect,
+    pub(super) styled: Vec<Line<'static>>,
+    pub(super) sticky: Vec<Line<'static>>,
+    pub(super) title: String,
+    pub(super) footer_text: String,
+    pub(super) position: ViewPosition,
+    pub(super) scroll_hint: Option<ScrollHint>,
+}
+
 pub(super) struct ViewerTerminal<B> {
     backend: B,
     previous: Option<Buffer>,
     scratch: Option<Buffer>,
     previous_position: Option<ViewPosition>,
+    previous_sticky_rows: usize,
     output: Vec<u8>,
 }
 
@@ -31,6 +42,7 @@ where
             previous: None,
             scratch: None,
             previous_position: None,
+            previous_sticky_rows: 0,
             output: Vec::with_capacity(16 * 1024),
         }
     }
@@ -47,33 +59,38 @@ where
         self.backend.show_cursor()
     }
 
-    pub(super) fn draw(
-        &mut self,
-        area: Rect,
-        styled: Vec<Line<'static>>,
-        title: String,
-        footer_text: String,
-        position: ViewPosition,
-        scroll_hint: Option<ScrollHint>,
-    ) -> io::Result<()> {
-        let mut current = self.scratch.take().unwrap_or_else(|| Buffer::empty(area));
-        current.resize(area);
+    pub(super) fn draw(&mut self, frame: TerminalFrame) -> io::Result<()> {
+        let mut current = self
+            .scratch
+            .take()
+            .unwrap_or_else(|| Buffer::empty(frame.area));
+        current.resize(frame.area);
         current.reset();
-        render_frame(&mut current, styled, title, footer_text);
+        let sticky_rows = frame.sticky.len();
+        render_frame(
+            &mut current,
+            frame.styled,
+            frame.sticky,
+            frame.title,
+            frame.footer_text,
+        );
         match self.previous.take() {
-            Some(previous) if previous.area == current.area => {
+            Some(previous)
+                if previous.area == current.area && self.previous_sticky_rows == sticky_rows =>
+            {
                 draw_diff(
                     &mut self.backend,
                     &previous,
                     &current,
-                    scroll_hint,
+                    frame.scroll_hint,
+                    sticky_rows,
                     &mut self.output,
                 )?;
                 self.scratch = Some(previous);
             }
             previous => {
                 self.backend.clear()?;
-                let empty = Buffer::empty(area);
+                let empty = Buffer::empty(frame.area);
                 draw_cells_with_buffer(&mut self.backend, empty.diff(&current), &mut self.output)?;
                 self.previous_position = None;
                 self.scratch = previous;
@@ -82,7 +99,8 @@ where
         self.backend.hide_cursor()?;
         Backend::flush(&mut self.backend)?;
         self.previous = Some(current);
-        self.previous_position = Some(position);
+        self.previous_position = Some(frame.position);
+        self.previous_sticky_rows = sticky_rows;
         Ok(())
     }
 
@@ -115,6 +133,7 @@ fn draw_diff<B>(
     previous: &Buffer,
     current: &Buffer,
     scroll_hint: Option<ScrollHint>,
+    sticky_rows: usize,
     output: &mut Vec<u8>,
 ) -> io::Result<()>
 where
@@ -122,7 +141,7 @@ where
 {
     if let Some(hint) = scroll_hint {
         let scroll = BodyScroll {
-            area: scrollable_body_area(current.area),
+            area: scrollable_body_area(current.area, sticky_rows),
             amount: hint.amount,
             direction: hint.direction,
         };
@@ -311,6 +330,7 @@ fn push_u16(output: &mut Vec<u8>, value: u16) {
 fn render_frame(
     buffer: &mut Buffer,
     styled: Vec<Line<'static>>,
+    sticky: Vec<Line<'static>>,
     title: String,
     footer_text: String,
 ) {
@@ -327,7 +347,7 @@ fn render_frame(
         height: area.height.saturating_sub(1),
     };
     if body.height > 0 {
-        render_body(buffer, body, styled, &title);
+        render_body(buffer, body, styled, sticky, &title);
     }
 
     buffer.set_stringn(
@@ -339,7 +359,13 @@ fn render_frame(
     );
 }
 
-fn render_body(buffer: &mut Buffer, area: Rect, styled: Vec<Line<'static>>, title: &str) {
+fn render_body(
+    buffer: &mut Buffer,
+    area: Rect,
+    styled: Vec<Line<'static>>,
+    sticky: Vec<Line<'static>>,
+    title: &str,
+) {
     if area.width < 2 || area.height < 2 {
         for (row, line) in styled
             .into_iter()
@@ -360,15 +386,28 @@ fn render_body(buffer: &mut Buffer, area: Rect, styled: Vec<Line<'static>>, titl
     render_border(buffer, area, title);
     let content_width = area.width.saturating_sub(2);
     let content_height = area.height.saturating_sub(2);
+    let sticky_rows = sticky.len().min(usize::from(content_height));
+    for (row, line) in sticky.into_iter().take(sticky_rows).enumerate() {
+        set_line_fast(
+            buffer,
+            area.x.saturating_add(1),
+            area.y.saturating_add(1).saturating_add(row as u16),
+            &line,
+            content_width,
+        );
+    }
     for (row, line) in styled
         .into_iter()
-        .take(usize::from(content_height))
+        .take(usize::from(content_height).saturating_sub(sticky_rows))
         .enumerate()
     {
         set_line_fast(
             buffer,
             area.x.saturating_add(1),
-            area.y.saturating_add(1).saturating_add(row as u16),
+            area.y
+                .saturating_add(1)
+                .saturating_add(sticky_rows as u16)
+                .saturating_add(row as u16),
             &line,
             content_width,
         );
@@ -553,12 +592,15 @@ fn is_visually_empty_cell(cell: &Cell) -> bool {
     cell.symbol() == " " && cell.bg == Color::Reset && cell.modifier == Modifier::empty()
 }
 
-fn scrollable_body_area(area: Rect) -> Rect {
+fn scrollable_body_area(area: Rect, sticky_rows: usize) -> Rect {
     let [body, _footer] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
     Rect {
         x: 0,
-        y: body.y.saturating_add(1),
+        y: body.y.saturating_add(1).saturating_add(sticky_rows as u16),
         width: body.width,
-        height: body.height.saturating_sub(2),
+        height: body
+            .height
+            .saturating_sub(2)
+            .saturating_sub(sticky_rows as u16),
     }
 }

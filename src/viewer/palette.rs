@@ -1,5 +1,7 @@
 use ratatui::style::{Color, Style};
 
+use crate::diff::DiffIntensity;
+
 pub(super) const PALETTE_TEXT: Color = Color::Indexed(145);
 pub(super) const PALETTE_MUTED: Color = Color::Indexed(59);
 pub(super) const PALETTE_BLUE: Color = Color::Indexed(75);
@@ -76,18 +78,42 @@ pub(super) fn search_match_bg() -> Color {
     PALETTE_SEARCH_MATCH
 }
 
-pub(super) fn diff_hunk_style() -> Style {
-    style_fg(PALETTE_CYAN)
-}
-
-pub(super) fn diff_file_style() -> Style {
-    style_fg(PALETTE_YELLOW)
-}
-
 pub(super) fn diff_added_style() -> Style {
     style_fg(PALETTE_GREEN)
 }
 
 pub(super) fn diff_removed_style() -> Style {
     style_fg(PALETTE_RED)
+}
+
+pub(super) fn diff_added_line_bg(intensity: DiffIntensity) -> Color {
+    match intensity {
+        DiffIntensity::Low => Color::Rgb(24, 43, 35),
+        DiffIntensity::Medium => Color::Rgb(33, 58, 45),
+        DiffIntensity::High => Color::Rgb(43, 73, 56),
+    }
+}
+
+pub(super) fn diff_added_inline_bg(intensity: DiffIntensity) -> Color {
+    match intensity {
+        DiffIntensity::Low => Color::Rgb(44, 75, 58),
+        DiffIntensity::Medium => Color::Rgb(55, 90, 67),
+        DiffIntensity::High => Color::Rgb(68, 108, 79),
+    }
+}
+
+pub(super) fn diff_removed_line_bg(intensity: DiffIntensity) -> Color {
+    match intensity {
+        DiffIntensity::Low => Color::Rgb(49, 36, 40),
+        DiffIntensity::Medium => Color::Rgb(64, 45, 50),
+        DiffIntensity::High => Color::Rgb(78, 55, 60),
+    }
+}
+
+pub(super) fn diff_removed_inline_bg(intensity: DiffIntensity) -> Color {
+    match intensity {
+        DiffIntensity::Low => Color::Rgb(77, 55, 60),
+        DiffIntensity::Medium => Color::Rgb(94, 65, 70),
+        DiffIntensity::High => Color::Rgb(112, 78, 82),
+    }
 }

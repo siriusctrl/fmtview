@@ -33,23 +33,28 @@ Code orientation:
   - `json.rs` keeps token-preserving JSON/JSONL formatting.
   - `xml.rs` wraps XML-compatible formatting.
 - `src/preview/` owns TTY preview planning and lazy record spooling.
-- `src/diff.rs`, `src/input.rs`, and `src/line_index.rs` own diff generation,
-  input materialization, and temp-file indexing.
+- `src/diff/` owns unified patch generation plus the structured diff model used
+  by the interactive diff viewer.
+- `src/input.rs` and `src/line_index.rs` own input materialization and
+  temp-file indexing.
 - `src/viewer/` owns the interactive TUI:
   - `mod.rs` runs the terminal loop and frame composition.
+  - `breadcrumb.rs` builds compact sticky JSON key breadcrumbs for the viewer.
+  - `diff_view.rs` handles the interactive single-column and side-by-side diff
+    viewer.
   - `terminal.rs` handles terminal diffing, ANSI writes, and scroll regions.
   - `input/` handles key/mouse state, scrolling, jumps, and search.
   - `render/` handles line windows, wrapping, visual rows, caches, progress,
     prewarming, and the search highlight overlay.
-  - `highlight/` handles JSON, diff, and XML-like syntax highlighting.
+  - `highlight/` handles JSON and XML-like syntax highlighting.
   - `palette.rs` owns viewer colors.
   - `tests.rs` keeps viewer regression and performance smoke coverage close to
     the private TUI internals.
 - `tests/cli.rs` covers CLI-level behavior.
 - `benches/` contains local performance harnesses. They are shell-driven smoke
   checks rather than Cargo benchmark targets because they exercise the release
-  binary, ignored perf tests, PTY-like terminal writers, and alternate external
-  formatter commands.
+  binary, ignored perf tests, PTY-like terminal writers, structured diff view
+  rendering, and alternate external formatter commands.
 
 Keep README user-facing. Keep maintainer-only workflows in docs and link them
 from `AGENTS.md`.
