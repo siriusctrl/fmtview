@@ -25,9 +25,10 @@ use crate::line_index::ViewFile;
 use input::{ViewState, drain_events, process_search_step, reset_top_row_offset};
 use render::{
     LineWindowCache, RenderContext, RenderRequest, RenderedLineCache, TailPositionCache,
-    ViewPosition, effective_top_row_offset, exact_top_line_tail_offset, format_count,
-    is_after_tail, last_full_logical_page_top, line_number_digits, prewarm_render_cache,
-    render_row_limit, render_viewport, viewer_progress_percent,
+    ViewPosition, continuation_indent, effective_top_row_offset, exact_top_line_tail_offset,
+    format_count, is_after_tail, last_full_logical_page_top, line_number_digits, next_wrap_end,
+    prewarm_render_cache, render_row_limit, render_viewport, rendered_row_count,
+    viewer_progress_percent,
 };
 use terminal::ViewerTerminal;
 #[cfg(test)]
@@ -217,12 +218,23 @@ fn draw_view(
         reset_top_row_offset(state);
     }
 
-    let lines = line_cache.read(
+    let mut lines = line_cache.read(
         file,
         state.top,
         visible_height,
         visible_height.saturating_mul(2).max(32),
     )?;
+    for _ in 0..3 {
+        if !resolve_search_target_position(state, lines.lines, visible_height, render_context) {
+            break;
+        }
+        lines = line_cache.read(
+            file,
+            state.top,
+            visible_height,
+            visible_height.saturating_mul(2).max(32),
+        )?;
+    }
     let render_request = RenderRequest {
         context: render_context,
         row_limit: render_row_limit(visible_height),
@@ -359,6 +371,173 @@ fn draw_view(
 
 fn active_search_query(state: &ViewState) -> Option<&str> {
     (!state.search_query.is_empty()).then_some(state.search_query.as_str())
+}
+
+fn resolve_search_target_position(
+    state: &mut ViewState,
+    lines: &[String],
+    visible_height: usize,
+    context: RenderContext,
+) -> bool {
+    let Some(target) = state.search_target else {
+        return false;
+    };
+
+    let context_rows = search_context_rows(visible_height);
+    match target_visual_position_in_window(lines, state.top, target, context) {
+        Some(position)
+            if visual_row_is_visible(position.row, state.top_row_offset, visible_height) =>
+        {
+            state.search_target = None;
+            false
+        }
+        Some(position) if target.line == state.top => {
+            state.top_row_offset = position.row_in_line.saturating_sub(context_rows);
+            state.top_max_row_offset = 0;
+            state.search_target = None;
+            false
+        }
+        Some(position) if position.row_in_line > context_rows => {
+            position_search_target_visual_line(
+                state,
+                target.line,
+                position.row_in_line,
+                context_rows,
+            )
+        }
+        Some(position) => {
+            if position_search_target_logical_line(state, target.line, visible_height) {
+                true
+            } else {
+                position_search_target_visual_line(
+                    state,
+                    target.line,
+                    position.row_in_line,
+                    context_rows,
+                )
+            }
+        }
+        None => position_search_target_logical_line(state, target.line, visible_height),
+    }
+}
+
+fn position_search_target_visual_line(
+    state: &mut ViewState,
+    target_line: usize,
+    target_row: usize,
+    context_rows: usize,
+) -> bool {
+    let old_top = state.top;
+    state.top = target_line;
+    state.top_row_offset = target_row.saturating_sub(context_rows);
+    state.top_max_row_offset = 0;
+    state.wrap_bounds_stale = state.wrap;
+    state.search_target = None;
+    state.top != old_top
+}
+
+fn position_search_target_logical_line(
+    state: &mut ViewState,
+    target_line: usize,
+    visible_height: usize,
+) -> bool {
+    let next_top = target_line.saturating_sub(search_context_rows(visible_height));
+    if state.top == next_top && state.top_row_offset == 0 {
+        state.search_target = None;
+        return false;
+    }
+
+    state.top = next_top;
+    state.top_row_offset = 0;
+    state.top_max_row_offset = 0;
+    state.wrap_bounds_stale = state.wrap;
+    true
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TargetVisualPosition {
+    row: usize,
+    row_in_line: usize,
+}
+
+fn target_visual_position_in_window(
+    lines: &[String],
+    first_line: usize,
+    target: input::SearchTarget,
+    context: RenderContext,
+) -> Option<TargetVisualPosition> {
+    let target_index = target.line.checked_sub(first_line)?;
+    if target_index >= lines.len() {
+        return None;
+    }
+
+    let mut row = 0_usize;
+    for (index, line) in lines.iter().enumerate() {
+        if index == target_index {
+            let row_in_line = visual_row_for_byte(line, target.byte_index, context);
+            return Some(TargetVisualPosition {
+                row: row.saturating_add(row_in_line),
+                row_in_line,
+            });
+        }
+        row = row.saturating_add(rendered_row_count(line, context));
+    }
+
+    None
+}
+
+fn visual_row_is_visible(row: usize, top_row_offset: usize, visible_height: usize) -> bool {
+    visible_height > 0
+        && row >= top_row_offset
+        && row.saturating_sub(top_row_offset) < visible_height
+}
+
+fn search_context_rows(visible_height: usize) -> usize {
+    if visible_height < 4 {
+        return 0;
+    }
+
+    (visible_height / 3)
+        .clamp(2, 8)
+        .min(visible_height.saturating_sub(1))
+}
+
+fn visual_row_for_byte(line: &str, byte_index: usize, context: RenderContext) -> usize {
+    if !context.wrap || line.is_empty() || context.width == 0 {
+        return 0;
+    }
+
+    let target_byte = floor_char_boundary(line, byte_index.min(line.len()));
+    let continuation_indent = continuation_indent(line, context.width);
+    let mut start_byte = 0_usize;
+    let mut start_char = 0_usize;
+    let mut row = 0_usize;
+
+    while start_byte < line.len() {
+        let indent = if row > 0 {
+            continuation_indent.min(context.width.saturating_sub(1))
+        } else {
+            0
+        };
+        let row_width = context.width.saturating_sub(indent).max(1);
+        let (end_byte, end_char) = next_wrap_end(line, start_byte, start_char, row_width);
+        if target_byte < end_byte || end_byte >= line.len() {
+            return row;
+        }
+
+        start_byte = end_byte.max(start_byte.saturating_add(1)).min(line.len());
+        start_char = end_char.max(start_char.saturating_add(1));
+        row = row.saturating_add(1);
+    }
+
+    row
+}
+
+fn floor_char_boundary(text: &str, mut index: usize) -> usize {
+    while index > 0 && !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
 }
 
 fn logical_scroll_hint(

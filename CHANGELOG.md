@@ -8,6 +8,11 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Fixed
+
+- Place viewer search results with nearby context, including wrapped visual
+  rows, instead of pinning the matching logical line or wrapped row to the top.
+
 ## [0.1.7] - 2026-04-28
 
 ### Changed

@@ -4,7 +4,13 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use crate::line_index::ViewFile;
 
 use super::super::SEARCH_CHUNK_LINES;
-use super::{keys::accepts_search_char, scroll::set_top, state::ViewState};
+use super::{keys::accepts_search_char, state::ViewState};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::viewer) struct SearchTarget {
+    pub(in crate::viewer) line: usize,
+    pub(in crate::viewer) byte_index: usize,
+}
 
 #[derive(Debug, Clone)]
 pub(in crate::viewer) struct SearchTask {
@@ -43,6 +49,8 @@ pub(in crate::viewer) fn start_search_prompt(state: &mut ViewState) -> bool {
     state.search_buffer.clear();
     state.search_message = None;
     state.search_task = None;
+    state.search_target = None;
+    state.search_cursor = None;
     true
 }
 
@@ -85,7 +93,11 @@ pub(in crate::viewer) fn start_repeat_search(
         return true;
     }
 
-    let start = repeat_search_start(state.top, line_count, direction);
+    let start = repeat_search_start(
+        state.search_cursor.unwrap_or(state.top),
+        line_count,
+        direction,
+    );
     start_search(
         state,
         state.search_query.clone(),
@@ -123,6 +135,8 @@ pub(in crate::viewer) fn start_search(
 
     state.search_query = query.clone();
     state.search_message = Some(format!("searching: {query}"));
+    state.search_target = None;
+    state.search_cursor = None;
     if line_count == 0 {
         state.search_task = None;
         state.search_message = Some(format!("not found: {query}"));
@@ -140,6 +154,7 @@ pub(in crate::viewer) fn start_search(
 
 pub(in crate::viewer) fn cancel_search_task(state: &mut ViewState) -> bool {
     state.search_task = None;
+    state.search_target = None;
     state.search_message = Some("search canceled".to_owned());
     true
 }
@@ -159,8 +174,9 @@ pub(in crate::viewer) fn process_search_step(
     };
 
     let step = scan_search_chunk(file, &task)?;
-    if let Some(line) = step.found_line {
-        set_top(state, line);
+    if let Some(target) = step.found {
+        state.search_cursor = Some(target.line);
+        state.search_target = Some(target);
         state.search_message = Some(format!("match: {}", task.query));
         return Ok(true);
     }
@@ -176,6 +192,7 @@ pub(in crate::viewer) fn process_search_step(
         task.remaining = SEARCH_CHUNK_LINES;
     }
     if task.remaining == 0 || step.scanned == 0 {
+        state.search_target = None;
         state.search_message = Some(format!("not found: {}", task.query));
         return Ok(true);
     }
@@ -186,7 +203,7 @@ pub(in crate::viewer) fn process_search_step(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::viewer) struct SearchStep {
-    pub(in crate::viewer) found_line: Option<usize>,
+    pub(in crate::viewer) found: Option<SearchTarget>,
     pub(in crate::viewer) next_line: usize,
     pub(in crate::viewer) scanned: usize,
 }
@@ -209,7 +226,7 @@ pub(in crate::viewer) fn scan_search_forward(
     let exact_line_count = file.line_count_exact();
     if line_count == 0 || task.remaining == 0 {
         return Ok(SearchStep {
-            found_line: None,
+            found: None,
             next_line: 0,
             scanned: 0,
         });
@@ -227,10 +244,14 @@ pub(in crate::viewer) fn scan_search_forward(
         }
 
         for (offset, line) in lines.iter().enumerate() {
-            if line.contains(&task.query) {
+            if let Some(byte_index) = line.find(&task.query) {
+                let found_line = next_line + offset;
                 return Ok(SearchStep {
-                    found_line: Some(next_line + offset),
-                    next_line: next_line + offset,
+                    found: Some(SearchTarget {
+                        line: found_line,
+                        byte_index,
+                    }),
+                    next_line: found_line,
                     scanned: scanned + offset + 1,
                 });
             }
@@ -244,7 +265,7 @@ pub(in crate::viewer) fn scan_search_forward(
     }
 
     Ok(SearchStep {
-        found_line: None,
+        found: None,
         next_line,
         scanned,
     })
@@ -257,7 +278,7 @@ pub(in crate::viewer) fn scan_search_backward(
     let line_count = file.line_count();
     if line_count == 0 || task.remaining == 0 {
         return Ok(SearchStep {
-            found_line: None,
+            found: None,
             next_line: 0,
             scanned: 0,
         });
@@ -276,10 +297,14 @@ pub(in crate::viewer) fn scan_search_backward(
         }
 
         for (offset, line) in lines.iter().enumerate().rev() {
-            if line.contains(&task.query) {
+            if let Some(byte_index) = line.rfind(&task.query) {
+                let found_line = start + offset;
                 return Ok(SearchStep {
-                    found_line: Some(start + offset),
-                    next_line: start + offset,
+                    found: Some(SearchTarget {
+                        line: found_line,
+                        byte_index,
+                    }),
+                    next_line: found_line,
                     scanned: scanned + (count - offset),
                 });
             }
@@ -290,7 +315,7 @@ pub(in crate::viewer) fn scan_search_backward(
     }
 
     Ok(SearchStep {
-        found_line: None,
+        found: None,
         next_line,
         scanned,
     })

@@ -591,16 +591,191 @@ fn slash_search_finds_and_repeats_matches() {
     assert!(state.search_task.is_some());
 
     assert!(process_search_step(&file, &mut state).unwrap());
-    assert_eq!(state.top, 1);
+    assert_eq!(state.search_cursor, Some(1));
     assert_eq!(state.search_message.as_deref(), Some("match: needle"));
 
     handle_key_event(KeyCode::Char('n'), KeyModifiers::NONE, &mut state, 4, 10);
     assert!(process_search_step(&file, &mut state).unwrap());
-    assert_eq!(state.top, 3);
+    assert_eq!(state.search_cursor, Some(3));
 
     handle_key_event(KeyCode::Char('N'), KeyModifiers::NONE, &mut state, 4, 10);
     assert!(process_search_step(&file, &mut state).unwrap());
-    assert_eq!(state.top, 1);
+    assert_eq!(state.search_cursor, Some(1));
+}
+
+#[test]
+fn search_jump_places_later_logical_line_with_context() {
+    let file = indexed_lines(&[
+        "line 1",
+        "line 2",
+        "line 3",
+        "line 4",
+        "line 5",
+        "line 6",
+        "line 7",
+        "line 8",
+        "line 9",
+        "line 10",
+        "line 11 needle",
+    ]);
+    let mut state = ViewState::default();
+
+    start_search(
+        &mut state,
+        "needle".to_owned(),
+        SearchDirection::Forward,
+        0,
+        file.line_count(),
+    );
+    assert!(process_search_step(&file, &mut state).unwrap());
+
+    let lines = file.read_window(state.top, 32).unwrap();
+    assert!(resolve_search_target_position(
+        &mut state,
+        &lines,
+        9,
+        RenderContext {
+            gutter_digits: 2,
+            x: 0,
+            width: 40,
+            wrap: false,
+            mode: ViewMode::Plain,
+        },
+    ));
+
+    assert_eq!(state.top, 7);
+    assert!(state.search_target.is_some());
+
+    let lines = file.read_window(state.top, 32).unwrap();
+    assert!(!resolve_search_target_position(
+        &mut state,
+        &lines,
+        9,
+        RenderContext {
+            gutter_digits: 2,
+            x: 0,
+            width: 40,
+            wrap: false,
+            mode: ViewMode::Plain,
+        },
+    ));
+    assert_eq!(state.top, 7);
+    assert_eq!(state.search_target, None);
+}
+
+#[test]
+fn wrapped_search_jumps_to_visual_row_containing_match() {
+    let line = format!("{}needle suffix", "a".repeat(140));
+    let file = indexed_lines(&[line.as_str()]);
+    let mut state = ViewState::default();
+
+    start_search(
+        &mut state,
+        "needle".to_owned(),
+        SearchDirection::Forward,
+        0,
+        file.line_count(),
+    );
+    assert!(process_search_step(&file, &mut state).unwrap());
+    assert_eq!(state.top, 0);
+    assert_eq!(
+        state.search_target,
+        Some(SearchTarget {
+            line: 0,
+            byte_index: line.find("needle").unwrap()
+        })
+    );
+
+    let context = RenderContext {
+        gutter_digits: 1,
+        x: 0,
+        width: 20,
+        wrap: true,
+        mode: ViewMode::Plain,
+    };
+    let lines = file.read_window(state.top, 1).unwrap();
+    let target_row = visual_row_for_byte(&line, line.find("needle").unwrap(), context);
+    assert!(!resolve_search_target_position(
+        &mut state, &lines, 4, context
+    ));
+
+    assert!(state.top_row_offset > 0);
+    assert_eq!(state.top_row_offset, target_row - search_context_rows(4));
+
+    let request = RenderRequest {
+        context,
+        row_limit: render_row_limit(4),
+    };
+    let mut cache = RenderedLineCache::default();
+    let viewport = render_viewport(
+        &lines,
+        state.top + 1,
+        state.top_row_offset,
+        4,
+        request,
+        &mut cache,
+        Some("needle"),
+    );
+
+    assert!(viewport.lines.iter().any(|line| {
+        line.spans.iter().any(|span| {
+            span.content.as_ref() == "needle" && span.style.bg == Some(search_match_bg())
+        })
+    }));
+}
+
+#[test]
+fn wrapped_search_keeps_visible_match_position() {
+    let line = format!("{}needle suffix", "a".repeat(140));
+    let context = RenderContext {
+        gutter_digits: 1,
+        x: 0,
+        width: 20,
+        wrap: true,
+        mode: ViewMode::Plain,
+    };
+    let target_row = visual_row_for_byte(&line, line.find("needle").unwrap(), context);
+    let mut state = ViewState {
+        top_row_offset: target_row.saturating_sub(1),
+        search_target: Some(SearchTarget {
+            line: 0,
+            byte_index: line.find("needle").unwrap(),
+        }),
+        ..ViewState::default()
+    };
+
+    assert!(!resolve_search_target_position(
+        &mut state,
+        &[line],
+        4,
+        context
+    ));
+
+    assert_eq!(state.top_row_offset, target_row.saturating_sub(1));
+}
+
+#[test]
+fn backward_search_targets_last_match_on_matching_line() {
+    let line = "needle first then needle last";
+    let file = indexed_lines(&[line]);
+    let mut state = ViewState::default();
+
+    start_search(
+        &mut state,
+        "needle".to_owned(),
+        SearchDirection::Backward,
+        0,
+        file.line_count(),
+    );
+    assert!(process_search_step(&file, &mut state).unwrap());
+
+    assert_eq!(
+        state.search_target,
+        Some(SearchTarget {
+            line: 0,
+            byte_index: line.rfind("needle").unwrap()
+        })
+    );
 }
 
 #[test]
@@ -693,7 +868,7 @@ fn repeated_search_wraps_around_file_edges() {
         10,
     );
     assert!(process_search_step(&file, &mut state).unwrap());
-    assert_eq!(state.top, 0);
+    assert_eq!(state.search_cursor, Some(0));
 
     handle_key_event(
         KeyCode::Char('N'),
@@ -703,7 +878,7 @@ fn repeated_search_wraps_around_file_edges() {
         10,
     );
     assert!(process_search_step(&file, &mut state).unwrap());
-    assert_eq!(state.top, 2);
+    assert_eq!(state.search_cursor, Some(2));
 }
 
 #[test]

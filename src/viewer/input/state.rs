@@ -1,4 +1,4 @@
-use super::search::SearchTask;
+use super::search::{SearchTarget, SearchTask};
 
 pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) top: usize,
@@ -13,6 +13,8 @@ pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) search_query: String,
     pub(in crate::viewer) search_message: Option<String>,
     pub(in crate::viewer) search_task: Option<SearchTask>,
+    pub(in crate::viewer) search_target: Option<SearchTarget>,
+    pub(in crate::viewer) search_cursor: Option<usize>,
 }
 
 impl Default for ViewState {
@@ -30,6 +32,8 @@ impl Default for ViewState {
             search_query: String::new(),
             search_message: None,
             search_task: None,
+            search_target: None,
+            search_cursor: None,
         }
     }
 }

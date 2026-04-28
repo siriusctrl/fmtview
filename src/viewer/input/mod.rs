@@ -7,7 +7,7 @@ mod state;
 
 pub(super) use events::drain_events;
 pub(super) use scroll::reset_top_row_offset;
-pub(super) use search::process_search_step;
+pub(super) use search::{SearchTarget, process_search_step};
 pub(super) use state::ViewState;
 
 #[cfg(test)]
