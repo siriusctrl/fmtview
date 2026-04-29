@@ -1,4 +1,4 @@
-use crate::line_index::ViewFile;
+use crate::load::ViewFile;
 
 use super::types::{RenderContext, ViewportBottom};
 

@@ -3,7 +3,7 @@ use std::io::Write;
 use anyhow::{Context, Result};
 use tempfile::NamedTempFile;
 
-use crate::{format::FormatOptions, input::InputSource};
+use crate::{input::InputSource, transform::FormatOptions};
 
 use super::external::{format_diff_inputs, run_external_diff};
 

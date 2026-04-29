@@ -15,11 +15,11 @@ use ratatui::{
 };
 use tempfile::NamedTempFile;
 
-use super::highlight::{highlight_json_like, highlight_xml_line};
 use super::input::*;
 use super::palette::*;
 use super::render::*;
 use super::*;
+use crate::syntax::{SyntaxKind, highlight_json_like, highlight_xml_line};
 
 // Correctness tests run by default and should avoid wall-clock assertions.
 
@@ -39,7 +39,7 @@ fn styled_line_keeps_a_gutter() {
             x: 0,
             width: 80,
             wrap: false,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
     )
     .remove(0);
@@ -57,7 +57,7 @@ fn wrap_uses_continuation_gutter_and_indent() {
             x: 0,
             width: 18,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
     );
 
@@ -84,7 +84,7 @@ fn nowrap_applies_horizontal_offset() {
             x: 2,
             width: 3,
             wrap: false,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
     );
 
@@ -174,7 +174,7 @@ fn viewport_can_start_inside_wrapped_logical_line() {
             x: 0,
             width: 4,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: 8,
     };
@@ -200,7 +200,7 @@ fn viewport_reports_actual_last_logical_line() {
             x: 0,
             width: 4,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: 8,
     };
@@ -224,7 +224,7 @@ fn wrapped_progress_advances_by_visible_bytes() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: ViewMode::Plain,
+        mode: SyntaxKind::Structured,
     };
 
     assert_eq!(
@@ -287,7 +287,7 @@ fn wrapped_tail_position_can_start_inside_last_line() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: ViewMode::Plain,
+        mode: SyntaxKind::Structured,
     };
 
     let tail = compute_tail_position(&file, 2, context).unwrap();
@@ -313,7 +313,7 @@ fn wrapped_tail_view_renders_last_full_page() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: ViewMode::Plain,
+        mode: SyntaxKind::Structured,
     };
     let request = RenderRequest {
         context,
@@ -366,7 +366,7 @@ fn eof_wrap_offset_clamps_to_last_full_page() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: ViewMode::Plain,
+        mode: SyntaxKind::Structured,
     };
     let request = RenderRequest {
         context,
@@ -419,7 +419,7 @@ fn top_line_tail_offset_points_to_last_full_view() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: ViewMode::Plain,
+        mode: SyntaxKind::Structured,
     };
     let request = RenderRequest {
         context,
@@ -439,7 +439,7 @@ fn unknown_wrapped_tail_keeps_scrolling_inside_current_line() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: ViewMode::Plain,
+        mode: SyntaxKind::Structured,
     };
     let request = RenderRequest {
         context,
@@ -639,7 +639,7 @@ fn search_jump_places_later_logical_line_with_context() {
             x: 0,
             width: 40,
             wrap: false,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
     ));
 
@@ -656,7 +656,7 @@ fn search_jump_places_later_logical_line_with_context() {
             x: 0,
             width: 40,
             wrap: false,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
     ));
     assert_eq!(state.top, 7);
@@ -691,7 +691,7 @@ fn wrapped_search_jumps_to_visual_row_containing_match() {
         x: 0,
         width: 20,
         wrap: true,
-        mode: ViewMode::Plain,
+        mode: SyntaxKind::Structured,
     };
     let lines = file.read_window(state.top, 1).unwrap();
     let target_row = visual_row_for_byte(&line, line.find("needle").unwrap(), context);
@@ -732,7 +732,7 @@ fn wrapped_search_keeps_visible_match_position() {
         x: 0,
         width: 20,
         wrap: true,
-        mode: ViewMode::Plain,
+        mode: SyntaxKind::Structured,
     };
     let target_row = visual_row_for_byte(&line, line.find("needle").unwrap(), context);
     let mut state = ViewState {
@@ -892,7 +892,7 @@ fn search_highlight_adds_background_without_replacing_foreground() {
             x: 0,
             width: 80,
             wrap: false,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
     )
     .remove(0);
@@ -922,7 +922,7 @@ fn non_search_viewport_render_does_not_paint_background_cells() {
             x: 0,
             width: 80,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: 16,
     };
@@ -944,7 +944,7 @@ fn search_background_is_scoped_to_match_spans_only() {
             x: 0,
             width: 80,
             wrap: false,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
     )
     .remove(0);
@@ -1054,7 +1054,7 @@ fn rendered_line_cache_reuses_until_context_changes() {
             x: 0,
             width: 3,
             wrap: false,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: 8,
     };
@@ -1093,7 +1093,7 @@ fn wrapped_render_cache_reuses_adjacent_rows_from_chunk() {
             x: 0,
             width: 4,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: 8,
     };
@@ -1117,7 +1117,7 @@ fn wrapped_render_cache_records_deep_checkpoints() {
             x: 0,
             width: 16,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: 8,
     };
@@ -1153,7 +1153,7 @@ fn wrapped_deep_window_keeps_embedded_xml_pair_colors() {
             x: 0,
             width: 12,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: 8,
     };
@@ -1191,7 +1191,7 @@ fn wrapped_deep_window_keeps_prefix_xml_state_for_visible_close_tag() {
             x: 0,
             width: 12,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: 8,
     };
@@ -1231,7 +1231,7 @@ fn perf_huge_wrapped_line_paths() {
         x: 0,
         width: 94,
         wrap: true,
-        mode: ViewMode::Plain,
+        mode: SyntaxKind::Structured,
     };
 
     let started = Instant::now();
@@ -1323,7 +1323,7 @@ fn perf_repeated_viewport_scroll_render() {
             x: 0,
             width: 96,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: render_row_limit(27),
     };
@@ -1368,7 +1368,7 @@ fn perf_terminal_scroll_draw_bytes() {
             x: 0,
             width: 111,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: render_row_limit(32),
     };
@@ -1432,7 +1432,7 @@ fn perf_terminal_visual_row_scroll_bytes() {
             x: 0,
             width: 111,
             wrap: true,
-            mode: ViewMode::Plain,
+            mode: SyntaxKind::Structured,
         },
         row_limit: render_row_limit(32),
     };

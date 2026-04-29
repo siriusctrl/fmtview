@@ -6,7 +6,10 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use crate::{format::FormatOptions, input::InputSource, preview::format_record_lines};
+use crate::{
+    input::InputSource,
+    transform::{self, FormatOptions},
+};
 
 pub(super) struct LazyRecordReader {
     label: String,
@@ -41,7 +44,7 @@ impl LazyRecordReader {
             return Ok(None);
         }
         Ok(Some(FormattedRecord {
-            lines: format_record_lines(&self.line, self.options)?,
+            lines: transform::format_record_lines(&self.line, self.options)?,
         }))
     }
 

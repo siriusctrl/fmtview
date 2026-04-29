@@ -7,6 +7,10 @@ use std::{
 use anyhow::{Context, Result};
 use tempfile::NamedTempFile;
 
+mod lazy_records;
+
+pub use lazy_records::{LazyTransformedFile, LoadPlan, load_plan};
+
 pub trait ViewFile {
     fn label(&self) -> &str;
     fn line_count(&self) -> usize;
@@ -136,7 +140,10 @@ fn strip_line_end(line: &mut String) {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
+    use std::{
+        io::Write,
+        time::{Duration, Instant},
+    };
 
     use super::*;
 
@@ -165,5 +172,35 @@ mod tests {
         assert_eq!(indexed.line_count(), 2);
         assert_eq!(indexed.byte_offset_for_line(1), long.len() as u64 + 1);
         assert_eq!(indexed.read_window(1, 1).unwrap(), vec!["b"]);
+    }
+
+    #[test]
+    #[ignore = "performance smoke; run benches/load-performance.sh"]
+    fn perf_raw_indexed_load() {
+        let mut temp = NamedTempFile::new().unwrap();
+        let line = format!("{}\n", "x".repeat(240));
+        let lines = 250_000;
+        for _ in 0..lines {
+            temp.write_all(line.as_bytes()).unwrap();
+        }
+        temp.flush().unwrap();
+        let input_bytes = temp.as_file().metadata().unwrap().len();
+
+        let started = Instant::now();
+        let indexed = IndexedTempFile::new("raw".to_owned(), temp).unwrap();
+        let elapsed = started.elapsed();
+        let window = indexed.read_window(120_000, 120).unwrap();
+
+        eprintln!(
+            "raw indexed load: {elapsed:?}, indexed_lines={}, input_bytes={input_bytes}, window_lines={}",
+            indexed.line_count(),
+            window.len()
+        );
+        assert_eq!(indexed.line_count(), lines);
+        assert_eq!(window.len(), 120);
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "raw indexed load took {elapsed:?}"
+        );
     }
 }

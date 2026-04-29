@@ -5,14 +5,13 @@ samples=7
 
 usage() {
   cat <<'USAGE'
-Usage: benches/format-performance.sh [--samples N]
+Usage: benches/load-performance.sh [--samples N]
 
-Runs fmtview transform-layer performance smoke tests in release mode and
-prints per-sample timings plus median/min/max summaries.
+Runs fmtview load-layer performance smoke tests in release mode and prints
+per-sample timings plus median/min/max summaries.
 
-Use this before and after parser, formatter, JSONL transform, or future
-parallel formatting changes. Use benches/load-performance.sh for lazy loading
-and raw line-index checks.
+Use this before and after raw line indexing, window reads, load planning,
+lazy record spooling, or preload behavior changes.
 USAGE
 }
 
@@ -73,7 +72,7 @@ duration_ms() {
 
 extract_field() {
   local field="$1"
-  sed -nE "s/.*${field}=([0-9]+).*/\\1/p"
+  grep -oE "(^|[ ,])${field}=[0-9]+" | tail -n 1 | sed -E 's/.*=//' || true
 }
 
 summarize() {
@@ -105,7 +104,7 @@ bench_one() {
   local test_name="$2"
   local pattern="$3"
   local result_file="$tmpdir/${test_name}.tsv"
-  local line ms records lines input_bytes output_bytes sample
+  local line ms records lines indexed_lines input_bytes window_lines sample
 
   echo
   echo "== $label =="
@@ -114,34 +113,36 @@ bench_one() {
     ms="$(printf '%s\n' "$line" | duration_ms)"
     records="$(printf '%s\n' "$line" | extract_field records)"
     lines="$(printf '%s\n' "$line" | extract_field lines)"
+    indexed_lines="$(printf '%s\n' "$line" | extract_field indexed_lines)"
     input_bytes="$(printf '%s\n' "$line" | extract_field input_bytes)"
-    output_bytes="$(printf '%s\n' "$line" | extract_field output_bytes)"
+    window_lines="$(printf '%s\n' "$line" | extract_field window_lines)"
     records="${records:-0}"
     lines="${lines:-0}"
+    indexed_lines="${indexed_lines:-0}"
     input_bytes="${input_bytes:-0}"
-    output_bytes="${output_bytes:-0}"
+    window_lines="${window_lines:-0}"
     printf '%s\n' "$ms" >> "$result_file"
-    printf 'sample %02d: %8.3fms  records=%s  lines=%s  input_bytes=%s  output_bytes=%s\n' \
-      "$sample" "$ms" "$records" "$lines" "$input_bytes" "$output_bytes"
+    printf 'sample %02d: %8.3fms  records=%s  lines=%s  indexed_lines=%s  window_lines=%s  input_bytes=%s\n' \
+      "$sample" "$ms" "$records" "$lines" "$indexed_lines" "$window_lines" "$input_bytes"
   done
 
   printf 'time: '; summarize "$result_file"; echo
 }
 
-echo "fmtview transform performance smoke"
+echo "fmtview load performance smoke"
 echo "samples: $samples"
 
 bench_one \
-  "jsonl record batch CPU" \
-  "perf_jsonl_record_batch_format" \
-  "jsonl record batch format"
+  "raw indexed load" \
+  "perf_raw_indexed_load" \
+  "raw indexed load"
 
 bench_one \
-  "jsonl source full format" \
-  "perf_jsonl_source_full_format" \
-  "jsonl source full format"
+  "lazy first window load+transform" \
+  "perf_lazy_first_window_format" \
+  "lazy first window format"
 
 bench_one \
-  "single huge record format" \
-  "perf_single_huge_json_record_format" \
-  "single huge record format"
+  "lazy preload records load+transform" \
+  "perf_lazy_preload_records_format" \
+  "lazy preload records format"

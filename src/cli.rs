@@ -5,10 +5,10 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::{
     diff,
-    format::{self, FormatKind, FormatOptions},
     input::InputSource,
-    line_index::{self, ViewFile},
-    preview, viewer,
+    load::{self, ViewFile},
+    transform::{self, FormatKind, FormatOptions},
+    viewer,
 };
 
 #[derive(Debug, Parser)]
@@ -90,11 +90,11 @@ fn run_format(command: FormatCommand) -> Result<()> {
 
     if should_view() {
         viewer::run(
-            open_preview_file(&input, &options)?,
-            viewer::ViewMode::Plain,
+            open_view_file(&input, &options)?,
+            crate::syntax::SyntaxKind::Structured,
         )
     } else {
-        let formatted = format::format_source_to_temp(&input, &options)?;
+        let formatted = transform::format_source_to_temp(&input, &options)?;
         copy_temp_to_stdout(&formatted)
     }
 }
@@ -123,14 +123,14 @@ fn should_view() -> bool {
     io::stdout().is_terminal()
 }
 
-fn open_preview_file(input: &InputSource, options: &FormatOptions) -> Result<Box<dyn ViewFile>> {
-    match preview::preview_plan(input, options)? {
-        preview::PreviewPlan::LazyRecords => {
-            Ok(Box::new(preview::LazyFormattedFile::new(input, *options)?))
+fn open_view_file(input: &InputSource, options: &FormatOptions) -> Result<Box<dyn ViewFile>> {
+    match load::load_plan(input, options)? {
+        load::LoadPlan::LazyRecords => {
+            Ok(Box::new(load::LazyTransformedFile::new(input, *options)?))
         }
-        preview::PreviewPlan::EagerDocument => {
-            let formatted = format::format_source_to_temp(input, options)?;
-            Ok(Box::new(line_index::IndexedTempFile::new(
+        load::LoadPlan::EagerDocument => {
+            let formatted = transform::format_source_to_temp(input, options)?;
+            Ok(Box::new(load::IndexedTempFile::new(
                 input.label().to_owned(),
                 formatted,
             )?))

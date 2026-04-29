@@ -2,22 +2,22 @@ use std::ops::Range;
 
 use ratatui::{style::Style, text::Span};
 
-use super::super::palette::{
-    bool_style, escape_style, key_style, null_style, number_style, plain_style, punctuation_style,
-    string_style,
-};
 use super::{
     checkpoints::HighlightCheckpointIndex,
     util::{escape_token_end, floor_char_boundary, push_span_window, take_while},
     xml::{XmlPairState, apply_xml_tag_state, highlight_xml_tag_window, looks_like_xml_tag},
 };
+use crate::viewer::palette::{
+    bool_style, escape_style, key_style, null_style, number_style, plain_style, punctuation_style,
+    string_style,
+};
 
 #[cfg(test)]
-pub(in crate::viewer) fn highlight_json_like(line: &str) -> Vec<Span<'static>> {
+pub(crate) fn highlight_json_like(line: &str) -> Vec<Span<'static>> {
     highlight_json_like_window(line, 0, line.len(), None)
 }
 
-pub(in crate::viewer) fn highlight_json_like_window(
+pub(crate) fn highlight_json_like_window(
     line: &str,
     window_start: usize,
     window_end: usize,
@@ -178,7 +178,7 @@ pub(in crate::viewer) fn highlight_json_like_window(
     spans
 }
 
-pub(in crate::viewer) fn highlight_json_string_value_window(
+pub(crate) fn highlight_json_string_value_window(
     source: &str,
     start: usize,
     limit: usize,
@@ -208,7 +208,7 @@ pub(in crate::viewer) fn highlight_json_string_value_window(
     )
 }
 
-pub(in crate::viewer) fn highlight_json_value_string_continue_window(
+pub(crate) fn highlight_json_value_string_continue_window(
     source: &str,
     start: usize,
     limit: usize,
@@ -332,11 +332,7 @@ pub(in crate::viewer) fn highlight_json_value_string_continue_window(
     (limit, false)
 }
 
-pub(in crate::viewer) fn json_string_end_until(
-    line: &str,
-    start: usize,
-    limit: usize,
-) -> (usize, bool) {
+pub(crate) fn json_string_end_until(line: &str, start: usize, limit: usize) -> (usize, bool) {
     if start >= line.len() {
         return (line.len(), false);
     }
@@ -362,7 +358,7 @@ pub(in crate::viewer) fn json_string_end_until(
     (limit, false)
 }
 
-pub(in crate::viewer) fn json_quote_starts_value(line: &str, quote_start: usize) -> bool {
+pub(crate) fn json_quote_starts_value(line: &str, quote_start: usize) -> bool {
     line[..quote_start]
         .chars()
         .rev()
@@ -370,15 +366,15 @@ pub(in crate::viewer) fn json_quote_starts_value(line: &str, quote_start: usize)
         .is_some_and(|ch| matches!(ch, ':' | '['))
 }
 
-pub(in crate::viewer) fn json_string_is_key(line: &str, end: usize) -> bool {
+pub(crate) fn json_string_is_key(line: &str, end: usize) -> bool {
     line[end..].trim_start().starts_with(':')
 }
 
-pub(in crate::viewer) fn is_json_number_char(ch: char) -> bool {
+pub(crate) fn is_json_number_char(ch: char) -> bool {
     ch.is_ascii_digit() || matches!(ch, '-' | '+' | '.' | 'e' | 'E')
 }
 
-pub(in crate::viewer) fn json_keyword(rest: &str) -> Option<(&str, Style)> {
+pub(crate) fn json_keyword(rest: &str) -> Option<(&str, Style)> {
     for keyword in ["true", "false"] {
         if rest.starts_with(keyword) && keyword_boundary(rest, keyword.len()) {
             return Some((keyword, bool_style()));
@@ -392,7 +388,7 @@ pub(in crate::viewer) fn json_keyword(rest: &str) -> Option<(&str, Style)> {
     }
 }
 
-pub(in crate::viewer) fn keyword_boundary(rest: &str, end: usize) -> bool {
+pub(crate) fn keyword_boundary(rest: &str, end: usize) -> bool {
     rest[end..]
         .chars()
         .next()

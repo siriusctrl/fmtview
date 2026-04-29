@@ -1,10 +1,8 @@
 use ratatui::text::{Line, Span};
 
-use super::super::{
-    ViewMode,
-    highlight::{highlight_content, highlight_content_window_indexed},
-    palette::plain_style,
-};
+use crate::syntax::{SyntaxKind, highlight_content, highlight_content_window_indexed};
+
+use super::super::palette::plain_style;
 use super::{
     cache::{LineRenderIndex, RenderedVisualRow},
     text::{
@@ -216,7 +214,7 @@ pub(in crate::viewer) fn styled_segment(
     line: &str,
     start: usize,
     end: usize,
-    mode: ViewMode,
+    mode: SyntaxKind,
 ) -> Line<'static> {
     let mut spans = Vec::new();
     spans.push(gutter);

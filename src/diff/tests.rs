@@ -9,8 +9,8 @@ use std::{
 use tempfile::Builder as TempFileBuilder;
 
 use crate::{
-    format::{FormatKind, FormatOptions},
     input::InputSource,
+    transform::{FormatKind, FormatOptions},
 };
 
 #[test]

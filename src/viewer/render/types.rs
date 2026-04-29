@@ -1,6 +1,6 @@
 use ratatui::text::Line;
 
-use super::super::ViewMode;
+use crate::syntax::SyntaxKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::viewer) struct ViewPosition {
@@ -20,7 +20,7 @@ pub(in crate::viewer) struct RenderContext {
     pub(in crate::viewer) x: usize,
     pub(in crate::viewer) width: usize,
     pub(in crate::viewer) wrap: bool,
-    pub(in crate::viewer) mode: ViewMode,
+    pub(in crate::viewer) mode: SyntaxKind,
 }
 
 #[derive(Debug)]

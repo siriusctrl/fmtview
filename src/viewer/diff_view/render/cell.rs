@@ -3,9 +3,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use crate::syntax::{SyntaxKind, highlight_content_window};
+
 use super::super::super::{
-    ViewMode,
-    highlight::highlight_content_window,
     palette::{gutter_style, plain_style},
     render::{
         byte_index_for_char, char_count, continuation_indent, wrap_ranges_window_indexed,
@@ -136,7 +136,7 @@ pub(super) fn push_structured_content(
 
     let start = byte_index_for_char(content, x);
     let end = byte_index_for_char(content, x.saturating_add(width));
-    let highlighted = highlight_content_window(content, ViewMode::Plain, start, end);
+    let highlighted = highlight_content_window(content, SyntaxKind::Structured, start, end);
     let mut cursor = x;
     let mut written = 0_usize;
     for span in highlighted {
@@ -162,7 +162,8 @@ pub(super) fn push_structured_content_range(
         return 0;
     }
 
-    let highlighted = highlight_content_window(content, ViewMode::Plain, start_byte, end_byte);
+    let highlighted =
+        highlight_content_window(content, SyntaxKind::Structured, start_byte, end_byte);
     let mut cursor = start_char;
     let mut written = 0_usize;
     for span in highlighted {

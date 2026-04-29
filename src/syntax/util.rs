@@ -1,8 +1,8 @@
 use ratatui::{style::Style, text::Span};
 
-use super::super::palette::{escape_style, plain_style, string_style};
+use crate::viewer::palette::{escape_style, plain_style, string_style};
 
-pub(in crate::viewer) fn highlight_string_segment_window(
+pub(crate) fn highlight_string_segment_window(
     source: &str,
     start: usize,
     end: usize,
@@ -61,7 +61,7 @@ pub(in crate::viewer) fn highlight_string_segment_window(
     );
 }
 
-pub(in crate::viewer) fn take_while<F>(text: &str, start: usize, mut predicate: F) -> usize
+pub(crate) fn take_while<F>(text: &str, start: usize, mut predicate: F) -> usize
 where
     F: FnMut(char) -> bool,
 {
@@ -75,7 +75,7 @@ where
     end
 }
 
-pub(in crate::viewer) fn quoted_end(text: &str, start: usize, quote: char) -> usize {
+pub(crate) fn quoted_end(text: &str, start: usize, quote: char) -> usize {
     for (offset, ch) in text[start + 1..].char_indices() {
         if ch == quote {
             return start + 1 + offset + ch.len_utf8();
@@ -84,7 +84,7 @@ pub(in crate::viewer) fn quoted_end(text: &str, start: usize, quote: char) -> us
     text.len()
 }
 
-pub(in crate::viewer) fn escaped_quoted_end(text: &str, start: usize, quote: char) -> usize {
+pub(crate) fn escaped_quoted_end(text: &str, start: usize, quote: char) -> usize {
     let pattern = if quote == '"' { "\\\"" } else { "\\'" };
     text[start + pattern.len()..]
         .find(pattern)
@@ -92,7 +92,7 @@ pub(in crate::viewer) fn escaped_quoted_end(text: &str, start: usize, quote: cha
         .unwrap_or(text.len())
 }
 
-pub(in crate::viewer) fn escape_token_end(text: &str, start: usize) -> Option<usize> {
+pub(crate) fn escape_token_end(text: &str, start: usize) -> Option<usize> {
     let rest = text.get(start..)?;
     if !rest.starts_with('\\') {
         return None;
@@ -117,7 +117,7 @@ pub(in crate::viewer) fn escape_token_end(text: &str, start: usize) -> Option<us
     Some(escaped_end)
 }
 
-pub(in crate::viewer) fn push_span_window(
+pub(crate) fn push_span_window(
     spans: &mut Vec<Span<'static>>,
     source: &str,
     start: usize,
@@ -138,7 +138,7 @@ pub(in crate::viewer) fn push_span_window(
     }
 }
 
-pub(in crate::viewer) fn floor_char_boundary(text: &str, index: usize) -> usize {
+pub(crate) fn floor_char_boundary(text: &str, index: usize) -> usize {
     let mut index = index.min(text.len());
     while index > 0 && !text.is_char_boundary(index) {
         index -= 1;

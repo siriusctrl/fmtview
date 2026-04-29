@@ -1,9 +1,9 @@
 use anyhow::Result;
 
 use crate::{
-    format::FormatOptions,
     input::InputSource,
-    preview::{self, PreviewPlan},
+    load::{self, LoadPlan},
+    transform::FormatOptions,
 };
 
 use super::{
@@ -68,8 +68,6 @@ fn should_use_lazy_record_diff(
     right: &InputSource,
     options: &FormatOptions,
 ) -> Result<bool> {
-    Ok(
-        preview::preview_plan(left, options)? == PreviewPlan::LazyRecords
-            && preview::preview_plan(right, options)? == PreviewPlan::LazyRecords,
-    )
+    Ok(load::load_plan(left, options)? == LoadPlan::LazyRecords
+        && load::load_plan(right, options)? == LoadPlan::LazyRecords)
 }

@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 
-use crate::{format::FormatOptions, input::InputSource};
+use crate::{input::InputSource, transform::FormatOptions};
 
 use super::{DiffModel, UnifiedDiffRow};
 

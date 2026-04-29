@@ -25,14 +25,20 @@ Code orientation:
 
 - `src/bin/fmtview.rs` is the thin binary entry point.
 - `src/lib.rs` exposes the internal crate modules used by the binary and tests.
-- `src/cli.rs` wires CLI arguments to formatting, diff, preview planning, and
+- `src/cli.rs` wires CLI arguments to transforms, diff, load planning, and
   viewer paths.
-- `src/format/` owns non-interactive formatting:
+- `src/input.rs` owns input materialization from files, stdin, and literals.
+- `src/load/` owns lazy-load and indexed line access:
+  - `mod.rs` defines `ViewFile` plus eager temp-file line indexing.
+  - `lazy_records.rs` plans record-stream loading and spools transformed
+    records on demand without retaining formatted text in memory.
+- `src/transform/` owns content transforms that can produce scriptable output:
   - `engine.rs` orchestrates whole-source and record formatting.
   - `detect.rs` handles format candidates and auto-detection.
   - `json.rs` keeps token-preserving JSON/JSONL formatting.
   - `xml.rs` wraps XML-compatible formatting.
-- `src/preview/` owns TTY preview planning and lazy record spooling.
+- `src/syntax/` owns visible-window syntax highlighting and checkpoint state.
+  It must not read input files or transform content.
 - `src/diff/` owns unified patch generation plus the structured diff model used
   by the interactive diff viewer:
   - `external.rs` formats both sides and shells out to the platform diff tool.
@@ -41,8 +47,6 @@ Code orientation:
   - `lazy_records/` incrementally formats record streams for large TTY diffs.
   - `model/` parses unified patch rows, annotates inline changes, and builds
     the side-by-side row model.
-- `src/input.rs` and `src/line_index.rs` own input materialization and
-  temp-file indexing.
 - `src/viewer/` owns the interactive TUI:
   - `mod.rs` runs the terminal loop and frame composition.
   - `breadcrumb.rs` builds compact sticky JSON key breadcrumbs for the viewer.
@@ -52,15 +56,14 @@ Code orientation:
   - `input/` handles key/mouse state, scrolling, jumps, and search.
   - `render/` handles line windows, wrapping, visual rows, caches, progress,
     prewarming, and the search highlight overlay.
-  - `highlight/` handles JSON and XML-like syntax highlighting.
   - `palette.rs` owns viewer colors.
   - `tests.rs` keeps viewer regression and performance smoke coverage close to
     the private TUI internals.
 - `tests/cli.rs` covers CLI-level behavior.
 - `benches/` contains local performance harnesses. They are shell-driven smoke
-  checks rather than Cargo benchmark targets because they exercise the release
-  binary, ignored perf tests, PTY-like terminal writers, structured diff view
-  rendering, and alternate external formatter commands.
+  checks rather than Cargo benchmark targets because they exercise transform,
+  load, syntax, viewer, diff, release-binary, PTY-like terminal writers, and
+  alternate external formatter paths.
 
 Keep README user-facing. Keep maintainer-only workflows in docs and link them
 from `AGENTS.md`.

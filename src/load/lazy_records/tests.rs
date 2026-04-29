@@ -22,25 +22,22 @@ fn temp_source_with_suffix(contents: &[u8], suffix: &str) -> (NamedTempFile, Inp
 }
 
 #[test]
-fn lazy_preview_does_not_require_jsonl_extension() {
+fn lazy_load_does_not_require_jsonl_extension() {
     let (_temp, source) = temp_source(b"{\"a\":1}\n{\"b\":2}\n");
     let options = FormatOptions {
         kind: FormatKind::Auto,
         indent: 2,
     };
 
-    assert_eq!(
-        preview_plan(&source, &options).unwrap(),
-        PreviewPlan::LazyRecords
-    );
+    assert_eq!(load_plan(&source, &options).unwrap(), LoadPlan::LazyRecords);
 }
 
 #[test]
-fn explicit_format_kinds_choose_preview_plan_without_sniffing() {
+fn explicit_format_kinds_choose_load_plan_without_sniffing() {
     let (_temp, source) = temp_source(b"{\"broken\":\n");
 
     assert_eq!(
-        preview_plan(
+        load_plan(
             &source,
             &FormatOptions {
                 kind: FormatKind::Jsonl,
@@ -48,10 +45,10 @@ fn explicit_format_kinds_choose_preview_plan_without_sniffing() {
             }
         )
         .unwrap(),
-        PreviewPlan::LazyRecords
+        LoadPlan::LazyRecords
     );
     assert_eq!(
-        preview_plan(
+        load_plan(
             &source,
             &FormatOptions {
                 kind: FormatKind::Json,
@@ -59,10 +56,10 @@ fn explicit_format_kinds_choose_preview_plan_without_sniffing() {
             }
         )
         .unwrap(),
-        PreviewPlan::EagerDocument
+        LoadPlan::EagerDocument
     );
     assert_eq!(
-        preview_plan(
+        load_plan(
             &source,
             &FormatOptions {
                 kind: FormatKind::Xml,
@@ -70,12 +67,12 @@ fn explicit_format_kinds_choose_preview_plan_without_sniffing() {
             }
         )
         .unwrap(),
-        PreviewPlan::EagerDocument
+        LoadPlan::EagerDocument
     );
 }
 
 #[test]
-fn auto_lazy_preview_honors_jsonl_extension_before_sampling() {
+fn auto_lazy_load_honors_jsonl_extension_before_sampling() {
     let mut data = b"{\"message\":\"".to_vec();
     data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
     data.extend_from_slice(b"\"}\n{\"ok\":true}\n");
@@ -85,14 +82,11 @@ fn auto_lazy_preview_honors_jsonl_extension_before_sampling() {
         indent: 2,
     };
 
-    assert_eq!(
-        preview_plan(&source, &options).unwrap(),
-        PreviewPlan::LazyRecords
-    );
+    assert_eq!(load_plan(&source, &options).unwrap(), LoadPlan::LazyRecords);
 }
 
 #[test]
-fn auto_lazy_preview_rejects_truncated_prefix_without_extension() {
+fn auto_lazy_load_rejects_truncated_prefix_without_extension() {
     let mut data = b"{\"message\":\"".to_vec();
     data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
     data.extend_from_slice(b"\"}\n{\"ok\":true}\n");
@@ -103,13 +97,13 @@ fn auto_lazy_preview_rejects_truncated_prefix_without_extension() {
     };
 
     assert_eq!(
-        preview_plan(&source, &options).unwrap(),
-        PreviewPlan::EagerDocument
+        load_plan(&source, &options).unwrap(),
+        LoadPlan::EagerDocument
     );
 }
 
 #[test]
-fn auto_lazy_preview_keeps_large_multiline_json_eager() {
+fn auto_lazy_load_keeps_large_multiline_json_eager() {
     let mut data = b"{\"message\":\"".to_vec();
     data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
     data.extend_from_slice(b"\",\n\"ok\":true\n}\n");
@@ -120,13 +114,13 @@ fn auto_lazy_preview_keeps_large_multiline_json_eager() {
     };
 
     assert_eq!(
-        preview_plan(&source, &options).unwrap(),
-        PreviewPlan::EagerDocument
+        load_plan(&source, &options).unwrap(),
+        LoadPlan::EagerDocument
     );
 }
 
 #[test]
-fn lazy_preview_reads_only_records_needed_for_first_window() {
+fn lazy_load_reads_only_records_needed_for_first_window() {
     let mut data = Vec::new();
     for index in 0..1000 {
         writeln!(
@@ -140,7 +134,7 @@ fn lazy_preview_reads_only_records_needed_for_first_window() {
         kind: FormatKind::Auto,
         indent: 2,
     };
-    let file = LazyFormattedFile::new(&source, options).unwrap();
+    let file = LazyTransformedFile::new(&source, options).unwrap();
 
     let lines = file.read_window(0, 12).unwrap();
 
@@ -153,7 +147,7 @@ fn lazy_preview_reads_only_records_needed_for_first_window() {
 }
 
 #[test]
-fn lazy_preview_idle_preload_advances_known_line_count() {
+fn lazy_load_idle_preload_advances_known_line_count() {
     let mut data = Vec::new();
     for index in 0..10 {
         writeln!(data, "{{\"index\":{index},\"payload\":{{\"ok\":true}}}}").unwrap();
@@ -163,7 +157,7 @@ fn lazy_preview_idle_preload_advances_known_line_count() {
         kind: FormatKind::Auto,
         indent: 2,
     };
-    let file = LazyFormattedFile::new(&source, options).unwrap();
+    let file = LazyTransformedFile::new(&source, options).unwrap();
 
     file.read_window(0, 4).unwrap();
     let before = file.line_count();
@@ -182,7 +176,7 @@ fn explicit_jsonl_errors_on_malformed_record() {
         kind: FormatKind::Jsonl,
         indent: 2,
     };
-    let file = LazyFormattedFile::new(&source, options).unwrap();
+    let file = LazyTransformedFile::new(&source, options).unwrap();
 
     let error = file.read_window(0, 20).unwrap_err();
 
@@ -190,7 +184,7 @@ fn explicit_jsonl_errors_on_malformed_record() {
 }
 
 #[test]
-fn multiline_whole_documents_do_not_use_lazy_preview() {
+fn multiline_whole_documents_do_not_use_lazy_load() {
     let (_json_temp, json_source) = temp_source(b"{\n  \"items\": [\n    {\"a\": 1}\n  ]\n}\n");
     let (_xml_temp, xml_source) = temp_source(b"<root>\n  <item>one</item>\n</root>\n");
     let options = FormatOptions {
@@ -199,23 +193,23 @@ fn multiline_whole_documents_do_not_use_lazy_preview() {
     };
 
     assert_eq!(
-        preview_plan(&json_source, &options).unwrap(),
-        PreviewPlan::EagerDocument
+        load_plan(&json_source, &options).unwrap(),
+        LoadPlan::EagerDocument
     );
     assert_eq!(
-        preview_plan(&xml_source, &options).unwrap(),
-        PreviewPlan::EagerDocument
+        load_plan(&xml_source, &options).unwrap(),
+        LoadPlan::EagerDocument
     );
 }
 
 #[test]
-fn lazy_preview_reads_spooled_lines_after_preload() {
+fn lazy_load_reads_spooled_lines_after_preload() {
     let (_temp, source) = temp_source(b"{\"a\":1}\n{\"b\":2}\n{\"c\":3}\n");
     let options = FormatOptions {
         kind: FormatKind::Auto,
         indent: 2,
     };
-    let file = LazyFormattedFile::new(&source, options).unwrap();
+    let file = LazyTransformedFile::new(&source, options).unwrap();
 
     assert!(file.preload(20, 3, Duration::from_secs(1)).unwrap());
     assert!(file.indexed_line_count() > 6);
@@ -229,7 +223,7 @@ fn lazy_preview_reads_spooled_lines_after_preload() {
 }
 
 #[test]
-fn small_whole_document_does_not_use_lazy_preview() {
+fn small_whole_document_does_not_use_lazy_load() {
     let (_temp, source) = temp_source(b"{\"items\":[{\"a\":1},{\"b\":2}]}\n");
     let options = FormatOptions {
         kind: FormatKind::Auto,
@@ -237,14 +231,14 @@ fn small_whole_document_does_not_use_lazy_preview() {
     };
 
     assert_eq!(
-        preview_plan(&source, &options).unwrap(),
-        PreviewPlan::EagerDocument
+        load_plan(&source, &options).unwrap(),
+        LoadPlan::EagerDocument
     );
 }
 
 #[test]
 #[ignore = "performance smoke; generates a large temporary JSONL-style file"]
-fn perf_lazy_preview_first_window_does_not_scan_generated_large_file() {
+fn perf_lazy_load_first_window_does_not_scan_generated_large_file() {
     let mut temp = NamedTempFile::new().unwrap();
     let record = br#"{"level":"info","payload":{"message":"lazy performance smoke","xml":"<root><item id=\"1\"><name>visible</name></item><item id=\"2\"><name>visible</name></item></root>","items":[{"a":1},{"b":2},{"c":{"d":{"e":true}}}]}}"#;
     let target = 128 * 1024 * 1024;
@@ -262,7 +256,7 @@ fn perf_lazy_preview_first_window_does_not_scan_generated_large_file() {
     };
 
     let started = Instant::now();
-    let file = LazyFormattedFile::new(&source, options).unwrap();
+    let file = LazyTransformedFile::new(&source, options).unwrap();
     let lines = file.read_window(0, 40).unwrap();
     let elapsed = started.elapsed();
 
@@ -278,7 +272,7 @@ fn perf_lazy_preview_first_window_does_not_scan_generated_large_file() {
 }
 
 #[test]
-#[ignore = "performance smoke; run benches/format-performance.sh"]
+#[ignore = "performance smoke; run benches/load-performance.sh"]
 fn perf_lazy_first_window_format() {
     let (_temp, source, input_bytes) = generated_jsonl_source(16_384, 512, ".jsonl");
     let options = FormatOptions {
@@ -287,7 +281,7 @@ fn perf_lazy_first_window_format() {
     };
 
     let started = Instant::now();
-    let file = LazyFormattedFile::new(&source, options).unwrap();
+    let file = LazyTransformedFile::new(&source, options).unwrap();
     let lines = file.read_window(0, 120).unwrap();
     let elapsed = started.elapsed();
 
@@ -308,14 +302,14 @@ fn perf_lazy_first_window_format() {
 }
 
 #[test]
-#[ignore = "performance smoke; run benches/format-performance.sh"]
+#[ignore = "performance smoke; run benches/load-performance.sh"]
 fn perf_lazy_preload_records_format() {
     let (_temp, source, input_bytes) = generated_jsonl_source(16_384, 512, ".jsonl");
     let options = FormatOptions {
         kind: FormatKind::Auto,
         indent: 2,
     };
-    let file = LazyFormattedFile::new(&source, options).unwrap();
+    let file = LazyTransformedFile::new(&source, options).unwrap();
     file.read_window(0, 40).unwrap();
 
     let started = Instant::now();

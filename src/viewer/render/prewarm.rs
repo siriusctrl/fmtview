@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::line_index::ViewFile;
+use crate::load::ViewFile;
 
 use super::super::{
     PREWARM_BUDGET, PREWARM_MAX_LINE_BYTES, PREWARM_MAX_LINES, PREWARM_PAGES,

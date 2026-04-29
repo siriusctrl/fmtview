@@ -1,8 +1,7 @@
 mod breadcrumb;
 mod diff_view;
-mod highlight;
 mod input;
-mod palette;
+pub(crate) mod palette;
 mod render;
 mod terminal;
 
@@ -22,8 +21,9 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, layout::Rect, text::Line};
 
 #[cfg(test)]
-use crate::line_index::IndexedTempFile;
-use crate::line_index::ViewFile;
+use crate::load::IndexedTempFile;
+use crate::load::ViewFile;
+use crate::syntax::SyntaxKind;
 
 use input::{ViewState, drain_events, process_search_step, reset_top_row_offset};
 use render::{
@@ -47,7 +47,6 @@ const RENDER_CACHE_MAX_ROWS_PER_LINE: usize = 256;
 const WRAP_RENDER_CHUNK_ROWS: usize = 64;
 const WRAP_RENDER_CHUNKS_PER_LINE: usize = 64;
 const WRAP_CHECKPOINT_INTERVAL_ROWS: usize = 256;
-const HIGHLIGHT_CHECKPOINT_INTERVAL_BYTES: usize = 32 * 1024;
 const TERMINAL_SCROLL_HINT_MAX_ROWS: usize = 12;
 const WRAP_PREWARM_LOGICAL_LINES: usize = 4;
 const WRAP_GUTTER_MINOR_TICK_ROWS: usize = 8;
@@ -62,12 +61,7 @@ const LAZY_PRELOAD_BUDGET: Duration = Duration::from_millis(6);
 const JUMP_BUFFER_MAX_DIGITS: usize = 20;
 const SEARCH_CHUNK_LINES: usize = 4096;
 const TAIL_ROW_OFFSET: usize = usize::MAX;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ViewMode {
-    Plain,
-}
-
-pub fn run(file: Box<dyn ViewFile>, mode: ViewMode) -> Result<()> {
+pub fn run(file: Box<dyn ViewFile>, mode: SyntaxKind) -> Result<()> {
     run_terminal(|terminal| run_loop(terminal, file.as_ref(), mode))
 }
 
@@ -132,7 +126,7 @@ impl Drop for TerminalCleanup {
 fn run_loop(
     terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,
     file: &dyn ViewFile,
-    mode: ViewMode,
+    mode: SyntaxKind,
 ) -> Result<()> {
     let mut state = ViewState::default();
     let mut dirty = true;
@@ -187,7 +181,7 @@ struct ViewerCaches {
 fn draw_view(
     terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,
     file: &dyn ViewFile,
-    mode: ViewMode,
+    mode: SyntaxKind,
     state: &mut ViewState,
     caches: &mut ViewerCaches,
 ) -> Result<()> {
@@ -464,7 +458,7 @@ fn adjust_state_for_visible_height(
 }
 
 fn sticky_lines(
-    mode: ViewMode,
+    mode: SyntaxKind,
     breadcrumb: &mut JsonBreadcrumbCache,
     file: &dyn ViewFile,
     top: usize,
@@ -472,7 +466,7 @@ fn sticky_lines(
     gutter_width: usize,
     base_visible_height: usize,
 ) -> Vec<Line<'static>> {
-    if mode == ViewMode::Plain {
+    if mode == SyntaxKind::Structured {
         breadcrumb.render(file, top, width, gutter_width, base_visible_height)
     } else {
         Vec::new()

@@ -1,8 +1,8 @@
 pub mod cli;
 
 mod diff;
-mod format;
 mod input;
-mod line_index;
-mod preview;
+mod load;
+mod syntax;
+mod transform;
 mod viewer;

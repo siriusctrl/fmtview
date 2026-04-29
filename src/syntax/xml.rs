@@ -2,9 +2,6 @@ use std::ops::Range;
 
 use ratatui::text::Span;
 
-use super::super::palette::{
-    attr_style, error_style, plain_style, punctuation_style, xml_depth_style,
-};
 use super::{
     checkpoints::HighlightCheckpointIndex,
     util::{
@@ -12,13 +9,16 @@ use super::{
         take_while,
     },
 };
+use crate::viewer::palette::{
+    attr_style, error_style, plain_style, punctuation_style, xml_depth_style,
+};
 
 #[cfg(test)]
-pub(in crate::viewer) fn highlight_xml_line(line: &str) -> Vec<Span<'static>> {
+pub(crate) fn highlight_xml_line(line: &str) -> Vec<Span<'static>> {
     highlight_xml_line_window(line, 0, line.len(), None)
 }
 
-pub(in crate::viewer) fn highlight_xml_line_window(
+pub(crate) fn highlight_xml_line_window(
     line: &str,
     window_start: usize,
     window_end: usize,
@@ -38,7 +38,7 @@ pub(in crate::viewer) fn highlight_xml_line_window(
     spans
 }
 
-pub(in crate::viewer) fn highlight_inline_xml_window_indexed(
+pub(crate) fn highlight_inline_xml_window_indexed(
     source: &str,
     start: usize,
     end: usize,
@@ -115,7 +115,7 @@ pub(in crate::viewer) fn highlight_inline_xml_window_indexed(
     }
 }
 
-pub(in crate::viewer) fn highlight_xml_tag_window(
+pub(crate) fn highlight_xml_tag_window(
     source: &str,
     tag_start: usize,
     end: usize,
@@ -246,7 +246,7 @@ pub(in crate::viewer) fn highlight_xml_tag_window(
     }
 }
 
-pub(in crate::viewer) fn apply_xml_tag_state(
+pub(crate) fn apply_xml_tag_state(
     tag: &str,
     state: &mut XmlPairState,
     base_depth: usize,
@@ -256,7 +256,7 @@ pub(in crate::viewer) fn apply_xml_tag_state(
     apply_xml_tag_state_with_parts(state, kind, name, base_depth)
 }
 
-pub(in crate::viewer) fn apply_xml_tag_state_with_parts(
+pub(crate) fn apply_xml_tag_state_with_parts(
     state: &mut XmlPairState,
     kind: XmlTagKind,
     name: Option<&str>,
@@ -266,18 +266,18 @@ pub(in crate::viewer) fn apply_xml_tag_state_with_parts(
 }
 
 #[derive(Debug, Clone, Default)]
-pub(in crate::viewer) struct XmlPairState {
+pub(crate) struct XmlPairState {
     stack: Vec<XmlOpenTag>,
 }
 
 #[derive(Debug, Clone)]
-pub(in crate::viewer) struct XmlOpenTag {
+pub(crate) struct XmlOpenTag {
     name: String,
     depth: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::viewer) enum XmlTagKind {
+pub(crate) enum XmlTagKind {
     Open,
     Close,
     SelfClosing,
@@ -285,7 +285,7 @@ pub(in crate::viewer) enum XmlTagKind {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(in crate::viewer) struct XmlTagState {
+pub(crate) struct XmlTagState {
     depth: usize,
     matched: bool,
 }
@@ -333,14 +333,14 @@ impl XmlPairState {
     }
 }
 
-pub(in crate::viewer) fn looks_like_xml_tag(tag: &str) -> bool {
+pub(crate) fn looks_like_xml_tag(tag: &str) -> bool {
     tag.starts_with("</")
         || tag.starts_with("<?")
         || tag.starts_with("<!")
         || xml_tag_name_range(tag).is_some()
 }
 
-pub(in crate::viewer) fn xml_tag_kind(tag: &str) -> XmlTagKind {
+pub(crate) fn xml_tag_kind(tag: &str) -> XmlTagKind {
     if tag.starts_with("</") {
         XmlTagKind::Close
     } else if tag.starts_with("<?") || tag.starts_with("<!") {
@@ -352,7 +352,7 @@ pub(in crate::viewer) fn xml_tag_kind(tag: &str) -> XmlTagKind {
     }
 }
 
-pub(in crate::viewer) fn xml_tag_name_range(tag: &str) -> Option<(usize, usize)> {
+pub(crate) fn xml_tag_name_range(tag: &str) -> Option<(usize, usize)> {
     let mut index = if tag.starts_with("</") { 2 } else { 1 };
     while index < tag.len() {
         let ch = tag[index..].chars().next()?;
@@ -367,7 +367,7 @@ pub(in crate::viewer) fn xml_tag_name_range(tag: &str) -> Option<(usize, usize)>
     (end > start).then_some((start, end))
 }
 
-pub(in crate::viewer) fn xml_depth_from_indent(line: &str) -> usize {
+pub(crate) fn xml_depth_from_indent(line: &str) -> usize {
     line.chars()
         .take_while(|ch| ch.is_whitespace())
         .map(|ch| if ch == '\t' { 2 } else { 1 })
@@ -375,6 +375,6 @@ pub(in crate::viewer) fn xml_depth_from_indent(line: &str) -> usize {
         / 2
 }
 
-pub(in crate::viewer) fn is_xml_name_char(ch: char) -> bool {
+pub(crate) fn is_xml_name_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | ':' | '.')
 }

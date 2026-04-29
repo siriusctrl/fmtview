@@ -7,8 +7,8 @@ use anyhow::{Context, Result, bail};
 use tempfile::NamedTempFile;
 
 use crate::{
-    format::{self, FormatOptions},
     input::InputSource,
+    transform::{self, FormatOptions},
 };
 
 use super::DiffModel;
@@ -23,9 +23,9 @@ pub(super) fn format_diff_inputs(
     right: &InputSource,
     options: &FormatOptions,
 ) -> Result<FormattedDiffInputs> {
-    let left_formatted = format::format_source_to_temp(left, options)
+    let left_formatted = transform::format_source_to_temp(left, options)
         .with_context(|| format!("failed to format left input {}", left.label()))?;
-    let right_formatted = format::format_source_to_temp(right, options)
+    let right_formatted = transform::format_source_to_temp(right, options)
         .with_context(|| format!("failed to format right input {}", right.label()))?;
     Ok(FormattedDiffInputs {
         left: left_formatted,

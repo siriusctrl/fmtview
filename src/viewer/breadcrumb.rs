@@ -1,6 +1,6 @@
 use ratatui::text::{Line, Span};
 
-use crate::line_index::ViewFile;
+use crate::load::ViewFile;
 
 use super::{
     palette::{gutter_style, key_style},

@@ -10,34 +10,34 @@ use anyhow::{Context, Result};
 use tempfile::NamedTempFile;
 
 use crate::{
-    format::{self, FormatKind, FormatOptions},
     input::InputSource,
-    line_index::ViewFile,
+    load::ViewFile,
+    transform::{self, FormatKind, FormatOptions},
 };
 
 const SNIFF_BYTES: usize = 1024 * 1024;
 const SNIFF_LINES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PreviewPlan {
+pub enum LoadPlan {
     LazyRecords,
     EagerDocument,
 }
 
-pub fn preview_plan(source: &InputSource, options: &FormatOptions) -> Result<PreviewPlan> {
+pub fn load_plan(source: &InputSource, options: &FormatOptions) -> Result<LoadPlan> {
     match options.kind {
-        FormatKind::Jsonl => Ok(PreviewPlan::LazyRecords),
-        FormatKind::Json | FormatKind::Xml => Ok(PreviewPlan::EagerDocument),
+        FormatKind::Jsonl => Ok(LoadPlan::LazyRecords),
+        FormatKind::Json | FormatKind::Xml => Ok(LoadPlan::EagerDocument),
         FormatKind::Auto => {
             if has_record_extension(source) {
-                return Ok(PreviewPlan::LazyRecords);
+                return Ok(LoadPlan::LazyRecords);
             }
 
-            let sample = PreviewSample::read(source)?;
+            let sample = LoadSample::read(source)?;
             Ok(if sample.looks_like_record_stream() {
-                PreviewPlan::LazyRecords
+                LoadPlan::LazyRecords
             } else {
-                PreviewPlan::EagerDocument
+                LoadPlan::EagerDocument
             })
         }
     }
@@ -55,14 +55,14 @@ fn has_record_extension(source: &InputSource) -> bool {
     )
 }
 
-pub struct LazyFormattedFile {
+pub struct LazyTransformedFile {
     label: String,
     options: FormatOptions,
     len: u64,
     state: RefCell<LazyState>,
 }
 
-impl LazyFormattedFile {
+impl LazyTransformedFile {
     pub fn new(source: &InputSource, options: FormatOptions) -> Result<Self> {
         let file = source.open()?;
         let len = file
@@ -75,7 +75,7 @@ impl LazyFormattedFile {
             len,
             state: RefCell::new(LazyState {
                 reader: BufReader::new(file),
-                spool: NamedTempFile::new().context("failed to create lazy preview spool")?,
+                spool: NamedTempFile::new().context("failed to create lazy load spool")?,
                 spool_len: 0,
                 raw_offset: 0,
                 raw_line: Vec::with_capacity(8192),
@@ -108,7 +108,7 @@ impl LazyFormattedFile {
     }
 }
 
-impl ViewFile for LazyFormattedFile {
+impl ViewFile for LazyTransformedFile {
     fn label(&self) -> &str {
         &self.label
     }
@@ -152,17 +152,16 @@ impl ViewFile for LazyFormattedFile {
         }
 
         let end = start.saturating_add(count).min(state.line_offsets.len());
-        let mut file =
-            File::open(state.spool.path()).context("failed to open lazy preview spool")?;
+        let mut file = File::open(state.spool.path()).context("failed to open lazy load spool")?;
         file.seek(SeekFrom::Start(state.line_offsets[start]))
-            .context("failed to seek lazy preview spool")?;
+            .context("failed to seek lazy load spool")?;
         let mut reader = BufReader::new(file);
         let mut lines = Vec::with_capacity(end - start);
         for _ in start..end {
             let mut line = String::new();
             let read = reader
                 .read_line(&mut line)
-                .context("failed to read lazy preview spool")?;
+                .context("failed to read lazy load spool")?;
             if read == 0 {
                 break;
             }
@@ -228,7 +227,7 @@ fn read_next_record(state: &mut LazyState, options: FormatOptions, label: &str) 
 
     state.raw_offset = state.raw_offset.saturating_add(read as u64);
     state.records_read = state.records_read.saturating_add(1);
-    let rendered = format_record_lines(&raw_line, options)?;
+    let rendered = transform::format_record_lines(&raw_line, options)?;
     state.raw_line = raw_line;
     for line in rendered {
         state.line_offsets.push(state.spool_len);
@@ -237,12 +236,12 @@ fn read_next_record(state: &mut LazyState, options: FormatOptions, label: &str) 
             .spool
             .as_file_mut()
             .write_all(line.as_bytes())
-            .context("failed to write lazy preview spool")?;
+            .context("failed to write lazy load spool")?;
         state
             .spool
             .as_file_mut()
             .write_all(b"\n")
-            .context("failed to write lazy preview spool")?;
+            .context("failed to write lazy load spool")?;
         state.spool_len = state
             .spool_len
             .saturating_add(line.len() as u64)
@@ -252,12 +251,12 @@ fn read_next_record(state: &mut LazyState, options: FormatOptions, label: &str) 
 }
 
 #[derive(Default)]
-struct PreviewSample {
+struct LoadSample {
     non_empty_lines: usize,
     parseable_record_lines: usize,
 }
 
-impl PreviewSample {
+impl LoadSample {
     fn read(source: &InputSource) -> Result<Self> {
         let mut reader = BufReader::new(source.open()?);
         let mut sample = Self::default();
@@ -274,12 +273,12 @@ impl PreviewSample {
             }
             bytes_read += read;
 
-            let trimmed = trim_ascii_ws(format::trim_record_line_end(&line));
+            let trimmed = trim_ascii_ws(transform::trim_record_line_end(&line));
             if trimmed.is_empty() {
                 continue;
             }
             sample.non_empty_lines += 1;
-            if parseable_record_line(trimmed) {
+            if transform::parseable_record_line(trimmed) {
                 sample.parseable_record_lines += 1;
             }
         }
@@ -318,50 +317,6 @@ fn read_line_limited<R: BufRead>(
         }
     }
     Ok(line.len() - before)
-}
-
-fn parseable_record_line(line: &[u8]) -> bool {
-    record_format_kind(line)
-        .and_then(|kind| format::format_record_to_string(line, kind, 2).ok())
-        .is_some()
-}
-
-pub(crate) fn format_record_lines(line: &[u8], options: FormatOptions) -> Result<Vec<String>> {
-    let trimmed = format::trim_record_line_end(line);
-    if trim_ascii_ws(trimmed).is_empty() {
-        return Ok(vec![String::new()]);
-    }
-
-    let formatted = match options.kind {
-        FormatKind::Auto => record_format_kind(trimmed)
-            .and_then(|kind| format::format_record_to_string(trimmed, kind, options.indent).ok()),
-        FormatKind::Json | FormatKind::Jsonl => Some(format::format_record_to_string(
-            trimmed,
-            FormatKind::Json,
-            options.indent,
-        )?),
-        FormatKind::Xml => Some(format::format_record_to_string(
-            trimmed,
-            FormatKind::Xml,
-            options.indent,
-        )?),
-    };
-
-    Ok(formatted
-        .unwrap_or_else(|| String::from_utf8_lossy(trimmed).into_owned())
-        .lines()
-        .map(str::to_owned)
-        .collect())
-}
-
-fn record_format_kind(line: &[u8]) -> Option<FormatKind> {
-    match trim_ascii_ws(line).first().copied() {
-        Some(b'<') => Some(FormatKind::Xml),
-        Some(b'{' | b'[' | b'"' | b'-' | b'0'..=b'9' | b't' | b'f' | b'n') => {
-            Some(FormatKind::Json)
-        }
-        _ => None,
-    }
 }
 
 fn trim_ascii_ws(mut bytes: &[u8]) -> &[u8] {

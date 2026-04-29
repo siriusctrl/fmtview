@@ -79,3 +79,57 @@ pub fn format_record_to_string(input: &[u8], kind: FormatKind, indent: usize) ->
 pub fn trim_record_line_end(line: &[u8]) -> &[u8] {
     trim_line_end(line)
 }
+
+pub(crate) fn parseable_record_line(line: &[u8]) -> bool {
+    record_format_kind(line)
+        .and_then(|kind| format_record_to_string(line, kind, 2).ok())
+        .is_some()
+}
+
+pub(crate) fn format_record_lines(line: &[u8], options: FormatOptions) -> Result<Vec<String>> {
+    let trimmed = trim_record_line_end(line);
+    if trim_ascii_ws(trimmed).is_empty() {
+        return Ok(vec![String::new()]);
+    }
+
+    let formatted = match options.kind {
+        FormatKind::Auto => record_format_kind(trimmed)
+            .and_then(|kind| format_record_to_string(trimmed, kind, options.indent).ok()),
+        FormatKind::Json | FormatKind::Jsonl => Some(format_record_to_string(
+            trimmed,
+            FormatKind::Json,
+            options.indent,
+        )?),
+        FormatKind::Xml => Some(format_record_to_string(
+            trimmed,
+            FormatKind::Xml,
+            options.indent,
+        )?),
+    };
+
+    Ok(formatted
+        .unwrap_or_else(|| String::from_utf8_lossy(trimmed).into_owned())
+        .lines()
+        .map(str::to_owned)
+        .collect())
+}
+
+fn record_format_kind(line: &[u8]) -> Option<FormatKind> {
+    match trim_ascii_ws(line).first().copied() {
+        Some(b'<') => Some(FormatKind::Xml),
+        Some(b'{' | b'[' | b'"' | b'-' | b'0'..=b'9' | b't' | b'f' | b'n') => {
+            Some(FormatKind::Json)
+        }
+        _ => None,
+    }
+}
+
+fn trim_ascii_ws(mut bytes: &[u8]) -> &[u8] {
+    while bytes.first().is_some_and(u8::is_ascii_whitespace) {
+        bytes = &bytes[1..];
+    }
+    while bytes.last().is_some_and(u8::is_ascii_whitespace) {
+        bytes = &bytes[..bytes.len() - 1];
+    }
+    bytes
+}

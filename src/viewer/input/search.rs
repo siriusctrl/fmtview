@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use crate::line_index::ViewFile;
+use crate::load::ViewFile;
 
 use super::super::SEARCH_CHUNK_LINES;
 use super::{keys::accepts_search_char, state::ViewState};

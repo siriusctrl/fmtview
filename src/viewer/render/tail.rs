@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::line_index::ViewFile;
+use crate::load::ViewFile;
 
 use super::super::input::ViewState;
 use super::{
