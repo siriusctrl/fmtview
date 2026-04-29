@@ -6,11 +6,25 @@ use tempfile::NamedTempFile;
 use crate::input::InputSource;
 
 use super::{
+    TransformStrategy,
     detect::candidate_kinds,
     json::{format_json, format_json_value, format_jsonl, trim_line_end},
     types::{FormatKind, FormatOptions},
     xml::format_xml_reader,
 };
+
+pub fn transform_source_to_temp(
+    source: &InputSource,
+    options: &FormatOptions,
+    strategy: TransformStrategy,
+) -> Result<NamedTempFile> {
+    match strategy {
+        TransformStrategy::PrettyPrint | TransformStrategy::RecordPrettyPrint => {
+            format_source_to_temp(source, options)
+        }
+        TransformStrategy::Passthrough => passthrough_source_to_temp(source),
+    }
+}
 
 pub fn format_source_to_temp(
     source: &InputSource,
@@ -27,10 +41,24 @@ pub fn format_source_to_temp(
     }
 
     bail!(
-        "failed to format {} as JSON, JSONL, or XML:\n{}",
+        "failed to format {} as JSON, JSONL, XML, plain text, or Jinja:\n{}",
         source.label(),
         errors.join("\n")
     )
+}
+
+fn passthrough_source_to_temp(source: &InputSource) -> Result<NamedTempFile> {
+    let mut temp = NamedTempFile::new().context("failed to create passthrough temp file")?;
+    {
+        let mut input = BufReader::new(source.open()?);
+        let mut output = BufWriter::new(temp.as_file_mut());
+        std::io::copy(&mut input, &mut output)
+            .with_context(|| format!("failed to copy {} without formatting", source.label()))?;
+        output
+            .flush()
+            .context("failed to flush passthrough output")?;
+    }
+    Ok(temp)
 }
 
 fn try_format_source_to_temp(
@@ -50,6 +78,12 @@ fn try_format_source_to_temp(
             FormatKind::Xml => {
                 format_xml_reader(BufReader::new(source.open()?), &mut output, options.indent)
                     .with_context(|| format!("failed to format {} as XML", source.label()))?
+            }
+            FormatKind::Plain | FormatKind::Jinja => {
+                let mut input = BufReader::new(source.open()?);
+                std::io::copy(&mut input, &mut output).with_context(|| {
+                    format!("failed to copy {} without formatting", source.label())
+                })?;
             }
         }
         output.flush().context("failed to flush formatted output")?;
@@ -72,6 +106,7 @@ pub fn format_record_to_string(input: &[u8], kind: FormatKind, indent: usize) ->
                 output.pop();
             }
         }
+        FormatKind::Plain | FormatKind::Jinja => output.extend_from_slice(input),
     }
     String::from_utf8(output).context("formatted record was not valid UTF-8")
 }
@@ -105,6 +140,7 @@ pub(crate) fn format_record_lines(line: &[u8], options: FormatOptions) -> Result
             FormatKind::Xml,
             options.indent,
         )?),
+        FormatKind::Plain | FormatKind::Jinja => None,
     };
 
     Ok(formatted

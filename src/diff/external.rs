@@ -8,6 +8,7 @@ use tempfile::NamedTempFile;
 
 use crate::{
     input::InputSource,
+    profile::TypeProfile,
     transform::{self, FormatOptions},
 };
 
@@ -23,10 +24,16 @@ pub(super) fn format_diff_inputs(
     right: &InputSource,
     options: &FormatOptions,
 ) -> Result<FormattedDiffInputs> {
-    let left_formatted = transform::format_source_to_temp(left, options)
-        .with_context(|| format!("failed to format left input {}", left.label()))?;
-    let right_formatted = transform::format_source_to_temp(right, options)
-        .with_context(|| format!("failed to format right input {}", right.label()))?;
+    let left_profile = TypeProfile::resolve(left, options)?;
+    let right_profile = TypeProfile::resolve(right, options)?;
+    let left_options = left_profile.format_options(options.indent);
+    let right_options = right_profile.format_options(options.indent);
+    let left_formatted =
+        transform::transform_source_to_temp(left, &left_options, left_profile.transform)
+            .with_context(|| format!("failed to format left input {}", left.label()))?;
+    let right_formatted =
+        transform::transform_source_to_temp(right, &right_options, right_profile.transform)
+            .with_context(|| format!("failed to format right input {}", right.label()))?;
     Ok(FormattedDiffInputs {
         left: left_formatted,
         right: right_formatted,

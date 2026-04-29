@@ -69,6 +69,28 @@ fn explicit_format_kinds_choose_load_plan_without_sniffing() {
         .unwrap(),
         LoadPlan::EagerDocument
     );
+    assert_eq!(
+        load_plan(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Plain,
+                indent: 2,
+            }
+        )
+        .unwrap(),
+        LoadPlan::RawIndexedText
+    );
+    assert_eq!(
+        load_plan(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Jinja,
+                indent: 2,
+            }
+        )
+        .unwrap(),
+        LoadPlan::RawIndexedText
+    );
 }
 
 #[test]
@@ -83,6 +105,25 @@ fn auto_lazy_load_honors_jsonl_extension_before_sampling() {
     };
 
     assert_eq!(load_plan(&source, &options).unwrap(), LoadPlan::LazyRecords);
+}
+
+#[test]
+fn auto_raw_load_honors_plain_and_jinja_extensions_before_sampling() {
+    let options = FormatOptions {
+        kind: FormatKind::Auto,
+        indent: 2,
+    };
+    let (_plain_temp, plain_source) = temp_source_with_suffix(b"{\"not\":\"formatted\"}", ".txt");
+    let (_jinja_temp, jinja_source) = temp_source_with_suffix(b"<h1>{{ title }}</h1>", ".html.j2");
+
+    assert_eq!(
+        load_plan(&plain_source, &options).unwrap(),
+        LoadPlan::RawIndexedText
+    );
+    assert_eq!(
+        load_plan(&jinja_source, &options).unwrap(),
+        LoadPlan::RawIndexedText
+    );
 }
 
 #[test]

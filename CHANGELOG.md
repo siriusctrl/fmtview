@@ -8,6 +8,14 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Add passthrough viewing and diffing for plain text and Jinja templates. Known
+  extensions such as `.txt`, `.log`, `.j2`, `.jinja`, and `.jinja2` are used as
+  type-profile hints rather than the only detection mechanism.
+- Add `--type plain` and `--type jinja` for explicit passthrough handling.
+  Redirected stdout preserves input bytes instead of formatting these types.
+
 ## [0.2.1] - 2026-04-28
 
 ### Changed

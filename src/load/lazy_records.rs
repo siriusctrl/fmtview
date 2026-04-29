@@ -1,6 +1,7 @@
+#[cfg(test)]
+use std::ffi::OsStr;
 use std::{
     cell::RefCell,
-    ffi::OsStr,
     fs::File,
     io::{BufRead, BufReader, Seek, SeekFrom, Write},
     time::{Duration, Instant},
@@ -9,28 +10,38 @@ use std::{
 use anyhow::{Context, Result};
 use tempfile::NamedTempFile;
 
+#[cfg(test)]
+use crate::transform::FormatKind;
 use crate::{
     input::InputSource,
     load::ViewFile,
-    transform::{self, FormatKind, FormatOptions},
+    transform::{self, FormatOptions},
 };
 
+#[cfg(test)]
 const SNIFF_BYTES: usize = 1024 * 1024;
+#[cfg(test)]
 const SNIFF_LINES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadPlan {
     LazyRecords,
     EagerDocument,
+    RawIndexedText,
 }
 
+#[cfg(test)]
 pub fn load_plan(source: &InputSource, options: &FormatOptions) -> Result<LoadPlan> {
     match options.kind {
         FormatKind::Jsonl => Ok(LoadPlan::LazyRecords),
         FormatKind::Json | FormatKind::Xml => Ok(LoadPlan::EagerDocument),
+        FormatKind::Plain | FormatKind::Jinja => Ok(LoadPlan::RawIndexedText),
         FormatKind::Auto => {
             if has_record_extension(source) {
                 return Ok(LoadPlan::LazyRecords);
+            }
+            if has_raw_text_extension(source) {
+                return Ok(LoadPlan::RawIndexedText);
             }
 
             let sample = LoadSample::read(source)?;
@@ -43,6 +54,7 @@ pub fn load_plan(source: &InputSource, options: &FormatOptions) -> Result<LoadPl
     }
 }
 
+#[cfg(test)]
 fn has_record_extension(source: &InputSource) -> bool {
     matches!(
         source
@@ -52,6 +64,19 @@ fn has_record_extension(source: &InputSource) -> bool {
             .map(str::to_ascii_lowercase)
             .as_deref(),
         Some("jsonl" | "ndjson")
+    )
+}
+
+#[cfg(test)]
+fn has_raw_text_extension(source: &InputSource) -> bool {
+    matches!(
+        source
+            .path()
+            .extension()
+            .and_then(OsStr::to_str)
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("txt" | "text" | "log" | "j2" | "jinja" | "jinja2")
     )
 }
 
@@ -250,12 +275,14 @@ fn read_next_record(state: &mut LazyState, options: FormatOptions, label: &str) 
     Ok(true)
 }
 
+#[cfg(test)]
 #[derive(Default)]
 struct LoadSample {
     non_empty_lines: usize,
     parseable_record_lines: usize,
 }
 
+#[cfg(test)]
 impl LoadSample {
     fn read(source: &InputSource) -> Result<Self> {
         let mut reader = BufReader::new(source.open()?);
@@ -291,6 +318,7 @@ impl LoadSample {
     }
 }
 
+#[cfg(test)]
 fn read_line_limited<R: BufRead>(
     reader: &mut R,
     line: &mut Vec<u8>,
@@ -319,6 +347,7 @@ fn read_line_limited<R: BufRead>(
     Ok(line.len() - before)
 }
 
+#[cfg(test)]
 fn trim_ascii_ws(mut bytes: &[u8]) -> &[u8] {
     while bytes.first().is_some_and(u8::is_ascii_whitespace) {
         bytes = &bytes[1..];

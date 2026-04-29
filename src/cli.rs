@@ -7,6 +7,7 @@ use crate::{
     diff,
     input::InputSource,
     load::{self, ViewFile},
+    profile::TypeProfile,
     transform::{self, FormatKind, FormatOptions},
     viewer,
 };
@@ -15,7 +16,7 @@ use crate::{
 #[command(
     name = "fmtview",
     version,
-    about = "Fast formatter, diff tool, and terminal viewer for JSON, JSONL, and XML-compatible markup",
+    about = "Fast formatter, diff tool, and terminal viewer for JSON, JSONL, XML-compatible markup, plain text, and Jinja templates",
     args_conflicts_with_subcommands = true,
     subcommand_precedence_over_arg = true
 )]
@@ -33,7 +34,7 @@ struct FormatCommand {
     #[arg(value_name = "INPUT", default_value = "-")]
     input: String,
 
-    /// Treat input as this format instead of auto-detecting.
+    /// Treat input as this type instead of auto-detecting.
     #[arg(short = 't', long = "type", value_enum, default_value_t = FormatKind::Auto)]
     kind: FormatKind,
 
@@ -60,7 +61,7 @@ struct DiffCommand {
     /// Right input file.
     right: String,
 
-    /// Treat both inputs as this format instead of auto-detecting each one.
+    /// Treat both inputs as this type instead of auto-detecting each one.
     #[arg(short = 't', long = "type", value_enum, default_value_t = FormatKind::Auto)]
     kind: FormatKind,
 
@@ -87,14 +88,17 @@ fn run_format(command: FormatCommand) -> Result<()> {
         kind: command.kind,
         indent: command.indent,
     };
+    let profile = TypeProfile::resolve(&input, &options)?;
+    let resolved_options = profile.format_options(command.indent);
 
     if should_view() {
         viewer::run(
-            open_view_file(&input, &options)?,
-            crate::syntax::SyntaxKind::Structured,
+            open_view_file(&input, &resolved_options, profile)?,
+            profile.syntax,
         )
     } else {
-        let formatted = transform::format_source_to_temp(&input, &options)?;
+        let formatted =
+            transform::transform_source_to_temp(&input, &resolved_options, profile.transform)?;
         copy_temp_to_stdout(&formatted)
     }
 }
@@ -123,13 +127,24 @@ fn should_view() -> bool {
     io::stdout().is_terminal()
 }
 
-fn open_view_file(input: &InputSource, options: &FormatOptions) -> Result<Box<dyn ViewFile>> {
-    match load::load_plan(input, options)? {
+fn open_view_file(
+    input: &InputSource,
+    options: &FormatOptions,
+    profile: TypeProfile,
+) -> Result<Box<dyn ViewFile>> {
+    match profile.load {
         load::LoadPlan::LazyRecords => {
             Ok(Box::new(load::LazyTransformedFile::new(input, *options)?))
         }
         load::LoadPlan::EagerDocument => {
-            let formatted = transform::format_source_to_temp(input, options)?;
+            let formatted = transform::transform_source_to_temp(input, options, profile.transform)?;
+            Ok(Box::new(load::IndexedTempFile::new(
+                input.label().to_owned(),
+                formatted,
+            )?))
+        }
+        load::LoadPlan::RawIndexedText => {
+            let formatted = transform::transform_source_to_temp(input, options, profile.transform)?;
             Ok(Box::new(load::IndexedTempFile::new(
                 input.label().to_owned(),
                 formatted,

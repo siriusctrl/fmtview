@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>{{ page.title }}</title>
+  </head>
+  <body class="{{ body_class | default('app-shell') }}">
+    {% if user %}
+    <header>
+      <h1>Welcome, {{ user.name }}</h1>
+      {# Keep this comment visible in the template viewer. #}
+    </header>
+    {% endif %}
+
+    <main>
+      {% for item in items %}
+      <article data-kind="{{ item.kind }}">
+        <h2>{{ item.title }}</h2>
+        <p>{{ item.summary }}</p>
+      </article>
+      {% endfor %}
+    </main>
+
+    {% raw %}
+    <script type="application/x-template">
+      {{ client_side_placeholder }}
+    </script>
+    {% endraw %}
+  </body>
+</html>

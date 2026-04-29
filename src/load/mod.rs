@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 
 mod lazy_records;
 
-pub use lazy_records::{LazyTransformedFile, LoadPlan, load_plan};
+pub use lazy_records::{LazyTransformedFile, LoadPlan};
 
 pub trait ViewFile {
     fn label(&self) -> &str;

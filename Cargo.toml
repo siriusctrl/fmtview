@@ -3,11 +3,11 @@ name = "fmtview"
 version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
-description = "Fast terminal formatter and viewer for JSON, JSONL, XML-compatible markup, and formatted diffs"
+description = "Fast CLI viewer for highlighting, search, and diffs across JSON, JSONL, markup, text, and Jinja"
 license = "MIT"
 repository = "https://github.com/siriusctrl/fmtview"
 readme = "README.md"
-keywords = ["json", "jsonl", "xml", "html", "cli"]
+keywords = ["json", "jsonl", "xml", "jinja", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 exclude = [".github/", "npm/"]
 

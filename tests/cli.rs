@@ -72,6 +72,80 @@ fn formats_jsonl_showcase_deep_record() {
 }
 
 #[test]
+fn plain_type_passthrough_keeps_stdout_scriptable() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["--type", "plain", "--literal", "alpha {{ untouched }}\n"])
+        .assert()
+        .success()
+        .stdout(predicate::eq("alpha {{ untouched }}\n"));
+}
+
+#[test]
+fn auto_detects_txt_as_plain_passthrough() {
+    let mut input = TempFileBuilder::new().suffix(".txt").tempfile().unwrap();
+    input.write_all(b"not json\n{{ still plain }}\n").unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.arg(input.path())
+        .assert()
+        .success()
+        .stdout(predicate::eq("not json\n{{ still plain }}\n"));
+}
+
+#[test]
+fn auto_detects_jinja_template_as_passthrough() {
+    let mut input = TempFileBuilder::new()
+        .suffix(".html.j2")
+        .tempfile()
+        .unwrap();
+    input
+        .write_all(b"<h1>{{ title }}</h1>\n{% if ok %}<p>yes</p>{% endif %}\n")
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.arg(input.path())
+        .assert()
+        .success()
+        .stdout(predicate::eq(
+            "<h1>{{ title }}</h1>\n{% if ok %}<p>yes</p>{% endif %}\n",
+        ));
+}
+
+#[test]
+fn formats_jinja_showcase_as_passthrough() {
+    let example =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/template.html.j2");
+    let expected = std::fs::read_to_string(&example).unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    let assert = cmd.arg(example).assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+
+    assert_eq!(stdout, expected);
+}
+
+#[test]
+fn diffs_plain_inputs_without_formatting() {
+    let mut left = NamedTempFile::new().unwrap();
+    let mut right = NamedTempFile::new().unwrap();
+    write!(left, "same\nleft\n").unwrap();
+    write!(right, "same\nright\n").unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args([
+        "diff",
+        "--type",
+        "plain",
+        left.path().to_str().unwrap(),
+        right.path().to_str().unwrap(),
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("-left"))
+    .stdout(predicate::str::contains("+right"));
+}
+
+#[test]
 fn preserves_large_json_numbers() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
     cmd.args(["--type", "json"])

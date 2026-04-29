@@ -28,13 +28,15 @@ Code orientation:
 - `src/cli.rs` wires CLI arguments to transforms, diff, load planning, and
   viewer paths.
 - `src/input.rs` owns input materialization from files, stdin, and literals.
+- `src/profile.rs` resolves `--type` and auto-detection into a concrete content
+  kind, load strategy, transform strategy, and syntax highlighter.
 - `src/load/` owns lazy-load and indexed line access:
   - `mod.rs` defines `ViewFile` plus eager temp-file line indexing.
   - `lazy_records.rs` plans record-stream loading and spools transformed
-    records on demand without retaining formatted text in memory.
+    records on demand without retaining transformed text in memory.
 - `src/transform/` owns content transforms that can produce scriptable output:
   - `engine.rs` orchestrates whole-source and record formatting.
-  - `detect.rs` handles format candidates and auto-detection.
+  - `detect.rs` handles formatter candidates after profile resolution.
   - `json.rs` keeps token-preserving JSON/JSONL formatting.
   - `xml.rs` wraps XML-compatible formatting.
 - `src/syntax/` owns visible-window syntax highlighting and checkpoint state.

@@ -1,10 +1,6 @@
 use anyhow::Result;
 
-use crate::{
-    input::InputSource,
-    load::{self, LoadPlan},
-    transform::FormatOptions,
-};
+use crate::{input::InputSource, load::LoadPlan, profile::TypeProfile, transform::FormatOptions};
 
 use super::{
     DiffModel, LazyRecordDiff,
@@ -68,6 +64,8 @@ fn should_use_lazy_record_diff(
     right: &InputSource,
     options: &FormatOptions,
 ) -> Result<bool> {
-    Ok(load::load_plan(left, options)? == LoadPlan::LazyRecords
-        && load::load_plan(right, options)? == LoadPlan::LazyRecords)
+    Ok(
+        TypeProfile::resolve(left, options)?.load == LoadPlan::LazyRecords
+            && TypeProfile::resolve(right, options)?.load == LoadPlan::LazyRecords,
+    )
 }
