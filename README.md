@@ -69,6 +69,7 @@ the current use case:
   +------------------+
   | TypeProfile      |
   | - content kind   |
+  | - input shape    |
   | - load strategy  |
   | - transform plan |
   | - syntax engine  |
@@ -141,13 +142,13 @@ curl -s https://example.com/payload.json | fmtview --type json
 
 ## Type Detection
 
-`fmtview` resolves every input to a type profile: content kind, load strategy,
-transform strategy, and syntax highlighter. File extensions are only one signal.
-When the extension is unknown, `fmtview` sniffs a bounded prefix of the content:
-JSON-looking documents use the JSON formatter, record streams use the lazy JSONL
-path, markup-looking documents use the XML-compatible formatter, and otherwise
-the input falls back to the record formatter for compatibility with earlier
-auto-detection behavior.
+`fmtview` resolves every input to a type profile: content kind, input shape,
+load strategy, transform strategy, and syntax highlighter. File extensions are
+only one signal. When the extension is unknown, `fmtview` sniffs a bounded
+prefix of the content: JSON-looking documents use the JSON formatter, record
+streams use the lazy JSONL path, markup-looking documents use the XML-compatible
+formatter, and otherwise the input falls back to the record formatter for
+compatibility with earlier auto-detection behavior.
 
 Known extensions still provide a fast, deterministic hint:
 

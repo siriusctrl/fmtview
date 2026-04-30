@@ -21,7 +21,7 @@ use super::render::*;
 use super::*;
 use crate::{
     input::InputSource,
-    load::LazyTransformedFile,
+    load::LazyTransformedRecordsFile,
     syntax::{SyntaxKind, highlight_json_like, highlight_xml_line},
     transform::{FormatKind, FormatOptions},
 };
@@ -549,7 +549,7 @@ fn incomplete_lazy_file_does_not_clamp_optimistic_jump_before_reading() {
     writeln!(temp, r#"{{"id":1,"payload":{{"a":1,"b":2,"c":3,"d":4}}}}"#).unwrap();
     temp.flush().unwrap();
     let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
-    let file = LazyTransformedFile::new(
+    let file = LazyTransformedRecordsFile::new(
         &source,
         FormatOptions {
             kind: FormatKind::Jsonl,

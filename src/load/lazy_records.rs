@@ -15,18 +15,11 @@ use crate::{
     transform::{self, FormatOptions},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoadPlan {
-    LazyTransformedRecords,
-    EagerTransformedDocument,
-    EagerIndexedSource,
-}
-
-pub struct LazyTransformedFile {
+pub struct LazyTransformedRecordsFile {
     inner: LazyFile<RecordTransformProducer>,
 }
 
-impl LazyTransformedFile {
+impl LazyTransformedRecordsFile {
     pub fn new(source: &InputSource, options: FormatOptions) -> Result<Self> {
         let file = source.open()?;
         let label = source.label().to_owned();
@@ -54,7 +47,7 @@ impl LazyTransformedFile {
     }
 }
 
-impl ViewFile for LazyTransformedFile {
+impl ViewFile for LazyTransformedRecordsFile {
     fn label(&self) -> &str {
         self.inner.label()
     }

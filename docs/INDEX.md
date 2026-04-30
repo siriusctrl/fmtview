@@ -68,10 +68,13 @@ Code orientation:
   - `tests.rs` keeps viewer regression and performance smoke coverage close to
     the private TUI internals.
 - `tests/cli.rs` covers CLI-level behavior.
+- `src/perf/` owns the Rust load/format performance harness used by the shell
+  wrappers:
+  - `runner.rs` owns sample counts, filtering, timing summaries, and output.
+  - `load.rs` and `format.rs` own benchmark case definitions.
+  - `fixtures.rs` owns generated benchmark input data.
 - `benches/` contains local performance entry points:
-  - load and format wrappers call the Rust harness in `src/perf.rs`, which owns
-    case filtering, fixture generation, samples, shape/layer labels, and timing
-    summaries.
+  - load and format wrappers call the Rust harness in `src/perf/`.
   - syntax, viewer, diff, and algorithm checks still use focused shell-driven
     smoke harnesses because they exercise private TUI internals, terminal
     writers, release binaries, or alternate external formatter paths.

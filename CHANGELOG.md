@@ -23,6 +23,8 @@ for GitHub Release notes, so every published version must have a matching
   and first-window readback.
 - Speed up eager whole-document viewing for large JSON/XML-compatible files by
   using faster temp-file line indexing and larger transform IO buffers.
+- Clarify internal load strategy boundaries and split the Rust load/format
+  benchmark harness into runner, case, and fixture modules.
 
 ## [0.2.1] - 2026-04-28
 

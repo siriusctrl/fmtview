@@ -67,13 +67,15 @@ benches/format-performance.sh --samples 3 --case huge-record
 ```
 
 The load and format scripts run a dedicated Rust performance harness in
-`src/perf.rs`. The shell wrappers are compatibility entry points only: Rust owns
+`src/perf/`. The shell wrappers are compatibility entry points only: Rust owns
 fixture generation, samples, case filtering, shape/layer labels, and timing
-summaries. Viewer, syntax, and diff scripts still run ignored release-mode
-tests close to their private modules; keep migrating those into the Rust
-performance harness when their benchmark logic grows beyond a narrow smoke
-check. Scripts that measure terminal drawing unset `NO_COLOR` for benchmark
-subprocesses so byte counts include the normal styled-color path.
+summaries. `runner.rs` owns timing output, `load.rs` and `format.rs` own case
+definitions, and `fixtures.rs` owns generated input data. Viewer, syntax, and
+diff scripts still run ignored release-mode tests close to their private
+modules; keep migrating those into the Rust performance harness when their
+benchmark logic grows beyond a narrow smoke check. Scripts that measure
+terminal drawing unset `NO_COLOR` for benchmark subprocesses so byte counts
+include the normal styled-color path.
 
 For planned lazy-runtime refactors before inline parallel parser or formatter
 work, keep the baseline split across two scripts: `benches/load-performance.sh`
@@ -82,7 +84,9 @@ measures lazy first-window and preload behavior, while
 string records.
 
 Every load/format benchmark prints a `shape` and `layer` line. Use these as the
-optimization boundary:
+optimization boundary. The top-level shape names map to `ContentShape`; suffixes
+such as `/huge-record` are benchmark stress cases, not separate type-profile
+shapes.
 
 - `line-indexed`: source text can be indexed as-is.
 - `record-stream`: newline-delimited records can be transformed independently.
@@ -93,6 +97,11 @@ optimization boundary:
   separately.
 - `transform`, `transform+spool`, `transform+readback`, and related layer names
   separate parser/formatter cost from lazy runtime and viewer readback cost.
+
+Rejected paths should be recorded here when they are likely to be tempting
+again. Indexing transformed lines while writing the temp file was tested for
+whole-document output, but the benchmark did not justify the added writer
+complexity; keep temp-file indexing separate until new data shows a stable win.
 
 Metrics:
 

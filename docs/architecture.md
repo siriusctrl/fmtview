@@ -28,7 +28,7 @@ The core boundary is:
 ```
 
 `TypeProfile` is the single source of truth for type-specific behavior. It
-answers four questions:
+answers five questions:
 
 - What is the content kind?
 - What input shape does this type expose to the viewer pipeline?
@@ -78,7 +78,7 @@ behavior, temp-file indexing, syntax checkpoints, and viewer readback.
 Unknown extensions are sniffed with a bounded prefix. Extensions remain a fast
 deterministic hint, but they are not the architecture boundary.
 
-## Load Strategies
+## Load Plans
 
 The names below describe the behavior we want the code to make explicit:
 
@@ -167,7 +167,7 @@ The same design applies outside loading:
   TypeProfile
       |
       +-- ContentShape      -> optimization and capability boundary
-      +-- LoadStrategy      -> shared load runtimes
+      +-- LoadPlan          -> shared load runtimes
       +-- TransformStrategy -> shared transform engine
       +-- SyntaxKind        -> shared visible-window highlighter
       +-- Diff mode         -> shared eager/lazy diff runtimes

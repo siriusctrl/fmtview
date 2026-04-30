@@ -29,7 +29,7 @@ fn lazy_load_reads_only_records_needed_for_first_window() {
         kind: FormatKind::Auto,
         indent: 2,
     };
-    let file = LazyTransformedFile::new(&source, options).unwrap();
+    let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
 
     let lines = file.read_window(0, 12).unwrap();
 
@@ -52,7 +52,7 @@ fn lazy_load_idle_preload_advances_known_line_count() {
         kind: FormatKind::Auto,
         indent: 2,
     };
-    let file = LazyTransformedFile::new(&source, options).unwrap();
+    let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
 
     file.read_window(0, 4).unwrap();
     let before = file.line_count();
@@ -71,7 +71,7 @@ fn explicit_jsonl_errors_on_malformed_record() {
         kind: FormatKind::Jsonl,
         indent: 2,
     };
-    let file = LazyTransformedFile::new(&source, options).unwrap();
+    let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
 
     let error = file.read_window(0, 20).unwrap_err();
 
@@ -85,7 +85,7 @@ fn lazy_load_reads_spooled_lines_after_preload() {
         kind: FormatKind::Auto,
         indent: 2,
     };
-    let file = LazyTransformedFile::new(&source, options).unwrap();
+    let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
 
     assert!(file.preload(20, 3, Duration::from_secs(1)).unwrap());
     assert!(file.indexed_line_count() > 6);
