@@ -66,7 +66,8 @@ the terminal draw byte count includes the normal styled-color path.
 For planned lazy-runtime refactors before inline parallel parser or formatter
 work, keep the baseline split across two scripts: `benches/load-performance.sh`
 measures lazy first-window and preload behavior, while
-`benches/format-performance.sh` measures the single huge record transform path.
+`benches/format-performance.sh` separates huge structured records from huge
+string records.
 
 Metrics:
 
@@ -87,8 +88,13 @@ Transform metrics:
   temp-file write noise.
 - `jsonl source full format` measures full JSONL file formatting through the
   normal temp-file path, including read, parse, format, and write.
-- `single huge record format` measures one very large JSON record. This is the
-  target for future inline chunk/checkpoint parser work.
+- `single huge object-array record format` measures one large JSON record with
+  many object children inside an array. This is the target shape for future
+  structural split plus ordered inline-parallel formatting.
+- `single huge string field record format` measures one large JSON object where
+  most bytes are inside a single string value. This is the target shape for
+  string scan/copy improvements; structural child parallelism is not expected
+  to help much here.
 
 Syntax metrics:
 

@@ -178,6 +178,10 @@ impl<R: BufRead> JsonFormatter<R> {
         let mut utf8 = Utf8Validator::default();
 
         loop {
+            if utf8.is_idle() && self.write_safe_ascii_string_span(output)? {
+                continue;
+            }
+
             let byte = self.next_required("unterminated JSON string")?;
             output.write_all(&[byte])?;
             match byte {
@@ -206,6 +210,24 @@ impl<R: BufRead> JsonFormatter<R> {
                 _ => utf8.accept(byte)?,
             }
         }
+    }
+
+    fn write_safe_ascii_string_span<W: Write>(&mut self, output: &mut W) -> Result<bool> {
+        let len = {
+            let buffer = self.input.fill_buf().context("failed to read JSON input")?;
+            let len = buffer
+                .iter()
+                .position(|byte| !is_safe_json_string_ascii(*byte))
+                .unwrap_or(buffer.len());
+            if len == 0 {
+                return Ok(false);
+            }
+            output.write_all(&buffer[..len])?;
+            len
+        };
+        self.input.consume(len);
+        self.offset += len;
+        Ok(true)
     }
 
     fn write_number<W: Write>(&mut self, output: &mut W) -> Result<()> {
@@ -345,6 +367,10 @@ struct Utf8Validator {
 }
 
 impl Utf8Validator {
+    fn is_idle(&self) -> bool {
+        self.remaining == 0
+    }
+
     fn accept(&mut self, byte: u8) -> Result<()> {
         if self.remaining == 0 {
             match byte {
@@ -383,6 +409,10 @@ impl Utf8Validator {
         self.min_next = min_next;
         self.max_next = max_next;
     }
+}
+
+fn is_safe_json_string_ascii(byte: u8) -> bool {
+    byte >= 0x20 && byte != b'"' && byte != b'\\' && byte < 0x80
 }
 
 fn describe_byte(byte: u8) -> String {

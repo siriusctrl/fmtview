@@ -80,8 +80,9 @@ fn perf_jsonl_source_full_format() {
 
 #[test]
 #[ignore = "performance smoke; run benches/format-performance.sh"]
-fn perf_single_huge_json_record_format() {
-    let record = generated_huge_json_record(32_768, 128);
+fn perf_single_huge_object_array_record_format() {
+    let items = 32_768;
+    let record = generated_huge_object_array_record(items, 128);
     let input_bytes = record.len();
     let started = Instant::now();
     let rendered = format_record_to_string(&record, FormatKind::Jsonl, 2).unwrap();
@@ -90,12 +91,35 @@ fn perf_single_huge_json_record_format() {
     let lines = rendered.lines().count();
 
     eprintln!(
-        "single huge record format: {elapsed:?}, records=1, lines={lines}, input_bytes={input_bytes}, output_bytes={output_bytes}",
+        "single huge object-array record format: {elapsed:?}, records=1, items={items}, lines={lines}, input_bytes={input_bytes}, output_bytes={output_bytes}",
     );
-    assert!(lines > 32_000);
+    assert!(lines > items);
     assert!(
         elapsed < Duration::from_secs(5),
-        "single huge record format took {elapsed:?}"
+        "single huge object-array record format took {elapsed:?}"
+    );
+}
+
+#[test]
+#[ignore = "performance smoke; run benches/format-performance.sh"]
+fn perf_single_huge_string_field_record_format() {
+    let repeats = 600_000;
+    let record = generated_huge_string_field_record(repeats);
+    let input_bytes = record.len();
+    let started = Instant::now();
+    let rendered = format_record_to_string(&record, FormatKind::Jsonl, 2).unwrap();
+    let elapsed = started.elapsed();
+    let output_bytes = rendered.len();
+    let lines = rendered.lines().count();
+
+    eprintln!(
+        "single huge string field record format: {elapsed:?}, records=1, string_bytes={}, lines={lines}, input_bytes={input_bytes}, output_bytes={output_bytes}",
+        HUGE_STRING_FRAGMENT.len() * repeats
+    );
+    assert_eq!(lines, 5);
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "single huge string field record format took {elapsed:?}"
     );
 }
 
@@ -111,7 +135,7 @@ fn generated_jsonl_records(count: usize, message_len: usize) -> Vec<Vec<u8>> {
         .collect()
 }
 
-fn generated_huge_json_record(items: usize, message_len: usize) -> Vec<u8> {
+fn generated_huge_object_array_record(items: usize, message_len: usize) -> Vec<u8> {
     let message = "y".repeat(message_len);
     let mut record = Vec::new();
     write!(record, r#"{{"kind":"huge","items":["#).unwrap();
@@ -126,5 +150,17 @@ fn generated_huge_json_record(items: usize, message_len: usize) -> Vec<u8> {
         .unwrap();
     }
     record.extend_from_slice(b"]}");
+    record
+}
+
+const HUGE_STRING_FRAGMENT: &[u8] = br#"<item id=\"1\"><name>visible</name></item>"#;
+
+fn generated_huge_string_field_record(repeats: usize) -> Vec<u8> {
+    let mut record = Vec::with_capacity(HUGE_STRING_FRAGMENT.len() * repeats + 128);
+    record.extend_from_slice(br#"{"id":1,"kind":"huge-string","message":""#);
+    for _ in 0..repeats {
+        record.extend_from_slice(HUGE_STRING_FRAGMENT);
+    }
+    record.extend_from_slice(br#""}"#);
     record
 }

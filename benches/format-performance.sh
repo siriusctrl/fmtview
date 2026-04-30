@@ -105,7 +105,7 @@ bench_one() {
   local test_name="$2"
   local pattern="$3"
   local result_file="$tmpdir/${test_name}.tsv"
-  local line ms records lines input_bytes output_bytes sample
+  local line ms records items string_bytes lines input_bytes output_bytes sample
 
   echo
   echo "== $label =="
@@ -113,16 +113,20 @@ bench_one() {
     line="$(run_test "$test_name" "$pattern")"
     ms="$(printf '%s\n' "$line" | duration_ms)"
     records="$(printf '%s\n' "$line" | extract_field records)"
+    items="$(printf '%s\n' "$line" | extract_field items)"
+    string_bytes="$(printf '%s\n' "$line" | extract_field string_bytes)"
     lines="$(printf '%s\n' "$line" | extract_field lines)"
     input_bytes="$(printf '%s\n' "$line" | extract_field input_bytes)"
     output_bytes="$(printf '%s\n' "$line" | extract_field output_bytes)"
     records="${records:-0}"
+    items="${items:-0}"
+    string_bytes="${string_bytes:-0}"
     lines="${lines:-0}"
     input_bytes="${input_bytes:-0}"
     output_bytes="${output_bytes:-0}"
     printf '%s\n' "$ms" >> "$result_file"
-    printf 'sample %02d: %8.3fms  records=%s  lines=%s  input_bytes=%s  output_bytes=%s\n' \
-      "$sample" "$ms" "$records" "$lines" "$input_bytes" "$output_bytes"
+    printf 'sample %02d: %8.3fms  records=%s  items=%s  string_bytes=%s  lines=%s  input_bytes=%s  output_bytes=%s\n' \
+      "$sample" "$ms" "$records" "$items" "$string_bytes" "$lines" "$input_bytes" "$output_bytes"
   done
 
   printf 'time: '; summarize "$result_file"; echo
@@ -142,6 +146,11 @@ bench_one \
   "jsonl source full format"
 
 bench_one \
-  "single huge record format" \
-  "perf_single_huge_json_record_format" \
-  "single huge record format"
+  "single huge object-array record format" \
+  "perf_single_huge_object_array_record_format" \
+  "single huge object-array record format"
+
+bench_one \
+  "single huge string field record format" \
+  "perf_single_huge_string_field_record_format" \
+  "single huge string field record format"
