@@ -1,10 +1,11 @@
 use std::{
     fs::File,
-    io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    io::{BufRead, BufReader, Seek, SeekFrom},
     time::Duration,
 };
 
 use anyhow::{Context, Result};
+use memchr::memchr_iter;
 use tempfile::NamedTempFile;
 
 mod lazy;
@@ -95,6 +96,8 @@ impl ViewFile for IndexedTempFile {
 }
 
 fn index_lines(temp: &NamedTempFile) -> Result<Vec<u64>> {
+    use std::io::Read as _;
+
     let len = temp
         .as_file()
         .metadata()
@@ -116,12 +119,10 @@ fn index_lines(temp: &NamedTempFile) -> Result<Vec<u64>> {
         if read == 0 {
             break;
         }
-        for (index, byte) in buf[..read].iter().enumerate() {
-            if *byte == b'\n' {
-                let line_start = offset + index as u64 + 1;
-                if line_start < len {
-                    offsets.push(line_start);
-                }
+        for index in memchr_iter(b'\n', &buf[..read]) {
+            let line_start = offset + index as u64 + 1;
+            if line_start < len {
+                offsets.push(line_start);
             }
         }
         offset += read as u64;

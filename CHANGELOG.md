@@ -21,6 +21,8 @@ for GitHub Release notes, so every published version must have a matching
 - Speed up lazy JSONL viewing for large records by reducing spool indexing and
   long-line readback overhead, with separate benchmarks for transform/spool cost
   and first-window readback.
+- Speed up eager whole-document viewing for large JSON/XML-compatible files by
+  using faster temp-file line indexing and larger transform IO buffers.
 
 ## [0.2.1] - 2026-04-28
 

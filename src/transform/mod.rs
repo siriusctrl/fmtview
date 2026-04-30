@@ -7,6 +7,8 @@ mod xml;
 #[cfg(test)]
 mod tests;
 
+const IO_BUFFER_BYTES: usize = 256 * 1024;
+
 #[cfg(test)]
 pub(crate) use engine::format_record_to_string;
 #[cfg(test)]

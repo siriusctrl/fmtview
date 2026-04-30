@@ -4,15 +4,19 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use crate::input::InputSource;
 
-use super::types::FormatOptions;
+use super::{IO_BUFFER_BYTES, types::FormatOptions};
 
 pub(super) fn format_json<W: Write>(
     source: &InputSource,
     output: &mut W,
     options: &FormatOptions,
 ) -> Result<()> {
-    format_json_value(BufReader::new(source.open()?), output, options.indent)
-        .context("failed to parse JSON")?;
+    format_json_value(
+        BufReader::with_capacity(IO_BUFFER_BYTES, source.open()?),
+        output,
+        options.indent,
+    )
+    .context("failed to parse JSON")?;
     writeln!(output)?;
     Ok(())
 }
@@ -22,7 +26,7 @@ pub(super) fn format_jsonl<W: Write>(
     output: &mut W,
     options: &FormatOptions,
 ) -> Result<()> {
-    let mut reader = BufReader::new(source.open()?);
+    let mut reader = BufReader::with_capacity(IO_BUFFER_BYTES, source.open()?);
     let mut line = Vec::with_capacity(8192);
     let mut line_number = 0_usize;
 

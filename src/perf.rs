@@ -172,6 +172,30 @@ const LOAD_CASES: &[BenchCase] = &[
         layer: "transform+spool",
         run: bench_lazy_huge_string_preload_format,
     },
+    BenchCase {
+        label: "json whole-document eager view open",
+        shape: "whole-document",
+        layer: "transform+index+readback",
+        run: bench_json_whole_document_eager_view_open,
+    },
+    BenchCase {
+        label: "json whole-document index+readback",
+        shape: "whole-document",
+        layer: "index+readback",
+        run: bench_json_whole_document_index_readback,
+    },
+    BenchCase {
+        label: "xml whole-document eager view open",
+        shape: "whole-document",
+        layer: "transform+index+readback",
+        run: bench_xml_whole_document_eager_view_open,
+    },
+    BenchCase {
+        label: "xml whole-document index+readback",
+        shape: "whole-document",
+        layer: "index+readback",
+        run: bench_xml_whole_document_index_readback,
+    },
 ];
 
 const FORMAT_CASES: &[BenchCase] = &[
@@ -198,6 +222,18 @@ const FORMAT_CASES: &[BenchCase] = &[
         shape: "record-stream/huge-record",
         layer: "transform",
         run: bench_single_huge_string_field_record_format,
+    },
+    BenchCase {
+        label: "json whole-document format",
+        shape: "whole-document",
+        layer: "transform",
+        run: bench_json_whole_document_format,
+    },
+    BenchCase {
+        label: "xml whole-document format",
+        shape: "whole-document",
+        layer: "transform",
+        run: bench_xml_whole_document_format,
     },
 ];
 
@@ -404,6 +440,170 @@ fn bench_jsonl_source_full_format() -> BenchSample {
     }
 }
 
+fn bench_json_whole_document_format() -> BenchSample {
+    let (_temp, source, input_bytes, items) = generated_json_document_source(32_768, 128);
+    let options = FormatOptions {
+        kind: FormatKind::Json,
+        indent: 2,
+    };
+
+    let started = Instant::now();
+    let formatted = format_source_to_temp(&source, &options).unwrap();
+    let elapsed = started.elapsed();
+    let output_bytes = formatted.as_file().metadata().unwrap().len() as usize;
+
+    assert!(output_bytes > input_bytes);
+    BenchSample {
+        elapsed,
+        records: 1,
+        items,
+        string_bytes: 0,
+        lines: 0,
+        indexed_lines: 0,
+        window_lines: 0,
+        input_bytes,
+        output_bytes,
+    }
+}
+
+fn bench_xml_whole_document_format() -> BenchSample {
+    let (_temp, source, input_bytes, items) = generated_xml_document_source(65_536);
+    let options = FormatOptions {
+        kind: FormatKind::Xml,
+        indent: 2,
+    };
+
+    let started = Instant::now();
+    let formatted = format_source_to_temp(&source, &options).unwrap();
+    let elapsed = started.elapsed();
+    let output_bytes = formatted.as_file().metadata().unwrap().len() as usize;
+
+    assert!(output_bytes >= input_bytes);
+    BenchSample {
+        elapsed,
+        records: 1,
+        items,
+        string_bytes: 0,
+        lines: 0,
+        indexed_lines: 0,
+        window_lines: 0,
+        input_bytes,
+        output_bytes,
+    }
+}
+
+fn bench_json_whole_document_eager_view_open() -> BenchSample {
+    let (_temp, source, input_bytes, items) = generated_json_document_source(32_768, 128);
+    let options = FormatOptions {
+        kind: FormatKind::Json,
+        indent: 2,
+    };
+
+    let started = Instant::now();
+    let formatted = format_source_to_temp(&source, &options).unwrap();
+    let output_bytes = formatted.as_file().metadata().unwrap().len() as usize;
+    let indexed = IndexedTempFile::new(source.label().to_owned(), formatted).unwrap();
+    let window = indexed.read_window(120_000, 120).unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(!window.is_empty());
+    BenchSample {
+        elapsed,
+        records: 1,
+        items,
+        string_bytes: 0,
+        lines: 0,
+        indexed_lines: indexed.line_count(),
+        window_lines: window.len(),
+        input_bytes,
+        output_bytes,
+    }
+}
+
+fn bench_json_whole_document_index_readback() -> BenchSample {
+    let (_temp, source, input_bytes, items) = generated_json_document_source(32_768, 128);
+    let options = FormatOptions {
+        kind: FormatKind::Json,
+        indent: 2,
+    };
+    let formatted = format_source_to_temp(&source, &options).unwrap();
+    let output_bytes = formatted.as_file().metadata().unwrap().len() as usize;
+
+    let started = Instant::now();
+    let indexed = IndexedTempFile::new(source.label().to_owned(), formatted).unwrap();
+    let window = indexed.read_window(120_000, 120).unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(!window.is_empty());
+    BenchSample {
+        elapsed,
+        records: 1,
+        items,
+        string_bytes: 0,
+        lines: 0,
+        indexed_lines: indexed.line_count(),
+        window_lines: window.len(),
+        input_bytes,
+        output_bytes,
+    }
+}
+
+fn bench_xml_whole_document_eager_view_open() -> BenchSample {
+    let (_temp, source, input_bytes, items) = generated_xml_document_source(65_536);
+    let options = FormatOptions {
+        kind: FormatKind::Xml,
+        indent: 2,
+    };
+
+    let started = Instant::now();
+    let formatted = format_source_to_temp(&source, &options).unwrap();
+    let output_bytes = formatted.as_file().metadata().unwrap().len() as usize;
+    let indexed = IndexedTempFile::new(source.label().to_owned(), formatted).unwrap();
+    let window = indexed.read_window(120_000, 120).unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(!window.is_empty());
+    BenchSample {
+        elapsed,
+        records: 1,
+        items,
+        string_bytes: 0,
+        lines: 0,
+        indexed_lines: indexed.line_count(),
+        window_lines: window.len(),
+        input_bytes,
+        output_bytes,
+    }
+}
+
+fn bench_xml_whole_document_index_readback() -> BenchSample {
+    let (_temp, source, input_bytes, items) = generated_xml_document_source(65_536);
+    let options = FormatOptions {
+        kind: FormatKind::Xml,
+        indent: 2,
+    };
+    let formatted = format_source_to_temp(&source, &options).unwrap();
+    let output_bytes = formatted.as_file().metadata().unwrap().len() as usize;
+
+    let started = Instant::now();
+    let indexed = IndexedTempFile::new(source.label().to_owned(), formatted).unwrap();
+    let window = indexed.read_window(120_000, 120).unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(!window.is_empty());
+    BenchSample {
+        elapsed,
+        records: 1,
+        items,
+        string_bytes: 0,
+        lines: 0,
+        indexed_lines: indexed.line_count(),
+        window_lines: window.len(),
+        input_bytes,
+        output_bytes,
+    }
+}
+
 fn bench_single_huge_object_array_record_format() -> BenchSample {
     let items = 32_768;
     let record = generated_huge_object_array_record(items, 128);
@@ -498,6 +698,37 @@ fn generated_huge_object_array_record(items: usize, message_len: usize) -> Vec<u
     }
     record.extend_from_slice(b"]}");
     record
+}
+
+fn generated_json_document_source(
+    items: usize,
+    message_len: usize,
+) -> (NamedTempFile, InputSource, usize, usize) {
+    let mut temp = TempFileBuilder::new().suffix(".json").tempfile().unwrap();
+    let record = generated_huge_object_array_record(items, message_len);
+    temp.write_all(&record).unwrap();
+    temp.flush().unwrap();
+    let input_bytes = record.len();
+    let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
+    (temp, source, input_bytes, items)
+}
+
+fn generated_xml_document_source(items: usize) -> (NamedTempFile, InputSource, usize, usize) {
+    let mut temp = TempFileBuilder::new().suffix(".xml").tempfile().unwrap();
+    temp.write_all(b"<root>").unwrap();
+    let mut input_bytes = "<root>".len();
+    for index in 0..items {
+        let item = format!(
+            r#"<item id="{index}"><name>visible</name><value>{index}</value><flag>true</flag></item>"#
+        );
+        temp.write_all(item.as_bytes()).unwrap();
+        input_bytes = input_bytes.saturating_add(item.len());
+    }
+    temp.write_all(b"</root>").unwrap();
+    input_bytes = input_bytes.saturating_add("</root>".len());
+    temp.flush().unwrap();
+    let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
+    (temp, source, input_bytes, items)
 }
 
 fn generated_huge_string_field_record(repeats: usize) -> Vec<u8> {

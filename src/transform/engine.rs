@@ -5,6 +5,7 @@ use tempfile::NamedTempFile;
 
 use crate::input::InputSource;
 
+use super::IO_BUFFER_BYTES;
 use super::{
     TransformStrategy,
     detect::candidate_kinds,
@@ -50,15 +51,29 @@ pub fn format_source_to_temp(
 fn passthrough_source_to_temp(source: &InputSource) -> Result<NamedTempFile> {
     let mut temp = NamedTempFile::new().context("failed to create passthrough temp file")?;
     {
-        let mut input = BufReader::new(source.open()?);
-        let mut output = BufWriter::new(temp.as_file_mut());
-        std::io::copy(&mut input, &mut output)
-            .with_context(|| format!("failed to copy {} without formatting", source.label()))?;
+        let mut input = BufReader::with_capacity(IO_BUFFER_BYTES, source.open()?);
+        let mut output = BufWriter::with_capacity(IO_BUFFER_BYTES, temp.as_file_mut());
+        copy_source_without_formatting(source, &mut input, &mut output)?;
         output
             .flush()
             .context("failed to flush passthrough output")?;
     }
     Ok(temp)
+}
+
+fn passthrough_source_to_writer<W: Write>(source: &InputSource, output: &mut W) -> Result<()> {
+    let mut input = BufReader::with_capacity(IO_BUFFER_BYTES, source.open()?);
+    copy_source_without_formatting(source, &mut input, output)
+}
+
+fn copy_source_without_formatting<R: std::io::Read, W: Write>(
+    source: &InputSource,
+    input: &mut R,
+    output: &mut W,
+) -> Result<()> {
+    std::io::copy(input, output)
+        .with_context(|| format!("failed to copy {} without formatting", source.label()))?;
+    Ok(())
 }
 
 fn try_format_source_to_temp(
@@ -68,27 +83,34 @@ fn try_format_source_to_temp(
 ) -> Result<NamedTempFile> {
     let mut temp = NamedTempFile::new().context("failed to create formatted temp file")?;
     {
-        let mut output = BufWriter::new(temp.as_file_mut());
-        match kind {
-            FormatKind::Auto => unreachable!("auto is expanded before formatting"),
-            FormatKind::Json => format_json(source, &mut output, options)
-                .with_context(|| format!("failed to format {} as JSON", source.label()))?,
-            FormatKind::Jsonl => format_jsonl(source, &mut output, options)
-                .with_context(|| format!("failed to format {} as JSONL", source.label()))?,
-            FormatKind::Xml => {
-                format_xml_reader(BufReader::new(source.open()?), &mut output, options.indent)
-                    .with_context(|| format!("failed to format {} as XML", source.label()))?
-            }
-            FormatKind::Plain | FormatKind::Jinja => {
-                let mut input = BufReader::new(source.open()?);
-                std::io::copy(&mut input, &mut output).with_context(|| {
-                    format!("failed to copy {} without formatting", source.label())
-                })?;
-            }
-        }
+        let mut output = BufWriter::with_capacity(IO_BUFFER_BYTES, temp.as_file_mut());
+        try_format_source_to_writer(source, kind, options, &mut output)?;
         output.flush().context("failed to flush formatted output")?;
     }
     Ok(temp)
+}
+
+fn try_format_source_to_writer<W: Write>(
+    source: &InputSource,
+    kind: FormatKind,
+    options: &FormatOptions,
+    output: &mut W,
+) -> Result<()> {
+    match kind {
+        FormatKind::Auto => unreachable!("auto is expanded before formatting"),
+        FormatKind::Json => format_json(source, output, options)
+            .with_context(|| format!("failed to format {} as JSON", source.label()))?,
+        FormatKind::Jsonl => format_jsonl(source, output, options)
+            .with_context(|| format!("failed to format {} as JSONL", source.label()))?,
+        FormatKind::Xml => format_xml_reader(
+            BufReader::with_capacity(IO_BUFFER_BYTES, source.open()?),
+            output,
+            options.indent,
+        )
+        .with_context(|| format!("failed to format {} as XML", source.label()))?,
+        FormatKind::Plain | FormatKind::Jinja => passthrough_source_to_writer(source, output)?,
+    }
+    Ok(())
 }
 
 pub fn format_record_to_string(input: &[u8], kind: FormatKind, indent: usize) -> Result<String> {

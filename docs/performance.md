@@ -88,6 +88,9 @@ optimization boundary:
 - `record-stream`: newline-delimited records can be transformed independently.
 - `record-stream/huge-record`: one record dominates the cost, so first-window
   lazy behavior cannot hide transform/readback work.
+- `whole-document`: formatting depends on parser state across the complete
+  document, so transform, temp-file indexing, and readback should be measured
+  separately.
 - `transform`, `transform+spool`, `transform+readback`, and related layer names
   separate parser/formatter cost from lazy runtime and viewer readback cost.
 
@@ -111,6 +114,12 @@ Load metrics:
   reading the visible window back from the spool. Compare this with the
   first-window metric to separate transform/spool cost from long-line readback.
   Shape: `record-stream/huge-record`.
+- `json whole-document eager view open` and `xml whole-document eager view open`
+  measure complete document transform, temp-file line indexing, and first-window
+  readback together. Shape: `whole-document`.
+- `json whole-document index+readback` and `xml whole-document index+readback`
+  measure the post-transform viewer-open cost for already formatted document
+  temps. Shape: `whole-document`.
 
 Transform metrics:
 
@@ -128,6 +137,11 @@ Transform metrics:
   most bytes are inside a single string value. This is the target shape for
   string scan/copy improvements; structural child parallelism is not expected
   to help much here. Shape: `record-stream/huge-record`.
+- `json whole-document format` measures complete JSON document pretty-printing
+  without the following viewer index pass. Shape: `whole-document`.
+- `xml whole-document format` measures complete XML-compatible document
+  pretty-printing without the following viewer index pass. Shape:
+  `whole-document`.
 
 Syntax metrics:
 
