@@ -11,7 +11,7 @@ pub(super) use search::{SearchTarget, process_search_step};
 pub(super) use state::ViewState;
 
 #[cfg(test)]
-pub(super) use events::{handle_event, handle_key_event};
+pub(super) use events::{handle_event, handle_key_event, handle_key_event_with_count};
 #[cfg(test)]
 pub(super) use scroll::scroll_down_by;
 #[cfg(test)]

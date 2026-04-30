@@ -23,6 +23,7 @@ use super::{
 pub(in crate::viewer) fn drain_events(
     state: &mut ViewState,
     line_count: usize,
+    line_count_exact: bool,
     page: usize,
 ) -> Result<EventAction> {
     let started = Instant::now();
@@ -31,7 +32,7 @@ pub(in crate::viewer) fn drain_events(
 
     loop {
         let event = event::read().context("failed to read terminal event")?;
-        let next = handle_event(event, state, line_count, page);
+        let next = handle_event_with_count(event, state, line_count, line_count_exact, page);
         let needs_layout = next.dirty && state.wrap_bounds_stale;
         action.merge(next);
         processed += 1;
@@ -49,15 +50,33 @@ pub(in crate::viewer) fn drain_events(
     Ok(action)
 }
 
+#[cfg(test)]
 pub(in crate::viewer) fn handle_event(
     event: Event,
     state: &mut ViewState,
     line_count: usize,
     page: usize,
 ) -> EventAction {
+    handle_event_with_count(event, state, line_count, true, page)
+}
+
+pub(in crate::viewer) fn handle_event_with_count(
+    event: Event,
+    state: &mut ViewState,
+    line_count: usize,
+    line_count_exact: bool,
+    page: usize,
+) -> EventAction {
     match event {
         Event::Key(key) if key.kind == KeyEventKind::Release => EventAction::default(),
-        Event::Key(key) => handle_key_event(key.code, key.modifiers, state, line_count, page),
+        Event::Key(key) => handle_key_event_with_count(
+            key.code,
+            key.modifiers,
+            state,
+            line_count,
+            line_count_exact,
+            page,
+        ),
         Event::Mouse(mouse) if !state.has_active_prompt() => {
             handle_mouse_event(mouse.kind, mouse.modifiers, state, line_count)
         }
@@ -70,11 +89,23 @@ pub(in crate::viewer) fn handle_event(
     }
 }
 
+#[cfg(test)]
 pub(in crate::viewer) fn handle_key_event(
     code: KeyCode,
     modifiers: KeyModifiers,
     state: &mut ViewState,
     line_count: usize,
+    page: usize,
+) -> EventAction {
+    handle_key_event_with_count(code, modifiers, state, line_count, true, page)
+}
+
+pub(in crate::viewer) fn handle_key_event_with_count(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    state: &mut ViewState,
+    line_count: usize,
+    line_count_exact: bool,
     page: usize,
 ) -> EventAction {
     if matches!(code, KeyCode::Char('c')) && modifiers.contains(KeyModifiers::CONTROL) {
@@ -93,7 +124,7 @@ pub(in crate::viewer) fn handle_key_event(
 
     if !state.jump_buffer.is_empty() {
         return EventAction {
-            dirty: handle_jump_input_key(code, modifiers, state, line_count),
+            dirty: handle_jump_input_key(code, modifiers, state, line_count, line_count_exact),
             quit: false,
         };
     }

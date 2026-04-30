@@ -43,7 +43,7 @@ impl TypeProfile {
             Some(b'{' | b'[') => explicit_profile(FormatKind::Json),
             _ => TypeProfile {
                 content: FormatKind::Jsonl,
-                load: LoadPlan::EagerDocument,
+                load: LoadPlan::EagerTransformedDocument,
                 transform: TransformStrategy::RecordPrettyPrint,
                 syntax: SyntaxKind::Structured,
             },
@@ -63,31 +63,31 @@ fn explicit_profile(kind: FormatKind) -> TypeProfile {
         FormatKind::Auto => unreachable!("auto must be resolved before building a type profile"),
         FormatKind::Json => TypeProfile {
             content: FormatKind::Json,
-            load: LoadPlan::EagerDocument,
+            load: LoadPlan::EagerTransformedDocument,
             transform: TransformStrategy::PrettyPrint,
             syntax: SyntaxKind::Structured,
         },
         FormatKind::Jsonl => TypeProfile {
             content: FormatKind::Jsonl,
-            load: LoadPlan::LazyRecords,
+            load: LoadPlan::LazyTransformedRecords,
             transform: TransformStrategy::RecordPrettyPrint,
             syntax: SyntaxKind::Structured,
         },
         FormatKind::Xml => TypeProfile {
             content: FormatKind::Xml,
-            load: LoadPlan::EagerDocument,
+            load: LoadPlan::EagerTransformedDocument,
             transform: TransformStrategy::PrettyPrint,
             syntax: SyntaxKind::Structured,
         },
         FormatKind::Plain => TypeProfile {
             content: FormatKind::Plain,
-            load: LoadPlan::RawIndexedText,
+            load: LoadPlan::EagerIndexedSource,
             transform: TransformStrategy::Passthrough,
             syntax: SyntaxKind::Plain,
         },
         FormatKind::Jinja => TypeProfile {
             content: FormatKind::Jinja,
-            load: LoadPlan::RawIndexedText,
+            load: LoadPlan::EagerIndexedSource,
             transform: TransformStrategy::Passthrough,
             syntax: SyntaxKind::Jinja,
         },
@@ -227,7 +227,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(profile.content, FormatKind::Plain);
-        assert_eq!(profile.load, LoadPlan::RawIndexedText);
+        assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
         assert_eq!(profile.transform, TransformStrategy::Passthrough);
         assert_eq!(profile.syntax, SyntaxKind::Plain);
     }
@@ -245,7 +245,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(profile.content, FormatKind::Jinja);
-        assert_eq!(profile.load, LoadPlan::RawIndexedText);
+        assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
         assert_eq!(profile.transform, TransformStrategy::Passthrough);
         assert_eq!(profile.syntax, SyntaxKind::Jinja);
     }
@@ -263,7 +263,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(profile.content, FormatKind::Jsonl);
-        assert_eq!(profile.load, LoadPlan::LazyRecords);
+        assert_eq!(profile.load, LoadPlan::LazyTransformedRecords);
         assert_eq!(profile.transform, TransformStrategy::RecordPrettyPrint);
         assert_eq!(profile.syntax, SyntaxKind::Structured);
     }

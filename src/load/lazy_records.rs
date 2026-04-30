@@ -1,20 +1,21 @@
 #[cfg(test)]
 use std::ffi::OsStr;
 use std::{
-    cell::RefCell,
     fs::File,
-    io::{BufRead, BufReader, Seek, SeekFrom, Write},
-    time::{Duration, Instant},
+    io::{BufRead, BufReader},
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
-use tempfile::NamedTempFile;
 
 #[cfg(test)]
 use crate::transform::FormatKind;
 use crate::{
     input::InputSource,
-    load::ViewFile,
+    load::{
+        ViewFile,
+        lazy::{LazyBatch, LazyFile, LazyLine, LazyProducer},
+    },
     transform::{self, FormatOptions},
 };
 
@@ -25,30 +26,30 @@ const SNIFF_LINES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadPlan {
-    LazyRecords,
-    EagerDocument,
-    RawIndexedText,
+    LazyTransformedRecords,
+    EagerTransformedDocument,
+    EagerIndexedSource,
 }
 
 #[cfg(test)]
 pub fn load_plan(source: &InputSource, options: &FormatOptions) -> Result<LoadPlan> {
     match options.kind {
-        FormatKind::Jsonl => Ok(LoadPlan::LazyRecords),
-        FormatKind::Json | FormatKind::Xml => Ok(LoadPlan::EagerDocument),
-        FormatKind::Plain | FormatKind::Jinja => Ok(LoadPlan::RawIndexedText),
+        FormatKind::Jsonl => Ok(LoadPlan::LazyTransformedRecords),
+        FormatKind::Json | FormatKind::Xml => Ok(LoadPlan::EagerTransformedDocument),
+        FormatKind::Plain | FormatKind::Jinja => Ok(LoadPlan::EagerIndexedSource),
         FormatKind::Auto => {
             if has_record_extension(source) {
-                return Ok(LoadPlan::LazyRecords);
+                return Ok(LoadPlan::LazyTransformedRecords);
             }
             if has_raw_text_extension(source) {
-                return Ok(LoadPlan::RawIndexedText);
+                return Ok(LoadPlan::EagerIndexedSource);
             }
 
             let sample = LoadSample::read(source)?;
             Ok(if sample.looks_like_record_stream() {
-                LoadPlan::LazyRecords
+                LoadPlan::LazyTransformedRecords
             } else {
-                LoadPlan::EagerDocument
+                LoadPlan::EagerTransformedDocument
             })
         }
     }
@@ -81,198 +82,112 @@ fn has_raw_text_extension(source: &InputSource) -> bool {
 }
 
 pub struct LazyTransformedFile {
-    label: String,
-    options: FormatOptions,
-    len: u64,
-    state: RefCell<LazyState>,
+    inner: LazyFile<RecordTransformProducer>,
 }
 
 impl LazyTransformedFile {
     pub fn new(source: &InputSource, options: FormatOptions) -> Result<Self> {
         let file = source.open()?;
+        let label = source.label().to_owned();
         let len = file
             .metadata()
             .with_context(|| format!("failed to stat {}", source.label()))?
             .len();
         Ok(Self {
-            label: source.label().to_owned(),
-            options,
-            len,
-            state: RefCell::new(LazyState {
-                reader: BufReader::new(file),
-                spool: NamedTempFile::new().context("failed to create lazy load spool")?,
-                spool_len: 0,
-                raw_offset: 0,
-                raw_line: Vec::with_capacity(8192),
-                line_offsets: Vec::new(),
-                raw_line_offsets: Vec::new(),
-                complete: len == 0,
-                records_read: 0,
-            }),
+            inner: LazyFile::new(
+                label.clone(),
+                len,
+                RecordTransformProducer::new(label, file, options),
+            )?,
         })
     }
 
     #[cfg(test)]
     fn loaded_record_count(&self) -> usize {
-        self.state.borrow().records_read
+        self.inner.produced_unit_count()
     }
 
     #[cfg(test)]
     fn indexed_line_count(&self) -> usize {
-        self.state.borrow().line_offsets.len()
-    }
-
-    fn ensure_lines(&self, needed: usize) -> Result<()> {
-        let mut state = self.state.borrow_mut();
-        while state.line_offsets.len() < needed && !state.complete {
-            if !read_next_record(&mut state, self.options, &self.label)? {
-                break;
-            }
-        }
-        Ok(())
+        self.inner.indexed_line_count()
     }
 }
 
 impl ViewFile for LazyTransformedFile {
     fn label(&self) -> &str {
-        &self.label
+        self.inner.label()
     }
 
     fn line_count(&self) -> usize {
-        let state = self.state.borrow();
-        if state.complete {
-            state.line_offsets.len()
-        } else {
-            state.line_offsets.len().saturating_add(1).max(1)
-        }
+        self.inner.line_count()
     }
 
     fn line_count_exact(&self) -> bool {
-        self.state.borrow().complete
+        self.inner.line_count_exact()
     }
 
     fn byte_len(&self) -> u64 {
-        self.len
+        self.inner.byte_len()
     }
 
     fn byte_offset_for_line(&self, line: usize) -> u64 {
-        let state = self.state.borrow();
-        state
-            .raw_line_offsets
-            .get(line)
-            .copied()
-            .unwrap_or(state.raw_offset)
-            .min(self.len)
+        self.inner.byte_offset_for_line(line)
     }
 
     fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>> {
-        if count == 0 {
-            return Ok(Vec::new());
-        }
-
-        self.ensure_lines(start.saturating_add(count))?;
-        let state = self.state.borrow();
-        if start >= state.line_offsets.len() {
-            return Ok(Vec::new());
-        }
-
-        let end = start.saturating_add(count).min(state.line_offsets.len());
-        let mut file = File::open(state.spool.path()).context("failed to open lazy load spool")?;
-        file.seek(SeekFrom::Start(state.line_offsets[start]))
-            .context("failed to seek lazy load spool")?;
-        let mut reader = BufReader::new(file);
-        let mut lines = Vec::with_capacity(end - start);
-        for _ in start..end {
-            let mut line = String::new();
-            let read = reader
-                .read_line(&mut line)
-                .context("failed to read lazy load spool")?;
-            if read == 0 {
-                break;
-            }
-            strip_line_end(&mut line);
-            lines.push(line);
-        }
-        Ok(lines)
+        self.inner.read_window(start, count)
     }
 
     fn preload(&self, max_lines: usize, max_records: usize, budget: Duration) -> Result<bool> {
-        if max_lines == 0 || max_records == 0 || budget.is_zero() {
-            return Ok(false);
-        }
-
-        let started = Instant::now();
-        let mut state = self.state.borrow_mut();
-        if state.complete {
-            return Ok(false);
-        }
-
-        let start_lines = state.line_offsets.len();
-        let mut records = 0_usize;
-        while !state.complete
-            && records < max_records
-            && state.line_offsets.len().saturating_sub(start_lines) < max_lines
-            && started.elapsed() < budget
-        {
-            if !read_next_record(&mut state, self.options, &self.label)? {
-                break;
-            }
-            records += 1;
-        }
-
-        Ok(state.line_offsets.len() != start_lines || state.complete)
+        self.inner.preload(max_lines, max_records, budget)
     }
 }
 
-struct LazyState {
+struct RecordTransformProducer {
+    label: String,
     reader: BufReader<File>,
-    spool: NamedTempFile,
-    spool_len: u64,
-    raw_offset: u64,
     raw_line: Vec<u8>,
-    line_offsets: Vec<u64>,
-    raw_line_offsets: Vec<u64>,
-    complete: bool,
-    records_read: usize,
+    options: FormatOptions,
 }
 
-fn read_next_record(state: &mut LazyState, options: FormatOptions, label: &str) -> Result<bool> {
-    let record_start = state.raw_offset;
-    let mut raw_line = std::mem::take(&mut state.raw_line);
-    raw_line.clear();
-    let read = state
-        .reader
-        .read_until(b'\n', &mut raw_line)
-        .with_context(|| format!("failed to read {label}"))?;
-    if read == 0 {
-        state.raw_line = raw_line;
-        state.complete = true;
-        return Ok(false);
+impl RecordTransformProducer {
+    fn new(label: String, file: File, options: FormatOptions) -> Self {
+        Self {
+            label,
+            reader: BufReader::new(file),
+            raw_line: Vec::with_capacity(8192),
+            options,
+        }
     }
+}
 
-    state.raw_offset = state.raw_offset.saturating_add(read as u64);
-    state.records_read = state.records_read.saturating_add(1);
-    let rendered = transform::format_record_lines(&raw_line, options)?;
-    state.raw_line = raw_line;
-    for line in rendered {
-        state.line_offsets.push(state.spool_len);
-        state.raw_line_offsets.push(record_start);
-        state
-            .spool
-            .as_file_mut()
-            .write_all(line.as_bytes())
-            .context("failed to write lazy load spool")?;
-        state
-            .spool
-            .as_file_mut()
-            .write_all(b"\n")
-            .context("failed to write lazy load spool")?;
-        state.spool_len = state
-            .spool_len
-            .saturating_add(line.len() as u64)
-            .saturating_add(1);
+impl LazyProducer for RecordTransformProducer {
+    fn produce(&mut self, source_offset: u64) -> Result<LazyBatch> {
+        let record_start = source_offset;
+        let mut raw_line = std::mem::take(&mut self.raw_line);
+        raw_line.clear();
+        let read = self
+            .reader
+            .read_until(b'\n', &mut raw_line)
+            .with_context(|| format!("failed to read {}", self.label))?;
+        if read == 0 {
+            self.raw_line = raw_line;
+            return Ok(LazyBatch::Complete);
+        }
+
+        let rendered = transform::format_record_lines(&raw_line, self.options)?;
+        self.raw_line = raw_line;
+        Ok(LazyBatch::Lines {
+            source_bytes: read as u64,
+            lines: rendered
+                .into_iter()
+                .map(|text| LazyLine {
+                    source_offset: record_start,
+                    text,
+                })
+                .collect(),
+        })
     }
-    Ok(true)
 }
 
 #[cfg(test)]
@@ -356,15 +271,6 @@ fn trim_ascii_ws(mut bytes: &[u8]) -> &[u8] {
         bytes = &bytes[..bytes.len() - 1];
     }
     bytes
-}
-
-fn strip_line_end(line: &mut String) {
-    if line.ends_with('\n') {
-        line.pop();
-        if line.ends_with('\r') {
-            line.pop();
-        }
-    }
 }
 
 #[cfg(test)]

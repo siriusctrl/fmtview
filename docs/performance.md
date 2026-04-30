@@ -63,16 +63,21 @@ The script runs ignored release-mode tests, so normal `cargo test` and CI stay
 focused on correctness. It unsets `NO_COLOR` for the benchmark subprocesses so
 the terminal draw byte count includes the normal styled-color path.
 
+For planned lazy-runtime refactors before inline parallel parser or formatter
+work, keep the baseline split across two scripts: `benches/load-performance.sh`
+measures lazy first-window and preload behavior, while
+`benches/format-performance.sh` measures the single huge record transform path.
+
 Metrics:
 
 Load metrics:
 
 - `raw indexed load` measures building line offsets for a large already-textual
   input and reading a middle window from the index.
-- `lazy first window load+transform` measures opening a lazy record stream,
+- `lazy record first-window load+transform` measures opening a lazy record stream,
   transforming only enough records to fill the first visible window, and
   reading those spooled lines back.
-- `lazy preload records load+transform` measures background lazy record
+- `lazy record preload load+transform` measures background lazy record
   transform plus spool/index extension after the first window has opened.
 
 Transform metrics:

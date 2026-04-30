@@ -58,6 +58,34 @@ embedded markup, wrapped records, or formatted diffs.
 - Keep large outputs responsive by indexing a temporary text file and only
   reading the visible window.
 
+The design is viewer-first rather than extension-first. Each input resolves to
+a profile that chooses the load, transform, syntax, and diff behavior needed for
+the current use case:
+
+```text
+  Use case + input type
+          |
+          v
+  +------------------+
+  | TypeProfile      |
+  | - content kind   |
+  | - load strategy  |
+  | - transform plan |
+  | - syntax engine  |
+  +---------+--------+
+            |
+            v
+  +---------+----------+--------------+-----------+
+  | indexed loading    | transformed stdout       |
+  | visible highlight  | searchable viewer + diff |
+  +--------------------+--------------------------+
+```
+
+That is why JSON and XML can be formatted, JSONL can open lazily record by
+record, and plain text or Jinja templates can stay passthrough while still
+getting fast view/search/diff behavior. See `docs/architecture.md` for the
+maintainer-facing design notes.
+
 ## Install
 
 ### Cargo

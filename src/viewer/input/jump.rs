@@ -8,13 +8,14 @@ pub(in crate::viewer) fn handle_jump_input_key(
     modifiers: KeyModifiers,
     state: &mut ViewState,
     line_count: usize,
+    line_count_exact: bool,
 ) -> bool {
     match code {
         KeyCode::Char(ch) if accepts_jump_digit(ch, modifiers) => {
             push_jump_digit(state, ch);
             true
         }
-        KeyCode::Enter => jump_to_buffered_line(state, line_count),
+        KeyCode::Enter => jump_to_buffered_line(state, line_count, line_count_exact),
         KeyCode::Backspace => pop_jump_digit(state),
         KeyCode::Esc => clear_jump_buffer(state),
         _ => false,
@@ -39,18 +40,33 @@ pub(in crate::viewer) fn clear_jump_buffer(state: &mut ViewState) -> bool {
     was_active
 }
 
-pub(in crate::viewer) fn jump_to_buffered_line(state: &mut ViewState, line_count: usize) -> bool {
+pub(in crate::viewer) fn jump_to_buffered_line(
+    state: &mut ViewState,
+    line_count: usize,
+    line_count_exact: bool,
+) -> bool {
     if state.jump_buffer.is_empty() {
         return false;
     }
 
     let requested = state.jump_buffer.parse::<usize>().unwrap_or(usize::MAX);
     state.jump_buffer.clear();
-    set_top(state, target_top_for_line(requested, line_count));
+    set_top(
+        state,
+        target_top_for_line(requested, line_count, line_count_exact),
+    );
     true
 }
 
-pub(in crate::viewer) fn target_top_for_line(requested: usize, line_count: usize) -> usize {
+pub(in crate::viewer) fn target_top_for_line(
+    requested: usize,
+    line_count: usize,
+    line_count_exact: bool,
+) -> usize {
+    if !line_count_exact {
+        return requested.max(1).saturating_sub(1);
+    }
+
     if line_count == 0 {
         return 0;
     }

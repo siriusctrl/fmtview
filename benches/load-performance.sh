@@ -12,6 +12,10 @@ per-sample timings plus median/min/max summaries.
 
 Use this before and after raw line indexing, window reads, load planning,
 lazy record spooling, or preload behavior changes.
+
+This script separates lazy record first-window work from lazy record preload
+work. Use benches/format-performance.sh for the separate single huge record
+transform baseline before experimenting with inline parser/formatter work.
 USAGE
 }
 
@@ -138,11 +142,11 @@ bench_one \
   "raw indexed load"
 
 bench_one \
-  "lazy first window load+transform" \
+  "lazy record first-window load+transform" \
   "perf_lazy_first_window_format" \
   "lazy first window format"
 
 bench_one \
-  "lazy preload records load+transform" \
+  "lazy record preload load+transform" \
   "perf_lazy_preload_records_format" \
   "lazy preload records format"

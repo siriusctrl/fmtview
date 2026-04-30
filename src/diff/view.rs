@@ -65,7 +65,7 @@ fn should_use_lazy_record_diff(
     options: &FormatOptions,
 ) -> Result<bool> {
     Ok(
-        TypeProfile::resolve(left, options)?.load == LoadPlan::LazyRecords
-            && TypeProfile::resolve(right, options)?.load == LoadPlan::LazyRecords,
+        TypeProfile::resolve(left, options)?.load == LoadPlan::LazyTransformedRecords
+            && TypeProfile::resolve(right, options)?.load == LoadPlan::LazyTransformedRecords,
     )
 }

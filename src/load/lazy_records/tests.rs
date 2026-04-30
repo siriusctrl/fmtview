@@ -29,7 +29,10 @@ fn lazy_load_does_not_require_jsonl_extension() {
         indent: 2,
     };
 
-    assert_eq!(load_plan(&source, &options).unwrap(), LoadPlan::LazyRecords);
+    assert_eq!(
+        load_plan(&source, &options).unwrap(),
+        LoadPlan::LazyTransformedRecords
+    );
 }
 
 #[test]
@@ -45,7 +48,7 @@ fn explicit_format_kinds_choose_load_plan_without_sniffing() {
             }
         )
         .unwrap(),
-        LoadPlan::LazyRecords
+        LoadPlan::LazyTransformedRecords
     );
     assert_eq!(
         load_plan(
@@ -56,7 +59,7 @@ fn explicit_format_kinds_choose_load_plan_without_sniffing() {
             }
         )
         .unwrap(),
-        LoadPlan::EagerDocument
+        LoadPlan::EagerTransformedDocument
     );
     assert_eq!(
         load_plan(
@@ -67,7 +70,7 @@ fn explicit_format_kinds_choose_load_plan_without_sniffing() {
             }
         )
         .unwrap(),
-        LoadPlan::EagerDocument
+        LoadPlan::EagerTransformedDocument
     );
     assert_eq!(
         load_plan(
@@ -78,7 +81,7 @@ fn explicit_format_kinds_choose_load_plan_without_sniffing() {
             }
         )
         .unwrap(),
-        LoadPlan::RawIndexedText
+        LoadPlan::EagerIndexedSource
     );
     assert_eq!(
         load_plan(
@@ -89,7 +92,7 @@ fn explicit_format_kinds_choose_load_plan_without_sniffing() {
             }
         )
         .unwrap(),
-        LoadPlan::RawIndexedText
+        LoadPlan::EagerIndexedSource
     );
 }
 
@@ -104,7 +107,10 @@ fn auto_lazy_load_honors_jsonl_extension_before_sampling() {
         indent: 2,
     };
 
-    assert_eq!(load_plan(&source, &options).unwrap(), LoadPlan::LazyRecords);
+    assert_eq!(
+        load_plan(&source, &options).unwrap(),
+        LoadPlan::LazyTransformedRecords
+    );
 }
 
 #[test]
@@ -118,11 +124,11 @@ fn auto_raw_load_honors_plain_and_jinja_extensions_before_sampling() {
 
     assert_eq!(
         load_plan(&plain_source, &options).unwrap(),
-        LoadPlan::RawIndexedText
+        LoadPlan::EagerIndexedSource
     );
     assert_eq!(
         load_plan(&jinja_source, &options).unwrap(),
-        LoadPlan::RawIndexedText
+        LoadPlan::EagerIndexedSource
     );
 }
 
@@ -139,7 +145,7 @@ fn auto_lazy_load_rejects_truncated_prefix_without_extension() {
 
     assert_eq!(
         load_plan(&source, &options).unwrap(),
-        LoadPlan::EagerDocument
+        LoadPlan::EagerTransformedDocument
     );
 }
 
@@ -156,7 +162,7 @@ fn auto_lazy_load_keeps_large_multiline_json_eager() {
 
     assert_eq!(
         load_plan(&source, &options).unwrap(),
-        LoadPlan::EagerDocument
+        LoadPlan::EagerTransformedDocument
     );
 }
 
@@ -235,11 +241,11 @@ fn multiline_whole_documents_do_not_use_lazy_load() {
 
     assert_eq!(
         load_plan(&json_source, &options).unwrap(),
-        LoadPlan::EagerDocument
+        LoadPlan::EagerTransformedDocument
     );
     assert_eq!(
         load_plan(&xml_source, &options).unwrap(),
-        LoadPlan::EagerDocument
+        LoadPlan::EagerTransformedDocument
     );
 }
 
@@ -273,7 +279,7 @@ fn small_whole_document_does_not_use_lazy_load() {
 
     assert_eq!(
         load_plan(&source, &options).unwrap(),
-        LoadPlan::EagerDocument
+        LoadPlan::EagerTransformedDocument
     );
 }
 

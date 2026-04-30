@@ -7,6 +7,7 @@ use std::{
 use anyhow::{Context, Result};
 use tempfile::NamedTempFile;
 
+mod lazy;
 mod lazy_records;
 
 pub use lazy_records::{LazyTransformedFile, LoadPlan};

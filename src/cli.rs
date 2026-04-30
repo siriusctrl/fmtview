@@ -133,17 +133,10 @@ fn open_view_file(
     profile: TypeProfile,
 ) -> Result<Box<dyn ViewFile>> {
     match profile.load {
-        load::LoadPlan::LazyRecords => {
+        load::LoadPlan::LazyTransformedRecords => {
             Ok(Box::new(load::LazyTransformedFile::new(input, *options)?))
         }
-        load::LoadPlan::EagerDocument => {
-            let formatted = transform::transform_source_to_temp(input, options, profile.transform)?;
-            Ok(Box::new(load::IndexedTempFile::new(
-                input.label().to_owned(),
-                formatted,
-            )?))
-        }
-        load::LoadPlan::RawIndexedText => {
+        load::LoadPlan::EagerTransformedDocument | load::LoadPlan::EagerIndexedSource => {
             let formatted = transform::transform_source_to_temp(input, options, profile.transform)?;
             Ok(Box::new(load::IndexedTempFile::new(
                 input.label().to_owned(),

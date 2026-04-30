@@ -19,7 +19,12 @@ use super::input::*;
 use super::palette::*;
 use super::render::*;
 use super::*;
-use crate::syntax::{SyntaxKind, highlight_json_like, highlight_xml_line};
+use crate::{
+    input::InputSource,
+    load::LazyTransformedFile,
+    syntax::{SyntaxKind, highlight_json_like, highlight_xml_line},
+    transform::{FormatKind, FormatOptions},
+};
 
 // Correctness tests run by default and should avoid wall-clock assertions.
 
@@ -524,6 +529,55 @@ fn line_jump_clamps_to_valid_range() {
     handle_key_event(KeyCode::Char('0'), KeyModifiers::NONE, &mut state, 5, 10);
     handle_key_event(KeyCode::Enter, KeyModifiers::NONE, &mut state, 5, 10);
     assert_eq!(state.top, 0);
+}
+
+#[test]
+fn line_jump_on_incomplete_lazy_file_can_target_unloaded_line() {
+    let mut state = ViewState::default();
+
+    handle_key_event(KeyCode::Char('6'), KeyModifiers::NONE, &mut state, 1, 10);
+    let action =
+        handle_key_event_with_count(KeyCode::Enter, KeyModifiers::NONE, &mut state, 1, false, 10);
+
+    assert!(action.dirty);
+    assert_eq!(state.top, 5);
+}
+
+#[test]
+fn incomplete_lazy_file_does_not_clamp_optimistic_jump_before_reading() {
+    let mut temp = NamedTempFile::new().unwrap();
+    writeln!(temp, r#"{{"id":1,"payload":{{"a":1,"b":2,"c":3,"d":4}}}}"#).unwrap();
+    temp.flush().unwrap();
+    let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
+    let file = LazyTransformedFile::new(
+        &source,
+        FormatOptions {
+            kind: FormatKind::Jsonl,
+            indent: 2,
+        },
+    )
+    .unwrap();
+    assert!(!file.line_count_exact());
+
+    let mut state = ViewState {
+        top: 5,
+        ..ViewState::default()
+    };
+    let mut caches = ViewerCaches::default();
+    let context = RenderContext {
+        gutter_digits: 4,
+        x: 0,
+        width: 80,
+        wrap: false,
+        mode: SyntaxKind::Structured,
+    };
+
+    adjust_state_for_visible_height(&file, &mut state, 10, context, &mut caches).unwrap();
+    let lines = caches.line.read(&file, state.top, 3, 0).unwrap();
+
+    assert_eq!(state.top, 5);
+    assert!(!lines.lines.is_empty());
+    assert!(lines.lines[0].contains("\"c\""));
 }
 
 #[test]

@@ -160,7 +160,7 @@ fn run_loop(
             .size()
             .map(|size| usize::from(size.height.saturating_sub(4)).max(1))
             .unwrap_or(20);
-        let action = drain_events(&mut state, file.line_count(), page)?;
+        let action = drain_events(&mut state, file.line_count(), file.line_count_exact(), page)?;
         if action.quit {
             break;
         }
@@ -438,7 +438,7 @@ fn adjust_state_for_visible_height(
     caches: &mut ViewerCaches,
 ) -> Result<Option<ViewPosition>> {
     let logical_tail_top = last_full_logical_page_top(file.line_count(), visible_height);
-    let tail = if !state.wrap || state.top >= logical_tail_top {
+    let tail = if file.line_count_exact() && (!state.wrap || state.top >= logical_tail_top) {
         Some(caches.tail.position(file, visible_height, render_context)?)
     } else {
         None
@@ -450,7 +450,7 @@ fn adjust_state_for_visible_height(
         state.wrap_bounds_stale = state.wrap;
     }
     let max_top = file.line_count().saturating_sub(1);
-    if state.top > max_top {
+    if file.line_count_exact() && state.top > max_top {
         state.top = max_top;
         reset_top_row_offset(state);
     }

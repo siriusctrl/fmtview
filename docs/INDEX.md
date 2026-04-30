@@ -20,6 +20,12 @@ Read these when the task matches:
   - complete-output formatter algorithm comparison
   - terminal draw byte-count checks
   - comparing performance changes outside CI
+- `docs/architecture.md`
+  - viewer-first product model
+  - type profile boundaries
+  - load, transform, syntax, and diff strategy boundaries
+  - lazy runtime and producer design
+  - benchmark-first direction for future inline parallel work
 
 Code orientation:
 
@@ -30,10 +36,10 @@ Code orientation:
 - `src/input.rs` owns input materialization from files, stdin, and literals.
 - `src/profile.rs` resolves `--type` and auto-detection into a concrete content
   kind, load strategy, transform strategy, and syntax highlighter.
-- `src/load/` owns lazy-load and indexed line access:
+- `src/load/` owns lazy-load runtimes and indexed line access:
   - `mod.rs` defines `ViewFile` plus eager temp-file line indexing.
-  - `lazy_records.rs` plans record-stream loading and spools transformed
-    records on demand without retaining transformed text in memory.
+  - lazy loaders share spool/index/view-window mechanics and keep
+    format-specific record or document reading behind producer boundaries.
 - `src/transform/` owns content transforms that can produce scriptable output:
   - `engine.rs` orchestrates whole-source and record formatting.
   - `detect.rs` handles formatter candidates after profile resolution.
