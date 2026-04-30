@@ -80,6 +80,10 @@ Load metrics:
   reading those spooled lines back.
 - `lazy record preload load+transform` measures background lazy record
   transform plus spool/index extension after the first window has opened.
+- `lazy huge string first-window load+transform` measures a single JSONL record
+  where most bytes are inside one large string value. This keeps the lazy
+  record first-window path honest for files that cannot benefit from reading a
+  few small records.
 
 Transform metrics:
 

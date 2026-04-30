@@ -378,6 +378,33 @@ fn perf_lazy_preload_records_format() {
     );
 }
 
+#[test]
+#[ignore = "performance smoke; run benches/load-performance.sh"]
+fn perf_lazy_huge_string_first_window_format() {
+    let (_temp, source, input_bytes) = generated_huge_string_jsonl_source(600_000, ".jsonl");
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+
+    let started = Instant::now();
+    let file = LazyTransformedFile::new(&source, options).unwrap();
+    let lines = file.read_window(0, 6).unwrap();
+    let elapsed = started.elapsed();
+
+    eprintln!(
+        "lazy huge string first window format: {elapsed:?}, records={}, lines={}, input_bytes={input_bytes}",
+        file.loaded_record_count(),
+        lines.len(),
+    );
+    assert_eq!(file.loaded_record_count(), 1);
+    assert_eq!(lines.len(), 5);
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "lazy huge string first window format took {elapsed:?}"
+    );
+}
+
 fn generated_jsonl_source(
     count: usize,
     message_len: usize,
@@ -395,6 +422,26 @@ fn generated_jsonl_source(
         input_bytes = input_bytes.saturating_add(record.len()).saturating_add(1);
     }
     temp.flush().unwrap();
+    let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
+    (temp, source, input_bytes)
+}
+
+const HUGE_STRING_FRAGMENT: &[u8] = br#"<item id=\"1\"><name>visible</name></item>"#;
+
+fn generated_huge_string_jsonl_source(
+    repeats: usize,
+    suffix: &str,
+) -> (NamedTempFile, InputSource, usize) {
+    let mut temp = TempFileBuilder::new().suffix(suffix).tempfile().unwrap();
+    temp.write_all(br#"{"id":1,"kind":"huge-string","message":""#)
+        .unwrap();
+    for _ in 0..repeats {
+        temp.write_all(HUGE_STRING_FRAGMENT).unwrap();
+    }
+    temp.write_all(br#""}"#).unwrap();
+    temp.write_all(b"\n").unwrap();
+    temp.flush().unwrap();
+    let input_bytes = temp.as_file().metadata().unwrap().len() as usize;
     let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
     (temp, source, input_bytes)
 }

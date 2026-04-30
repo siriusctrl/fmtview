@@ -16,15 +16,11 @@ pub(crate) trait LazyProducer {
 
 pub(crate) enum LazyBatch {
     Complete,
-    Lines {
+    Bytes {
         source_bytes: u64,
-        lines: Vec<LazyLine>,
+        source_offset: u64,
+        bytes: Vec<u8>,
     },
-}
-
-pub(crate) struct LazyLine {
-    pub(crate) source_offset: u64,
-    pub(crate) text: String,
 }
 
 pub(crate) struct LazyFile<P> {
@@ -177,38 +173,51 @@ struct LazyState<P> {
 impl<P: LazyProducer> LazyState<P> {
     fn produce_next_batch(&mut self) -> Result<bool> {
         let batch = self.producer.produce(self.source_offset)?;
-        let LazyBatch::Lines {
-            source_bytes,
-            lines,
-        } = batch
-        else {
-            self.complete = true;
-            return Ok(false);
+        let source_bytes = match batch {
+            LazyBatch::Complete => {
+                self.complete = true;
+                return Ok(false);
+            }
+            LazyBatch::Bytes {
+                source_bytes,
+                source_offset,
+                bytes,
+            } => {
+                if source_bytes == 0 && bytes.is_empty() {
+                    bail!("lazy producer returned no progress");
+                }
+                self.append_bytes(source_offset, &bytes)?;
+                source_bytes
+            }
         };
-
-        if source_bytes == 0 && lines.is_empty() {
-            bail!("lazy producer returned no progress");
-        }
 
         self.source_offset = self.source_offset.saturating_add(source_bytes);
         self.units_produced = self.units_produced.saturating_add(1);
-        for line in lines {
-            self.line_offsets.push(self.spool_len);
-            self.source_line_offsets.push(line.source_offset);
-            self.spool
-                .as_file_mut()
-                .write_all(line.text.as_bytes())
-                .context("failed to write lazy load spool")?;
-            self.spool
-                .as_file_mut()
-                .write_all(b"\n")
-                .context("failed to write lazy load spool")?;
-            self.spool_len = self
-                .spool_len
-                .saturating_add(line.text.len() as u64)
-                .saturating_add(1);
-        }
         Ok(true)
+    }
+
+    fn append_bytes(&mut self, source_offset: u64, bytes: &[u8]) -> Result<()> {
+        self.line_offsets.push(self.spool_len);
+        self.source_line_offsets.push(source_offset);
+        for (index, byte) in bytes.iter().enumerate() {
+            if *byte == b'\n' && index + 1 < bytes.len() {
+                self.line_offsets.push(self.spool_len + index as u64 + 1);
+                self.source_line_offsets.push(source_offset);
+            }
+        }
+        self.spool
+            .as_file_mut()
+            .write_all(bytes)
+            .context("failed to write lazy load spool")?;
+        self.spool
+            .as_file_mut()
+            .write_all(b"\n")
+            .context("failed to write lazy load spool")?;
+        self.spool_len = self
+            .spool_len
+            .saturating_add(bytes.len() as u64)
+            .saturating_add(1);
+        Ok(())
     }
 }
 
@@ -238,30 +247,20 @@ mod tests {
     }
 
     #[test]
-    fn lazy_runtime_spools_and_indexes_producer_lines() {
+    fn lazy_runtime_spools_and_indexes_producer_bytes() {
         let file = LazyFile::new(
             "test".to_owned(),
             12,
             TestProducer::with_batches([
-                LazyBatch::Lines {
+                LazyBatch::Bytes {
                     source_bytes: 5,
-                    lines: vec![
-                        LazyLine {
-                            source_offset: 0,
-                            text: "one".to_owned(),
-                        },
-                        LazyLine {
-                            source_offset: 0,
-                            text: "two".to_owned(),
-                        },
-                    ],
+                    source_offset: 0,
+                    bytes: b"one\ntwo".to_vec(),
                 },
-                LazyBatch::Lines {
+                LazyBatch::Bytes {
                     source_bytes: 7,
-                    lines: vec![LazyLine {
-                        source_offset: 5,
-                        text: "three".to_owned(),
-                    }],
+                    source_offset: 5,
+                    bytes: b"three".to_vec(),
                 },
             ]),
         )
@@ -283,26 +282,20 @@ mod tests {
             "test".to_owned(),
             9,
             TestProducer::with_batches([
-                LazyBatch::Lines {
+                LazyBatch::Bytes {
                     source_bytes: 3,
-                    lines: vec![LazyLine {
-                        source_offset: 0,
-                        text: "a".to_owned(),
-                    }],
+                    source_offset: 0,
+                    bytes: b"a".to_vec(),
                 },
-                LazyBatch::Lines {
+                LazyBatch::Bytes {
                     source_bytes: 3,
-                    lines: vec![LazyLine {
-                        source_offset: 3,
-                        text: "b".to_owned(),
-                    }],
+                    source_offset: 3,
+                    bytes: b"b".to_vec(),
                 },
-                LazyBatch::Lines {
+                LazyBatch::Bytes {
                     source_bytes: 3,
-                    lines: vec![LazyLine {
-                        source_offset: 6,
-                        text: "c".to_owned(),
-                    }],
+                    source_offset: 6,
+                    bytes: b"c".to_vec(),
                 },
             ]),
         )
@@ -312,5 +305,31 @@ mod tests {
         assert_eq!(file.produced_unit_count(), 2);
         assert_eq!(file.read_window(0, 10).unwrap(), vec!["a", "b", "c"]);
         assert_eq!(file.produced_unit_count(), 3);
+    }
+
+    #[test]
+    fn lazy_runtime_handles_empty_producer_bytes_as_empty_line() {
+        let file = LazyFile::new(
+            "test".to_owned(),
+            9,
+            TestProducer::with_batches([
+                LazyBatch::Bytes {
+                    source_bytes: 6,
+                    source_offset: 0,
+                    bytes: b"a\nb\nc".to_vec(),
+                },
+                LazyBatch::Bytes {
+                    source_bytes: 3,
+                    source_offset: 6,
+                    bytes: Vec::new(),
+                },
+            ]),
+        )
+        .unwrap();
+
+        assert_eq!(file.read_window(0, 10).unwrap(), vec!["a", "b", "c", ""]);
+        assert_eq!(file.byte_offset_for_line(2), 0);
+        assert_eq!(file.byte_offset_for_line(3), 6);
+        assert_eq!(file.produced_unit_count(), 2);
     }
 }

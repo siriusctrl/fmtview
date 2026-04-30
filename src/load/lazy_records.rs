@@ -14,7 +14,7 @@ use crate::{
     input::InputSource,
     load::{
         ViewFile,
-        lazy::{LazyBatch, LazyFile, LazyLine, LazyProducer},
+        lazy::{LazyBatch, LazyFile, LazyProducer},
     },
     transform::{self, FormatOptions},
 };
@@ -175,17 +175,12 @@ impl LazyProducer for RecordTransformProducer {
             return Ok(LazyBatch::Complete);
         }
 
-        let rendered = transform::format_record_lines(&raw_line, self.options)?;
+        let rendered = transform::format_record_bytes(&raw_line, self.options)?;
         self.raw_line = raw_line;
-        Ok(LazyBatch::Lines {
+        Ok(LazyBatch::Bytes {
             source_bytes: read as u64,
-            lines: rendered
-                .into_iter()
-                .map(|text| LazyLine {
-                    source_offset: record_start,
-                    text,
-                })
-                .collect(),
+            source_offset: record_start,
+            bytes: rendered,
         })
     }
 }

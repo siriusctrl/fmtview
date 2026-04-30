@@ -92,6 +92,11 @@ fn try_format_source_to_temp(
 }
 
 pub fn format_record_to_string(input: &[u8], kind: FormatKind, indent: usize) -> Result<String> {
+    let output = format_record_to_bytes(input, kind, indent)?;
+    String::from_utf8(output).context("formatted record was not valid UTF-8")
+}
+
+pub fn format_record_to_bytes(input: &[u8], kind: FormatKind, indent: usize) -> Result<Vec<u8>> {
     let mut output = Vec::with_capacity(input.len().min(8192));
     match kind {
         FormatKind::Auto => unreachable!("auto must be resolved before formatting a record"),
@@ -108,7 +113,7 @@ pub fn format_record_to_string(input: &[u8], kind: FormatKind, indent: usize) ->
         }
         FormatKind::Plain | FormatKind::Jinja => output.extend_from_slice(input),
     }
-    String::from_utf8(output).context("formatted record was not valid UTF-8")
+    Ok(output)
 }
 
 pub fn trim_record_line_end(line: &[u8]) -> &[u8] {
@@ -127,15 +132,28 @@ pub(crate) fn format_record_lines(line: &[u8], options: FormatOptions) -> Result
         return Ok(vec![String::new()]);
     }
 
+    let formatted = format_record_bytes(line, options)?;
+    Ok(String::from_utf8_lossy(&formatted)
+        .lines()
+        .map(str::to_owned)
+        .collect())
+}
+
+pub(crate) fn format_record_bytes(line: &[u8], options: FormatOptions) -> Result<Vec<u8>> {
+    let trimmed = trim_record_line_end(line);
+    if trim_ascii_ws(trimmed).is_empty() {
+        return Ok(Vec::new());
+    }
+
     let formatted = match options.kind {
         FormatKind::Auto => record_format_kind(trimmed)
-            .and_then(|kind| format_record_to_string(trimmed, kind, options.indent).ok()),
-        FormatKind::Json | FormatKind::Jsonl => Some(format_record_to_string(
+            .and_then(|kind| format_record_to_bytes(trimmed, kind, options.indent).ok()),
+        FormatKind::Json | FormatKind::Jsonl => Some(format_record_to_bytes(
             trimmed,
             FormatKind::Json,
             options.indent,
         )?),
-        FormatKind::Xml => Some(format_record_to_string(
+        FormatKind::Xml => Some(format_record_to_bytes(
             trimmed,
             FormatKind::Xml,
             options.indent,
@@ -143,11 +161,7 @@ pub(crate) fn format_record_lines(line: &[u8], options: FormatOptions) -> Result
         FormatKind::Plain | FormatKind::Jinja => None,
     };
 
-    Ok(formatted
-        .unwrap_or_else(|| String::from_utf8_lossy(trimmed).into_owned())
-        .lines()
-        .map(str::to_owned)
-        .collect())
+    Ok(formatted.unwrap_or_else(|| trimmed.to_vec()))
 }
 
 fn record_format_kind(line: &[u8]) -> Option<FormatKind> {

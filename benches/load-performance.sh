@@ -150,3 +150,8 @@ bench_one \
   "lazy record preload load+transform" \
   "perf_lazy_preload_records_format" \
   "lazy preload records format"
+
+bench_one \
+  "lazy huge string first-window load+transform" \
+  "perf_lazy_huge_string_first_window_format" \
+  "lazy huge string first window format"
