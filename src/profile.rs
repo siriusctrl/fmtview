@@ -206,6 +206,14 @@ mod tests {
 
     use super::*;
 
+    fn source(contents: &[u8]) -> (NamedTempFile, InputSource) {
+        let mut temp = NamedTempFile::new().unwrap();
+        temp.write_all(contents).unwrap();
+        temp.flush().unwrap();
+        let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
+        (temp, source)
+    }
+
     fn source_with_suffix(contents: &[u8], suffix: &str) -> (NamedTempFile, InputSource) {
         let mut temp = TempFileBuilder::new().suffix(suffix).tempfile().unwrap();
         temp.write_all(contents).unwrap();
@@ -266,5 +274,128 @@ mod tests {
         assert_eq!(profile.load, LoadPlan::LazyTransformedRecords);
         assert_eq!(profile.transform, TransformStrategy::RecordPrettyPrint);
         assert_eq!(profile.syntax, SyntaxKind::Structured);
+    }
+
+    #[test]
+    fn explicit_format_kinds_choose_profile_without_sniffing() {
+        let (_temp, source) = source(b"{\"broken\":\n");
+
+        let cases = [
+            (
+                FormatKind::Jsonl,
+                LoadPlan::LazyTransformedRecords,
+                TransformStrategy::RecordPrettyPrint,
+                SyntaxKind::Structured,
+            ),
+            (
+                FormatKind::Json,
+                LoadPlan::EagerTransformedDocument,
+                TransformStrategy::PrettyPrint,
+                SyntaxKind::Structured,
+            ),
+            (
+                FormatKind::Xml,
+                LoadPlan::EagerTransformedDocument,
+                TransformStrategy::PrettyPrint,
+                SyntaxKind::Structured,
+            ),
+            (
+                FormatKind::Plain,
+                LoadPlan::EagerIndexedSource,
+                TransformStrategy::Passthrough,
+                SyntaxKind::Plain,
+            ),
+            (
+                FormatKind::Jinja,
+                LoadPlan::EagerIndexedSource,
+                TransformStrategy::Passthrough,
+                SyntaxKind::Jinja,
+            ),
+        ];
+
+        for (kind, load, transform, syntax) in cases {
+            let profile =
+                TypeProfile::resolve(&source, &FormatOptions { kind, indent: 2 }).unwrap();
+
+            assert_eq!(profile.content, kind);
+            assert_eq!(profile.load, load);
+            assert_eq!(profile.transform, transform);
+            assert_eq!(profile.syntax, syntax);
+        }
+    }
+
+    #[test]
+    fn resolves_jsonl_extension_before_sampling() {
+        let mut data = b"{\"message\":\"".to_vec();
+        data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
+        data.extend_from_slice(b"\"}\n{\"ok\":true}\n");
+        let (_temp, source) = source_with_suffix(&data, ".jsonl");
+
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Auto,
+                indent: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.content, FormatKind::Jsonl);
+        assert_eq!(profile.load, LoadPlan::LazyTransformedRecords);
+    }
+
+    #[test]
+    fn keeps_truncated_record_prefix_as_eager_json_document_without_extension() {
+        let mut data = b"{\"message\":\"".to_vec();
+        data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
+        data.extend_from_slice(b"\"}\n{\"ok\":true}\n");
+        let (_temp, source) = source(&data);
+
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Auto,
+                indent: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.content, FormatKind::Json);
+        assert_eq!(profile.load, LoadPlan::EagerTransformedDocument);
+    }
+
+    #[test]
+    fn keeps_multiline_documents_eager() {
+        let (_json_temp, json_source) = source(b"{\n  \"items\": [\n    {\"a\": 1}\n  ]\n}\n");
+        let (_xml_temp, xml_source) = source(b"<root>\n  <item>one</item>\n</root>\n");
+        let options = FormatOptions {
+            kind: FormatKind::Auto,
+            indent: 2,
+        };
+
+        let json = TypeProfile::resolve(&json_source, &options).unwrap();
+        let xml = TypeProfile::resolve(&xml_source, &options).unwrap();
+
+        assert_eq!(json.content, FormatKind::Json);
+        assert_eq!(json.load, LoadPlan::EagerTransformedDocument);
+        assert_eq!(xml.content, FormatKind::Xml);
+        assert_eq!(xml.load, LoadPlan::EagerTransformedDocument);
+    }
+
+    #[test]
+    fn keeps_single_line_json_document_eager() {
+        let (_temp, source) = source(b"{\"items\":[{\"a\":1},{\"b\":2}]}\n");
+
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Auto,
+                indent: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.content, FormatKind::Json);
+        assert_eq!(profile.load, LoadPlan::EagerTransformedDocument);
     }
 }

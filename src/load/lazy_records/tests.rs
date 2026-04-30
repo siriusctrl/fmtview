@@ -1,7 +1,12 @@
-use std::{io::Write, time::Instant};
+use std::{
+    io::Write,
+    time::{Duration, Instant},
+};
 
 use tempfile::Builder as TempFileBuilder;
 use tempfile::NamedTempFile;
+
+use crate::transform::{FormatKind, FormatOptions};
 
 use super::*;
 
@@ -11,159 +16,6 @@ fn temp_source(contents: &[u8]) -> (NamedTempFile, InputSource) {
     temp.flush().unwrap();
     let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
     (temp, source)
-}
-
-fn temp_source_with_suffix(contents: &[u8], suffix: &str) -> (NamedTempFile, InputSource) {
-    let mut temp = TempFileBuilder::new().suffix(suffix).tempfile().unwrap();
-    temp.write_all(contents).unwrap();
-    temp.flush().unwrap();
-    let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
-    (temp, source)
-}
-
-#[test]
-fn lazy_load_does_not_require_jsonl_extension() {
-    let (_temp, source) = temp_source(b"{\"a\":1}\n{\"b\":2}\n");
-    let options = FormatOptions {
-        kind: FormatKind::Auto,
-        indent: 2,
-    };
-
-    assert_eq!(
-        load_plan(&source, &options).unwrap(),
-        LoadPlan::LazyTransformedRecords
-    );
-}
-
-#[test]
-fn explicit_format_kinds_choose_load_plan_without_sniffing() {
-    let (_temp, source) = temp_source(b"{\"broken\":\n");
-
-    assert_eq!(
-        load_plan(
-            &source,
-            &FormatOptions {
-                kind: FormatKind::Jsonl,
-                indent: 2,
-            }
-        )
-        .unwrap(),
-        LoadPlan::LazyTransformedRecords
-    );
-    assert_eq!(
-        load_plan(
-            &source,
-            &FormatOptions {
-                kind: FormatKind::Json,
-                indent: 2,
-            }
-        )
-        .unwrap(),
-        LoadPlan::EagerTransformedDocument
-    );
-    assert_eq!(
-        load_plan(
-            &source,
-            &FormatOptions {
-                kind: FormatKind::Xml,
-                indent: 2,
-            }
-        )
-        .unwrap(),
-        LoadPlan::EagerTransformedDocument
-    );
-    assert_eq!(
-        load_plan(
-            &source,
-            &FormatOptions {
-                kind: FormatKind::Plain,
-                indent: 2,
-            }
-        )
-        .unwrap(),
-        LoadPlan::EagerIndexedSource
-    );
-    assert_eq!(
-        load_plan(
-            &source,
-            &FormatOptions {
-                kind: FormatKind::Jinja,
-                indent: 2,
-            }
-        )
-        .unwrap(),
-        LoadPlan::EagerIndexedSource
-    );
-}
-
-#[test]
-fn auto_lazy_load_honors_jsonl_extension_before_sampling() {
-    let mut data = b"{\"message\":\"".to_vec();
-    data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
-    data.extend_from_slice(b"\"}\n{\"ok\":true}\n");
-    let (_temp, source) = temp_source_with_suffix(&data, ".jsonl");
-    let options = FormatOptions {
-        kind: FormatKind::Auto,
-        indent: 2,
-    };
-
-    assert_eq!(
-        load_plan(&source, &options).unwrap(),
-        LoadPlan::LazyTransformedRecords
-    );
-}
-
-#[test]
-fn auto_raw_load_honors_plain_and_jinja_extensions_before_sampling() {
-    let options = FormatOptions {
-        kind: FormatKind::Auto,
-        indent: 2,
-    };
-    let (_plain_temp, plain_source) = temp_source_with_suffix(b"{\"not\":\"formatted\"}", ".txt");
-    let (_jinja_temp, jinja_source) = temp_source_with_suffix(b"<h1>{{ title }}</h1>", ".html.j2");
-
-    assert_eq!(
-        load_plan(&plain_source, &options).unwrap(),
-        LoadPlan::EagerIndexedSource
-    );
-    assert_eq!(
-        load_plan(&jinja_source, &options).unwrap(),
-        LoadPlan::EagerIndexedSource
-    );
-}
-
-#[test]
-fn auto_lazy_load_rejects_truncated_prefix_without_extension() {
-    let mut data = b"{\"message\":\"".to_vec();
-    data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
-    data.extend_from_slice(b"\"}\n{\"ok\":true}\n");
-    let (_temp, source) = temp_source(&data);
-    let options = FormatOptions {
-        kind: FormatKind::Auto,
-        indent: 2,
-    };
-
-    assert_eq!(
-        load_plan(&source, &options).unwrap(),
-        LoadPlan::EagerTransformedDocument
-    );
-}
-
-#[test]
-fn auto_lazy_load_keeps_large_multiline_json_eager() {
-    let mut data = b"{\"message\":\"".to_vec();
-    data.extend(std::iter::repeat_n(b'a', SNIFF_BYTES + 1024));
-    data.extend_from_slice(b"\",\n\"ok\":true\n}\n");
-    let (_temp, source) = temp_source(&data);
-    let options = FormatOptions {
-        kind: FormatKind::Auto,
-        indent: 2,
-    };
-
-    assert_eq!(
-        load_plan(&source, &options).unwrap(),
-        LoadPlan::EagerTransformedDocument
-    );
 }
 
 #[test]
@@ -231,25 +83,6 @@ fn explicit_jsonl_errors_on_malformed_record() {
 }
 
 #[test]
-fn multiline_whole_documents_do_not_use_lazy_load() {
-    let (_json_temp, json_source) = temp_source(b"{\n  \"items\": [\n    {\"a\": 1}\n  ]\n}\n");
-    let (_xml_temp, xml_source) = temp_source(b"<root>\n  <item>one</item>\n</root>\n");
-    let options = FormatOptions {
-        kind: FormatKind::Auto,
-        indent: 2,
-    };
-
-    assert_eq!(
-        load_plan(&json_source, &options).unwrap(),
-        LoadPlan::EagerTransformedDocument
-    );
-    assert_eq!(
-        load_plan(&xml_source, &options).unwrap(),
-        LoadPlan::EagerTransformedDocument
-    );
-}
-
-#[test]
 fn lazy_load_reads_spooled_lines_after_preload() {
     let (_temp, source) = temp_source(b"{\"a\":1}\n{\"b\":2}\n{\"c\":3}\n");
     let options = FormatOptions {
@@ -266,20 +99,6 @@ fn lazy_load_reads_spooled_lines_after_preload() {
             .unwrap()
             .iter()
             .any(|line| line.contains("\"c\""))
-    );
-}
-
-#[test]
-fn small_whole_document_does_not_use_lazy_load() {
-    let (_temp, source) = temp_source(b"{\"items\":[{\"a\":1},{\"b\":2}]}\n");
-    let options = FormatOptions {
-        kind: FormatKind::Auto,
-        indent: 2,
-    };
-
-    assert_eq!(
-        load_plan(&source, &options).unwrap(),
-        LoadPlan::EagerTransformedDocument
     );
 }
 
