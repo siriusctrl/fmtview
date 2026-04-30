@@ -1,6 +1,6 @@
 [package]
 name = "fmtview"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Fast CLI viewer for highlighting, search, and diffs across JSON, JSONL, markup, text, and Jinja"

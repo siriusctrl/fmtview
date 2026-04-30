@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-30
+
 ### Added
 
 - Add passthrough viewing and diffing for plain text and Jinja templates. Known
