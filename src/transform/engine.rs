@@ -97,7 +97,7 @@ pub fn format_record_to_string(input: &[u8], kind: FormatKind, indent: usize) ->
 }
 
 pub fn format_record_to_bytes(input: &[u8], kind: FormatKind, indent: usize) -> Result<Vec<u8>> {
-    let mut output = Vec::with_capacity(input.len().min(8192));
+    let mut output = Vec::with_capacity(record_output_capacity(input.len()));
     match kind {
         FormatKind::Auto => unreachable!("auto must be resolved before formatting a record"),
         FormatKind::Json | FormatKind::Jsonl => {
@@ -114,6 +114,14 @@ pub fn format_record_to_bytes(input: &[u8], kind: FormatKind, indent: usize) -> 
         FormatKind::Plain | FormatKind::Jinja => output.extend_from_slice(input),
     }
     Ok(output)
+}
+
+fn record_output_capacity(input_len: usize) -> usize {
+    if input_len >= 1024 * 1024 {
+        return input_len.saturating_add(input_len / 3);
+    }
+
+    input_len.saturating_mul(2).clamp(128, 8192)
 }
 
 pub fn trim_record_line_end(line: &[u8]) -> &[u8] {

@@ -84,6 +84,9 @@ Load metrics:
   where most bytes are inside one large string value. This keeps the lazy
   record first-window path honest for files that cannot benefit from reading a
   few small records.
+- `lazy huge string preload transform+spool` measures the same shape without
+  reading the visible window back from the spool. Compare this with the
+  first-window metric to separate transform/spool cost from long-line readback.
 
 Transform metrics:
 

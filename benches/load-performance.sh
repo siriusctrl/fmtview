@@ -155,3 +155,8 @@ bench_one \
   "lazy huge string first-window load+transform" \
   "perf_lazy_huge_string_first_window_format" \
   "lazy huge string first window format"
+
+bench_one \
+  "lazy huge string preload transform+spool" \
+  "perf_lazy_huge_string_preload_format" \
+  "lazy huge string preload format"

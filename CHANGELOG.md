@@ -16,6 +16,12 @@ for GitHub Release notes, so every published version must have a matching
 - Add `--type plain` and `--type jinja` for explicit passthrough handling.
   Redirected stdout preserves input bytes instead of formatting these types.
 
+### Changed
+
+- Speed up lazy JSONL viewing for large records by reducing spool indexing and
+  long-line readback overhead, with separate benchmarks for transform/spool cost
+  and first-window readback.
+
 ## [0.2.1] - 2026-04-28
 
 ### Changed

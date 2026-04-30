@@ -405,6 +405,34 @@ fn perf_lazy_huge_string_first_window_format() {
     );
 }
 
+#[test]
+#[ignore = "performance smoke; run benches/load-performance.sh"]
+fn perf_lazy_huge_string_preload_format() {
+    let (_temp, source, input_bytes) = generated_huge_string_jsonl_source(600_000, ".jsonl");
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let file = LazyTransformedFile::new(&source, options).unwrap();
+
+    let started = Instant::now();
+    let changed = file.preload(10, 1, Duration::from_secs(30)).unwrap();
+    let elapsed = started.elapsed();
+
+    eprintln!(
+        "lazy huge string preload format: {elapsed:?}, records={}, lines={}, input_bytes={input_bytes}",
+        file.loaded_record_count(),
+        file.indexed_line_count(),
+    );
+    assert!(changed);
+    assert_eq!(file.loaded_record_count(), 1);
+    assert_eq!(file.indexed_line_count(), 5);
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "lazy huge string preload format took {elapsed:?}"
+    );
+}
+
 fn generated_jsonl_source(
     count: usize,
     message_len: usize,

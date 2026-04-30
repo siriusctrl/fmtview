@@ -1,14 +1,17 @@
 use std::{
     cell::RefCell,
     fs::File,
-    io::{BufRead, BufReader, Seek, SeekFrom, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail};
+use memchr::memchr_iter;
 use tempfile::NamedTempFile;
 
 use super::{ViewFile, strip_line_end};
+
+const DIRECT_READ_LINE_BYTES: u64 = 64 * 1024;
 
 pub(crate) trait LazyProducer {
     fn produce(&mut self, source_offset: u64) -> Result<LazyBatch>;
@@ -115,18 +118,29 @@ impl<P: LazyProducer> ViewFile for LazyFile<P> {
         let mut file = File::open(state.spool.path()).context("failed to open lazy load spool")?;
         file.seek(SeekFrom::Start(state.line_offsets[start]))
             .context("failed to seek lazy load spool")?;
-        let mut reader = BufReader::new(file);
         let mut lines = Vec::with_capacity(end - start);
-        for _ in start..end {
-            let mut line = String::new();
-            let read = reader
-                .read_line(&mut line)
-                .context("failed to read lazy load spool")?;
-            if read == 0 {
-                break;
+
+        if (start..end).any(|line_index| state.line_span(line_index) > DIRECT_READ_LINE_BYTES) {
+            for line_index in start..end {
+                let mut line = vec![0_u8; state.line_span(line_index) as usize];
+                file.read_exact(&mut line)
+                    .context("failed to read lazy load spool")?;
+                strip_byte_line_end(&mut line);
+                lines.push(String::from_utf8(line).context("lazy load spool was not valid UTF-8")?);
             }
-            strip_line_end(&mut line);
-            lines.push(line);
+        } else {
+            let mut reader = BufReader::new(file);
+            for _ in start..end {
+                let mut line = String::new();
+                let read = reader
+                    .read_line(&mut line)
+                    .context("failed to read lazy load spool")?;
+                if read == 0 {
+                    break;
+                }
+                strip_line_end(&mut line);
+                lines.push(line);
+            }
         }
         Ok(lines)
     }
@@ -199,8 +213,8 @@ impl<P: LazyProducer> LazyState<P> {
     fn append_bytes(&mut self, source_offset: u64, bytes: &[u8]) -> Result<()> {
         self.line_offsets.push(self.spool_len);
         self.source_line_offsets.push(source_offset);
-        for (index, byte) in bytes.iter().enumerate() {
-            if *byte == b'\n' && index + 1 < bytes.len() {
+        for index in memchr_iter(b'\n', bytes) {
+            if index + 1 < bytes.len() {
                 self.line_offsets.push(self.spool_len + index as u64 + 1);
                 self.source_line_offsets.push(source_offset);
             }
@@ -218,6 +232,25 @@ impl<P: LazyProducer> LazyState<P> {
             .saturating_add(bytes.len() as u64)
             .saturating_add(1);
         Ok(())
+    }
+
+    fn line_span(&self, line_index: usize) -> u64 {
+        let line_start = self.line_offsets[line_index];
+        let line_end = self
+            .line_offsets
+            .get(line_index + 1)
+            .copied()
+            .unwrap_or(self.spool_len);
+        line_end.saturating_sub(line_start)
+    }
+}
+
+fn strip_byte_line_end(line: &mut Vec<u8>) {
+    if line.ends_with(b"\n") {
+        line.pop();
+        if line.ends_with(b"\r") {
+            line.pop();
+        }
     }
 }
 
@@ -331,5 +364,26 @@ mod tests {
         assert_eq!(file.byte_offset_for_line(2), 0);
         assert_eq!(file.byte_offset_for_line(3), 6);
         assert_eq!(file.produced_unit_count(), 2);
+    }
+
+    #[test]
+    fn lazy_runtime_reads_large_spooled_lines_by_offset() {
+        let large = "x".repeat(DIRECT_READ_LINE_BYTES as usize + 1);
+        let bytes = format!("head\n{large}\ntail").into_bytes();
+        let file = LazyFile::new(
+            "test".to_owned(),
+            bytes.len() as u64,
+            TestProducer::with_batches([LazyBatch::Bytes {
+                source_bytes: bytes.len() as u64,
+                source_offset: 0,
+                bytes,
+            }]),
+        )
+        .unwrap();
+
+        assert_eq!(
+            file.read_window(0, 3).unwrap(),
+            vec!["head".to_owned(), large, "tail".to_owned()]
+        );
     }
 }
