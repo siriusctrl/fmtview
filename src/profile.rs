@@ -18,9 +18,17 @@ const SNIFF_LINES: usize = 16;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TypeProfile {
     pub(crate) content: FormatKind,
+    pub(crate) shape: ContentShape,
     pub(crate) load: LoadPlan,
     pub(crate) transform: TransformStrategy,
     pub(crate) syntax: SyntaxKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ContentShape {
+    LineIndexed,
+    RecordStream,
+    WholeDocument,
 }
 
 impl TypeProfile {
@@ -43,6 +51,7 @@ impl TypeProfile {
             Some(b'{' | b'[') => explicit_profile(FormatKind::Json),
             _ => TypeProfile {
                 content: FormatKind::Jsonl,
+                shape: ContentShape::WholeDocument,
                 load: LoadPlan::EagerTransformedDocument,
                 transform: TransformStrategy::RecordPrettyPrint,
                 syntax: SyntaxKind::Structured,
@@ -63,30 +72,35 @@ fn explicit_profile(kind: FormatKind) -> TypeProfile {
         FormatKind::Auto => unreachable!("auto must be resolved before building a type profile"),
         FormatKind::Json => TypeProfile {
             content: FormatKind::Json,
+            shape: ContentShape::WholeDocument,
             load: LoadPlan::EagerTransformedDocument,
             transform: TransformStrategy::PrettyPrint,
             syntax: SyntaxKind::Structured,
         },
         FormatKind::Jsonl => TypeProfile {
             content: FormatKind::Jsonl,
+            shape: ContentShape::RecordStream,
             load: LoadPlan::LazyTransformedRecords,
             transform: TransformStrategy::RecordPrettyPrint,
             syntax: SyntaxKind::Structured,
         },
         FormatKind::Xml => TypeProfile {
             content: FormatKind::Xml,
+            shape: ContentShape::WholeDocument,
             load: LoadPlan::EagerTransformedDocument,
             transform: TransformStrategy::PrettyPrint,
             syntax: SyntaxKind::Structured,
         },
         FormatKind::Plain => TypeProfile {
             content: FormatKind::Plain,
+            shape: ContentShape::LineIndexed,
             load: LoadPlan::EagerIndexedSource,
             transform: TransformStrategy::Passthrough,
             syntax: SyntaxKind::Plain,
         },
         FormatKind::Jinja => TypeProfile {
             content: FormatKind::Jinja,
+            shape: ContentShape::LineIndexed,
             load: LoadPlan::EagerIndexedSource,
             transform: TransformStrategy::Passthrough,
             syntax: SyntaxKind::Jinja,
@@ -235,6 +249,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(profile.content, FormatKind::Plain);
+        assert_eq!(profile.shape, ContentShape::LineIndexed);
         assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
         assert_eq!(profile.transform, TransformStrategy::Passthrough);
         assert_eq!(profile.syntax, SyntaxKind::Plain);
@@ -253,6 +268,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(profile.content, FormatKind::Jinja);
+        assert_eq!(profile.shape, ContentShape::LineIndexed);
         assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
         assert_eq!(profile.transform, TransformStrategy::Passthrough);
         assert_eq!(profile.syntax, SyntaxKind::Jinja);
@@ -271,6 +287,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(profile.content, FormatKind::Jsonl);
+        assert_eq!(profile.shape, ContentShape::RecordStream);
         assert_eq!(profile.load, LoadPlan::LazyTransformedRecords);
         assert_eq!(profile.transform, TransformStrategy::RecordPrettyPrint);
         assert_eq!(profile.syntax, SyntaxKind::Structured);
@@ -283,41 +300,47 @@ mod tests {
         let cases = [
             (
                 FormatKind::Jsonl,
+                ContentShape::RecordStream,
                 LoadPlan::LazyTransformedRecords,
                 TransformStrategy::RecordPrettyPrint,
                 SyntaxKind::Structured,
             ),
             (
                 FormatKind::Json,
+                ContentShape::WholeDocument,
                 LoadPlan::EagerTransformedDocument,
                 TransformStrategy::PrettyPrint,
                 SyntaxKind::Structured,
             ),
             (
                 FormatKind::Xml,
+                ContentShape::WholeDocument,
                 LoadPlan::EagerTransformedDocument,
                 TransformStrategy::PrettyPrint,
                 SyntaxKind::Structured,
             ),
             (
                 FormatKind::Plain,
+                ContentShape::LineIndexed,
                 LoadPlan::EagerIndexedSource,
                 TransformStrategy::Passthrough,
                 SyntaxKind::Plain,
             ),
             (
                 FormatKind::Jinja,
+                ContentShape::LineIndexed,
                 LoadPlan::EagerIndexedSource,
                 TransformStrategy::Passthrough,
                 SyntaxKind::Jinja,
             ),
         ];
 
-        for (kind, load, transform, syntax) in cases {
+        for (kind, shape, load, transform, syntax) in cases {
             let profile =
                 TypeProfile::resolve(&source, &FormatOptions { kind, indent: 2 }).unwrap();
 
             assert_eq!(profile.content, kind);
+            assert_eq!(profile.shape, shape);
             assert_eq!(profile.load, load);
             assert_eq!(profile.transform, transform);
             assert_eq!(profile.syntax, syntax);
@@ -341,6 +364,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(profile.content, FormatKind::Jsonl);
+        assert_eq!(profile.shape, ContentShape::RecordStream);
         assert_eq!(profile.load, LoadPlan::LazyTransformedRecords);
     }
 
@@ -361,6 +385,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(profile.content, FormatKind::Json);
+        assert_eq!(profile.shape, ContentShape::WholeDocument);
         assert_eq!(profile.load, LoadPlan::EagerTransformedDocument);
     }
 
@@ -377,8 +402,10 @@ mod tests {
         let xml = TypeProfile::resolve(&xml_source, &options).unwrap();
 
         assert_eq!(json.content, FormatKind::Json);
+        assert_eq!(json.shape, ContentShape::WholeDocument);
         assert_eq!(json.load, LoadPlan::EagerTransformedDocument);
         assert_eq!(xml.content, FormatKind::Xml);
+        assert_eq!(xml.shape, ContentShape::WholeDocument);
         assert_eq!(xml.load, LoadPlan::EagerTransformedDocument);
     }
 
@@ -396,6 +423,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(profile.content, FormatKind::Json);
+        assert_eq!(profile.shape, ContentShape::WholeDocument);
         assert_eq!(profile.load, LoadPlan::EagerTransformedDocument);
     }
 }

@@ -35,7 +35,7 @@ Code orientation:
   viewer paths.
 - `src/input.rs` owns input materialization from files, stdin, and literals.
 - `src/profile.rs` resolves `--type` and auto-detection into a concrete content
-  kind, load strategy, transform strategy, and syntax highlighter.
+  kind, input shape, load strategy, transform strategy, and syntax highlighter.
 - `src/load/` owns lazy-load runtimes and indexed line access:
   - `mod.rs` defines `ViewFile` plus eager temp-file line indexing.
   - lazy loaders share spool/index/view-window mechanics and keep
@@ -68,10 +68,13 @@ Code orientation:
   - `tests.rs` keeps viewer regression and performance smoke coverage close to
     the private TUI internals.
 - `tests/cli.rs` covers CLI-level behavior.
-- `benches/` contains local performance harnesses. They are shell-driven smoke
-  checks rather than Cargo benchmark targets because they exercise transform,
-  load, syntax, viewer, diff, release-binary, PTY-like terminal writers, and
-  alternate external formatter paths.
+- `benches/` contains local performance entry points:
+  - load and format wrappers call the Rust harness in `src/perf.rs`, which owns
+    case filtering, fixture generation, samples, shape/layer labels, and timing
+    summaries.
+  - syntax, viewer, diff, and algorithm checks still use focused shell-driven
+    smoke harnesses because they exercise private TUI internals, terminal
+    writers, release binaries, or alternate external formatter paths.
 
 Keep README user-facing. Keep maintainer-only workflows in docs and link them
 from `AGENTS.md`.

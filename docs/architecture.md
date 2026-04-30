@@ -14,7 +14,8 @@ The core boundary is:
   | InteractiveView  +----->+ json/jsonl    +----->+ content kind      |
   | RedirectedOutput |      | xml/html      |      | load strategy     |
   | DiffInput        |      | plain/jinja   |      | transform plan    |
-  +------------------+      +---------------+      | syntax highlighter|
+  +------------------+      +---------------+      | input shape       |
+                                                   | syntax highlighter|
                                                    +---------+---------+
                                                              |
                                                              v
@@ -30,20 +31,49 @@ The core boundary is:
 answers four questions:
 
 - What is the content kind?
+- What input shape does this type expose to the viewer pipeline?
 - Should the viewer index source text, an eager transformed document, or lazily
   produced transformed lines?
 - Which transform should redirected stdout and diff input use?
 - Which syntax engine should render visible windows?
 
+## Input Shapes
+
+`ContentShape` is the coarse performance and capability boundary. It is not a
+parser interface and it does not decide highlighting by itself. It names the
+unit of work that shared runtimes can rely on:
+
+```text
+  LineIndexed
+    Source text already has usable line boundaries and does not need a
+    formatter before viewing. Plain text and Jinja use this shape today.
+
+  RecordStream
+    Input is a sequence of independent newline-delimited records. The first
+    viewer window can transform only the records it needs, preload can advance
+    in bounded record batches, and future ordered parallel transform can share
+    the same runtime. JSONL and NDJSON use this shape today.
+
+  WholeDocument
+    Correct formatting depends on document-level parser state. The transformed
+    document normally has to be produced before the viewer can index it. JSON,
+    XML, HTML, and unknown non-record inputs use this shape today.
+```
+
+Optimizations should say which shape they target. Record-stream work such as
+lazy preload and ordered record parallelism should not leak into whole-document
+code paths. Whole-document work should focus on streaming parser/formatter
+behavior, temp-file indexing, syntax checkpoints, and viewer readback.
+
 ## Current Profiles
 
-| Type | Interactive view | Redirected output | Diff input | Syntax |
-| --- | --- | --- | --- | --- |
-| JSON | Eager transformed document indexed from a temp file | Pretty-printed JSON | Pretty-printed JSON | Structured JSON/XML-style |
-| JSONL/NDJSON | Lazy transformed records spooled and indexed on demand | Pretty-printed records | Pretty-printed records; TTY diff can open lazily | Structured JSON/XML-style |
-| XML/HTML/XHTML | Eager transformed document indexed from a temp file | Pretty-printed XML-compatible markup | Pretty-printed XML-compatible markup | Structured JSON/XML-style |
-| Plain text | Raw source indexed without rewriting content | Passthrough | Passthrough | Plain |
-| Jinja | Raw source indexed without rendering or rewriting content | Passthrough | Passthrough | Jinja template spans |
+| Type | Shape | Interactive view | Redirected output | Diff input | Syntax |
+| --- | --- | --- | --- | --- | --- |
+| JSON | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed JSON | Pretty-printed JSON | Structured JSON/XML-style |
+| JSONL/NDJSON | RecordStream | Lazy transformed records spooled and indexed on demand | Pretty-printed records | Pretty-printed records; TTY diff can open lazily | Structured JSON/XML-style |
+| XML/HTML/XHTML | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed XML-compatible markup | Pretty-printed XML-compatible markup | Structured JSON/XML-style |
+| Plain text | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | Plain |
+| Jinja | LineIndexed | Raw source indexed without rendering or rewriting content | Passthrough | Passthrough | Jinja template spans |
 
 Unknown extensions are sniffed with a bounded prefix. Extensions remain a fast
 deterministic hint, but they are not the architecture boundary.
@@ -136,6 +166,7 @@ The same design applies outside loading:
 ```text
   TypeProfile
       |
+      +-- ContentShape      -> optimization and capability boundary
       +-- LoadStrategy      -> shared load runtimes
       +-- TransformStrategy -> shared transform engine
       +-- SyntaxKind        -> shared visible-window highlighter

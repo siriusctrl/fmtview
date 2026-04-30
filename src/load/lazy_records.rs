@@ -44,12 +44,12 @@ impl LazyTransformedFile {
     }
 
     #[cfg(test)]
-    fn loaded_record_count(&self) -> usize {
+    pub(crate) fn loaded_record_count(&self) -> usize {
         self.inner.produced_unit_count()
     }
 
     #[cfg(test)]
-    fn indexed_line_count(&self) -> usize {
+    pub(crate) fn indexed_line_count(&self) -> usize {
         self.inner.indexed_line_count()
     }
 }

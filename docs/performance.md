@@ -59,9 +59,21 @@ benches/format-performance.sh --samples 3
 benches/format-algorithm.sh --samples 3 --candidate 'experiment=...'
 ```
 
-The script runs ignored release-mode tests, so normal `cargo test` and CI stay
-focused on correctness. It unsets `NO_COLOR` for the benchmark subprocesses so
-the terminal draw byte count includes the normal styled-color path.
+Run one shape, layer, or label substring while iterating on load/format work:
+
+```sh
+benches/load-performance.sh --samples 3 --case record-stream
+benches/format-performance.sh --samples 3 --case huge-record
+```
+
+The load and format scripts run a dedicated Rust performance harness in
+`src/perf.rs`. The shell wrappers are compatibility entry points only: Rust owns
+fixture generation, samples, case filtering, shape/layer labels, and timing
+summaries. Viewer, syntax, and diff scripts still run ignored release-mode
+tests close to their private modules; keep migrating those into the Rust
+performance harness when their benchmark logic grows beyond a narrow smoke
+check. Scripts that measure terminal drawing unset `NO_COLOR` for benchmark
+subprocesses so byte counts include the normal styled-color path.
 
 For planned lazy-runtime refactors before inline parallel parser or formatter
 work, keep the baseline split across two scripts: `benches/load-performance.sh`
@@ -69,39 +81,53 @@ measures lazy first-window and preload behavior, while
 `benches/format-performance.sh` separates huge structured records from huge
 string records.
 
+Every load/format benchmark prints a `shape` and `layer` line. Use these as the
+optimization boundary:
+
+- `line-indexed`: source text can be indexed as-is.
+- `record-stream`: newline-delimited records can be transformed independently.
+- `record-stream/huge-record`: one record dominates the cost, so first-window
+  lazy behavior cannot hide transform/readback work.
+- `transform`, `transform+spool`, `transform+readback`, and related layer names
+  separate parser/formatter cost from lazy runtime and viewer readback cost.
+
 Metrics:
 
 Load metrics:
 
 - `raw indexed load` measures building line offsets for a large already-textual
-  input and reading a middle window from the index.
+  input and reading a middle window from the index. Shape: `line-indexed`.
 - `lazy record first-window load+transform` measures opening a lazy record stream,
   transforming only enough records to fill the first visible window, and
-  reading those spooled lines back.
+  reading those spooled lines back. Shape: `record-stream`.
 - `lazy record preload load+transform` measures background lazy record
   transform plus spool/index extension after the first window has opened.
+  Shape: `record-stream`.
 - `lazy huge string first-window load+transform` measures a single JSONL record
   where most bytes are inside one large string value. This keeps the lazy
   record first-window path honest for files that cannot benefit from reading a
-  few small records.
+  few small records. Shape: `record-stream/huge-record`.
 - `lazy huge string preload transform+spool` measures the same shape without
   reading the visible window back from the spool. Compare this with the
   first-window metric to separate transform/spool cost from long-line readback.
+  Shape: `record-stream/huge-record`.
 
 Transform metrics:
 
 - `jsonl record batch CPU` measures formatting many independent JSONL records
   from memory. This is the target for inter-line record parallelism without
-  temp-file write noise.
+  temp-file write noise. Shape: `record-stream`.
 - `jsonl source full format` measures full JSONL file formatting through the
-  normal temp-file path, including read, parse, format, and write.
+  normal temp-file path, including read, parse, format, and write. Shape:
+  `record-stream`.
 - `single huge object-array record format` measures one large JSON record with
   many object children inside an array. This is the target shape for future
-  structural split plus ordered inline-parallel formatting.
+  structural split plus ordered inline-parallel formatting. Shape:
+  `record-stream/huge-record`.
 - `single huge string field record format` measures one large JSON object where
   most bytes are inside a single string value. This is the target shape for
   string scan/copy improvements; structural child parallelism is not expected
-  to help much here.
+  to help much here. Shape: `record-stream/huge-record`.
 
 Syntax metrics:
 
