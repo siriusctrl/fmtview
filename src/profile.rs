@@ -14,6 +14,72 @@ use crate::{
 
 const SNIFF_BYTES: usize = 1024 * 1024;
 const SNIFF_LINES: usize = 16;
+const JSON_EXTENSIONS: &[&str] = &["json"];
+const JSONL_EXTENSIONS: &[&str] = &["jsonl", "ndjson"];
+const XML_EXTENSIONS: &[&str] = &["xml", "html", "htm", "xhtml"];
+const TOML_EXTENSIONS: &[&str] = &["toml"];
+const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown", "mdown", "mkd"];
+const PLAIN_EXTENSIONS: &[&str] = &["txt", "text", "log"];
+const JINJA_EXTENSIONS: &[&str] = &["j2", "jinja", "jinja2"];
+
+const FORMAT_SPECS: &[FormatSpec] = &[
+    FormatSpec {
+        kind: FormatKind::Json,
+        extensions: JSON_EXTENSIONS,
+        shape: ContentShape::WholeDocument,
+        load: LoadPlan::EagerTransformedDocument,
+        transform: TransformStrategy::PrettyPrint,
+        syntax: SyntaxKind::Structured,
+    },
+    FormatSpec {
+        kind: FormatKind::Jsonl,
+        extensions: JSONL_EXTENSIONS,
+        shape: ContentShape::RecordStream,
+        load: LoadPlan::LazyTransformedRecords,
+        transform: TransformStrategy::RecordPrettyPrint,
+        syntax: SyntaxKind::Structured,
+    },
+    FormatSpec {
+        kind: FormatKind::Xml,
+        extensions: XML_EXTENSIONS,
+        shape: ContentShape::WholeDocument,
+        load: LoadPlan::EagerTransformedDocument,
+        transform: TransformStrategy::PrettyPrint,
+        syntax: SyntaxKind::Structured,
+    },
+    FormatSpec {
+        kind: FormatKind::Toml,
+        extensions: TOML_EXTENSIONS,
+        shape: ContentShape::LineIndexed,
+        load: LoadPlan::EagerIndexedSource,
+        transform: TransformStrategy::Passthrough,
+        syntax: SyntaxKind::Toml,
+    },
+    FormatSpec {
+        kind: FormatKind::Markdown,
+        extensions: MARKDOWN_EXTENSIONS,
+        shape: ContentShape::LineIndexed,
+        load: LoadPlan::EagerIndexedSource,
+        transform: TransformStrategy::Passthrough,
+        syntax: SyntaxKind::Markdown,
+    },
+    FormatSpec {
+        kind: FormatKind::Plain,
+        extensions: PLAIN_EXTENSIONS,
+        shape: ContentShape::LineIndexed,
+        load: LoadPlan::EagerIndexedSource,
+        transform: TransformStrategy::Passthrough,
+        syntax: SyntaxKind::Plain,
+    },
+    FormatSpec {
+        kind: FormatKind::Jinja,
+        extensions: JINJA_EXTENSIONS,
+        shape: ContentShape::LineIndexed,
+        load: LoadPlan::EagerIndexedSource,
+        transform: TransformStrategy::Passthrough,
+        syntax: SyntaxKind::Jinja,
+    },
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TypeProfile {
@@ -29,6 +95,28 @@ pub(crate) enum ContentShape {
     LineIndexed,
     RecordStream,
     WholeDocument,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FormatSpec {
+    kind: FormatKind,
+    extensions: &'static [&'static str],
+    shape: ContentShape,
+    load: LoadPlan,
+    transform: TransformStrategy,
+    syntax: SyntaxKind,
+}
+
+impl FormatSpec {
+    fn profile(self) -> TypeProfile {
+        TypeProfile {
+            content: self.kind,
+            shape: self.shape,
+            load: self.load,
+            transform: self.transform,
+            syntax: self.syntax,
+        }
+    }
 }
 
 impl TypeProfile {
@@ -62,77 +150,24 @@ impl TypeProfile {
 }
 
 fn explicit_profile(kind: FormatKind) -> TypeProfile {
-    match kind {
-        FormatKind::Auto => unreachable!("auto must be resolved before building a type profile"),
-        FormatKind::Json => TypeProfile {
-            content: FormatKind::Json,
-            shape: ContentShape::WholeDocument,
-            load: LoadPlan::EagerTransformedDocument,
-            transform: TransformStrategy::PrettyPrint,
-            syntax: SyntaxKind::Structured,
-        },
-        FormatKind::Jsonl => TypeProfile {
-            content: FormatKind::Jsonl,
-            shape: ContentShape::RecordStream,
-            load: LoadPlan::LazyTransformedRecords,
-            transform: TransformStrategy::RecordPrettyPrint,
-            syntax: SyntaxKind::Structured,
-        },
-        FormatKind::Xml => TypeProfile {
-            content: FormatKind::Xml,
-            shape: ContentShape::WholeDocument,
-            load: LoadPlan::EagerTransformedDocument,
-            transform: TransformStrategy::PrettyPrint,
-            syntax: SyntaxKind::Structured,
-        },
-        FormatKind::Toml => TypeProfile {
-            content: FormatKind::Toml,
-            shape: ContentShape::LineIndexed,
-            load: LoadPlan::EagerIndexedSource,
-            transform: TransformStrategy::Passthrough,
-            syntax: SyntaxKind::Toml,
-        },
-        FormatKind::Markdown => TypeProfile {
-            content: FormatKind::Markdown,
-            shape: ContentShape::LineIndexed,
-            load: LoadPlan::EagerIndexedSource,
-            transform: TransformStrategy::Passthrough,
-            syntax: SyntaxKind::Markdown,
-        },
-        FormatKind::Plain => TypeProfile {
-            content: FormatKind::Plain,
-            shape: ContentShape::LineIndexed,
-            load: LoadPlan::EagerIndexedSource,
-            transform: TransformStrategy::Passthrough,
-            syntax: SyntaxKind::Plain,
-        },
-        FormatKind::Jinja => TypeProfile {
-            content: FormatKind::Jinja,
-            shape: ContentShape::LineIndexed,
-            load: LoadPlan::EagerIndexedSource,
-            transform: TransformStrategy::Passthrough,
-            syntax: SyntaxKind::Jinja,
-        },
-    }
+    FORMAT_SPECS
+        .iter()
+        .copied()
+        .find(|spec| spec.kind == kind)
+        .map(FormatSpec::profile)
+        .unwrap_or_else(|| unreachable!("auto must be resolved before building a type profile"))
 }
 
 fn extension_kind(source: &InputSource) -> Option<FormatKind> {
-    match source
+    let extension = source
         .path()
         .extension()
         .and_then(OsStr::to_str)
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("json") => Some(FormatKind::Json),
-        Some("jsonl" | "ndjson") => Some(FormatKind::Jsonl),
-        Some("xml" | "html" | "htm" | "xhtml") => Some(FormatKind::Xml),
-        Some("toml") => Some(FormatKind::Toml),
-        Some("md" | "markdown" | "mdown" | "mkd") => Some(FormatKind::Markdown),
-        Some("txt" | "text" | "log") => Some(FormatKind::Plain),
-        Some("j2" | "jinja" | "jinja2") => Some(FormatKind::Jinja),
-        _ => None,
-    }
+        .map(str::to_ascii_lowercase)?;
+    FORMAT_SPECS
+        .iter()
+        .find(|spec| spec.extensions.contains(&extension.as_str()))
+        .map(|spec| spec.kind)
 }
 
 #[derive(Default)]

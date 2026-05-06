@@ -5,10 +5,10 @@ use crate::load::ViewFile;
 use super::super::{
     PREWARM_BUDGET, PREWARM_MAX_LINE_BYTES, PREWARM_MAX_LINES, PREWARM_PAGES,
     RENDER_CACHE_MAX_ROWS_PER_LINE, WRAP_PREWARM_LOGICAL_LINES, WRAP_RENDER_CHUNK_ROWS,
+    syntax_state::MarkdownSyntaxCache,
 };
 use super::{
     cache::{LineWindowCache, RenderedLineCache},
-    markdown::MarkdownSyntaxCache,
     types::{RenderContext, RenderRequest, ViewPosition},
 };
 

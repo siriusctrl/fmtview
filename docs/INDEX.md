@@ -62,11 +62,14 @@ Code orientation:
     viewer, with input handling and rendering split by responsibility.
   - `terminal.rs` handles terminal diffing, ANSI writes, and scroll regions.
   - `input/` handles key/mouse state, scrolling, jumps, and search.
+  - `syntax_state.rs` owns viewer-time syntax state that depends on file
+    windows, such as Markdown fenced-code line modes.
   - `render/` handles line windows, wrapping, visual rows, caches, progress,
     prewarming, and the search highlight overlay.
   - `palette.rs` owns viewer colors.
-  - `tests.rs` keeps viewer regression and performance smoke coverage close to
-    the private TUI internals.
+  - `tests/` keeps viewer regression and performance smoke coverage close to
+    the private TUI internals, split by input, navigation, search, render,
+    terminal, cache, syntax, and viewport responsibility.
 - `tests/cli.rs` covers CLI-level behavior.
 - `src/perf/` owns the Rust load/format performance harness used by the shell
   wrappers:
