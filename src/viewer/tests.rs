@@ -1167,6 +1167,9 @@ fn syntax_palette_uses_muted_indexed_colors() {
     assert_eq!(plain_style().fg, Some(PALETTE_TEXT));
     assert_eq!(plain_style().bg, None);
     assert_eq!(gutter_style().fg, Some(PALETTE_MUTED));
+    assert_eq!(punctuation_style().fg, Some(PALETTE_PUNCTUATION));
+    assert_ne!(punctuation_style().fg, gutter_style().fg);
+    assert_ne!(punctuation_style().fg, plain_style().fg);
     assert_eq!(key_style().fg, Some(PALETTE_BLUE));
     assert_eq!(string_style().fg, Some(PALETTE_GREEN));
     assert_eq!(number_style().fg, Some(PALETTE_ORANGE));

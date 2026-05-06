@@ -4,6 +4,7 @@ use crate::diff::DiffIntensity;
 
 pub(crate) const PALETTE_TEXT: Color = Color::Indexed(145);
 pub(crate) const PALETTE_MUTED: Color = Color::Indexed(59);
+pub(crate) const PALETTE_PUNCTUATION: Color = Color::Indexed(102);
 pub(crate) const PALETTE_BLUE: Color = Color::Indexed(75);
 pub(crate) const PALETTE_CYAN: Color = Color::Indexed(73);
 pub(crate) const PALETTE_GREEN: Color = Color::Indexed(114);
@@ -26,7 +27,7 @@ pub(crate) fn gutter_style() -> Style {
 }
 
 pub(crate) fn punctuation_style() -> Style {
-    style_fg(PALETTE_MUTED)
+    style_fg(PALETTE_PUNCTUATION)
 }
 
 pub(crate) fn key_style() -> Style {
