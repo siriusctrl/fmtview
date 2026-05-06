@@ -8,6 +8,13 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-06
+
+### Fixed
+
+- Improve syntax punctuation contrast in the terminal viewer so structural
+  tokens remain readable in Ghostty without making the palette overly bright.
+
 ## [0.3.1] - 2026-05-06
 
 ### Added
