@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-06
+
 ### Added
 
 - Treat unknown non-structured inputs as plain-text passthrough instead of
