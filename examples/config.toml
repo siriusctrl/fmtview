@@ -1,0 +1,8 @@
+[server]
+host = "127.0.0.1"
+port = 8080
+enabled = true
+
+[viewer]
+theme = "terminal"
+formats = ["json", "jsonl", "xml", "toml"]

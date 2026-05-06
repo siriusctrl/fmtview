@@ -42,7 +42,7 @@ pub fn format_source_to_temp(
     }
 
     bail!(
-        "failed to format {} as JSON, JSONL, XML, plain text, or Jinja:\n{}",
+        "failed to format {} as JSON, JSONL, XML, TOML, plain text, or Jinja:\n{}",
         source.label(),
         errors.join("\n")
     )
@@ -108,7 +108,9 @@ fn try_format_source_to_writer<W: Write>(
             options.indent,
         )
         .with_context(|| format!("failed to format {} as XML", source.label()))?,
-        FormatKind::Plain | FormatKind::Jinja => passthrough_source_to_writer(source, output)?,
+        FormatKind::Toml | FormatKind::Plain | FormatKind::Jinja => {
+            passthrough_source_to_writer(source, output)?
+        }
     }
     Ok(())
 }
@@ -133,7 +135,7 @@ pub fn format_record_to_bytes(input: &[u8], kind: FormatKind, indent: usize) -> 
                 output.pop();
             }
         }
-        FormatKind::Plain | FormatKind::Jinja => output.extend_from_slice(input),
+        FormatKind::Toml | FormatKind::Plain | FormatKind::Jinja => output.extend_from_slice(input),
     }
     Ok(output)
 }
@@ -188,7 +190,7 @@ pub(crate) fn format_record_bytes(line: &[u8], options: FormatOptions) -> Result
             FormatKind::Xml,
             options.indent,
         )?),
-        FormatKind::Plain | FormatKind::Jinja => None,
+        FormatKind::Toml | FormatKind::Plain | FormatKind::Jinja => None,
     };
 
     Ok(formatted.unwrap_or_else(|| trimmed.to_vec()))

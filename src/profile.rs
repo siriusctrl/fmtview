@@ -49,13 +49,7 @@ impl TypeProfile {
         Ok(match sample.first_non_ws {
             Some(b'<') => explicit_profile(FormatKind::Xml),
             Some(b'{' | b'[') => explicit_profile(FormatKind::Json),
-            _ => TypeProfile {
-                content: FormatKind::Jsonl,
-                shape: ContentShape::WholeDocument,
-                load: LoadPlan::EagerTransformedDocument,
-                transform: TransformStrategy::RecordPrettyPrint,
-                syntax: SyntaxKind::Structured,
-            },
+            _ => explicit_profile(FormatKind::Plain),
         })
     }
 
@@ -91,6 +85,13 @@ fn explicit_profile(kind: FormatKind) -> TypeProfile {
             transform: TransformStrategy::PrettyPrint,
             syntax: SyntaxKind::Structured,
         },
+        FormatKind::Toml => TypeProfile {
+            content: FormatKind::Toml,
+            shape: ContentShape::LineIndexed,
+            load: LoadPlan::EagerIndexedSource,
+            transform: TransformStrategy::Passthrough,
+            syntax: SyntaxKind::Toml,
+        },
         FormatKind::Plain => TypeProfile {
             content: FormatKind::Plain,
             shape: ContentShape::LineIndexed,
@@ -119,6 +120,7 @@ fn extension_kind(source: &InputSource) -> Option<FormatKind> {
         Some("json") => Some(FormatKind::Json),
         Some("jsonl" | "ndjson") => Some(FormatKind::Jsonl),
         Some("xml" | "html" | "htm" | "xhtml") => Some(FormatKind::Xml),
+        Some("toml") => Some(FormatKind::Toml),
         Some("txt" | "text" | "log") => Some(FormatKind::Plain),
         Some("j2" | "jinja" | "jinja2") => Some(FormatKind::Jinja),
         _ => None,
@@ -275,6 +277,44 @@ mod tests {
     }
 
     #[test]
+    fn resolves_toml_extension_to_passthrough_profile() {
+        let (_temp, source) = source_with_suffix(b"[package]\nname = \"fmtview\"\n", ".toml");
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Auto,
+                indent: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.content, FormatKind::Toml);
+        assert_eq!(profile.shape, ContentShape::LineIndexed);
+        assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
+        assert_eq!(profile.transform, TransformStrategy::Passthrough);
+        assert_eq!(profile.syntax, SyntaxKind::Toml);
+    }
+
+    #[test]
+    fn unknown_textual_content_falls_back_to_plain_profile() {
+        let (_temp, source) = source_with_suffix(b"hello world\nnot json\n", ".weird");
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Auto,
+                indent: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.content, FormatKind::Plain);
+        assert_eq!(profile.shape, ContentShape::LineIndexed);
+        assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
+        assert_eq!(profile.transform, TransformStrategy::Passthrough);
+        assert_eq!(profile.syntax, SyntaxKind::Plain);
+    }
+
+    #[test]
     fn resolves_record_stream_to_lazy_jsonl_profile() {
         let (_temp, source) = source_with_suffix(b"{\"a\":1}\n{\"b\":2}\n", ".data");
         let profile = TypeProfile::resolve(
@@ -318,6 +358,13 @@ mod tests {
                 LoadPlan::EagerTransformedDocument,
                 TransformStrategy::PrettyPrint,
                 SyntaxKind::Structured,
+            ),
+            (
+                FormatKind::Toml,
+                ContentShape::LineIndexed,
+                LoadPlan::EagerIndexedSource,
+                TransformStrategy::Passthrough,
+                SyntaxKind::Toml,
             ),
             (
                 FormatKind::Plain,

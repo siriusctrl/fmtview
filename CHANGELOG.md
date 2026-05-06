@@ -8,6 +8,13 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Treat unknown non-structured inputs as plain-text passthrough instead of
+  failing through the record formatter.
+- Add TOML passthrough support with `.toml` detection, `--type toml`, and TOML
+  syntax highlighting in the TTY viewer.
+
 ## [0.3.0] - 2026-04-30
 
 ### Added

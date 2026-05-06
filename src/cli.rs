@@ -16,7 +16,7 @@ use crate::{
 #[command(
     name = "fmtview",
     version,
-    about = "Fast formatter, diff tool, and terminal viewer for JSON, JSONL, XML-compatible markup, plain text, and Jinja templates",
+    about = "Fast formatter, diff tool, and terminal viewer for JSON, JSONL, XML-compatible markup, TOML, plain text, and Jinja templates",
     args_conflicts_with_subcommands = true,
     subcommand_precedence_over_arg = true
 )]

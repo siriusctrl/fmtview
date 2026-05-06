@@ -93,6 +93,45 @@ fn auto_detects_txt_as_plain_passthrough() {
 }
 
 #[test]
+fn unknown_extension_plain_text_is_passthrough() {
+    let mut input = TempFileBuilder::new().suffix(".custom").tempfile().unwrap();
+    input
+        .write_all(b"not json\n{{ still plain }}\nkey = value\n")
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.arg(input.path())
+        .assert()
+        .success()
+        .stdout(predicate::eq("not json\n{{ still plain }}\nkey = value\n"));
+}
+
+#[test]
+fn auto_detects_toml_as_passthrough() {
+    let mut input = TempFileBuilder::new().suffix(".toml").tempfile().unwrap();
+    input
+        .write_all(b"[package]\nname = \"fmtview\"\nenabled = true\n")
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.arg(input.path())
+        .assert()
+        .success()
+        .stdout(predicate::eq(
+            "[package]\nname = \"fmtview\"\nenabled = true\n",
+        ));
+}
+
+#[test]
+fn toml_type_passthrough_keeps_stdout_scriptable() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["--type", "toml", "--literal", "[server]\nport = 8080\n"])
+        .assert()
+        .success()
+        .stdout(predicate::eq("[server]\nport = 8080\n"));
+}
+
+#[test]
 fn auto_detects_jinja_template_as_passthrough() {
     let mut input = TempFileBuilder::new()
         .suffix(".html.j2")
@@ -115,6 +154,18 @@ fn auto_detects_jinja_template_as_passthrough() {
 fn formats_jinja_showcase_as_passthrough() {
     let example =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/template.html.j2");
+    let expected = std::fs::read_to_string(&example).unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    let assert = cmd.arg(example).assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+
+    assert_eq!(stdout, expected);
+}
+
+#[test]
+fn formats_toml_showcase_as_passthrough() {
+    let example = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/config.toml");
     let expected = std::fs::read_to_string(&example).unwrap();
 
     let mut cmd = Command::cargo_bin("fmtview").unwrap();

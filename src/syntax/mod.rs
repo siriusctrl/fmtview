@@ -1,6 +1,7 @@
 mod checkpoints;
 mod jinja;
 mod json;
+mod toml;
 mod util;
 mod xml;
 
@@ -15,6 +16,7 @@ use ratatui::text::Span;
 use crate::viewer::palette::plain_style;
 use jinja::highlight_jinja_line_window;
 use json::highlight_json_like_window;
+use toml::highlight_toml_line_window;
 use util::push_span_window;
 use xml::highlight_xml_line_window;
 
@@ -22,6 +24,7 @@ use xml::highlight_xml_line_window;
 pub(crate) enum SyntaxKind {
     Plain,
     Structured,
+    Toml,
     Jinja,
 }
 
@@ -52,6 +55,7 @@ pub(crate) fn highlight_content_window_indexed(
         SyntaxKind::Structured => {
             highlight_structured_window(line, window_start, window_end, index)
         }
+        SyntaxKind::Toml => highlight_toml_line_window(line, window_start, window_end, index),
         SyntaxKind::Jinja => highlight_jinja_line_window(line, window_start, window_end, index),
     }
 }
@@ -142,6 +146,13 @@ mod tests {
     fn jinja_highlight_preserves_visible_text() {
         let text = r#"<h1>{{ title }}</h1>{% if ok %}{# comment #}{% endif %}"#;
         let spans = highlight_content(text, SyntaxKind::Jinja);
+        assert_eq!(span_text(&spans), text);
+    }
+
+    #[test]
+    fn toml_highlight_preserves_visible_text() {
+        let text = r#"database.port = 5432 # local port"#;
+        let spans = highlight_content(text, SyntaxKind::Toml);
         assert_eq!(span_text(&spans), text);
     }
 

@@ -50,6 +50,9 @@ fn detect_kind(source: &InputSource) -> Result<FormatKind> {
         Some("json") => return Ok(FormatKind::Json),
         Some("jsonl" | "ndjson") => return Ok(FormatKind::Jsonl),
         Some("xml" | "html" | "htm" | "xhtml") => return Ok(FormatKind::Xml),
+        Some("toml") => return Ok(FormatKind::Toml),
+        Some("txt" | "text" | "log") => return Ok(FormatKind::Plain),
+        Some("j2" | "jinja" | "jinja2") => return Ok(FormatKind::Jinja),
         _ => {}
     }
 
@@ -66,6 +69,6 @@ fn detect_kind(source: &InputSource) -> Result<FormatKind> {
     match first {
         Some(b'<') => Ok(FormatKind::Xml),
         Some(b'{' | b'[') => Ok(FormatKind::Json),
-        _ => Ok(FormatKind::Jsonl),
+        _ => Ok(FormatKind::Plain),
     }
 }

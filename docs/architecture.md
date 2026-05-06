@@ -13,7 +13,7 @@ The core boundary is:
   |                  |      |               |      |                   |
   | InteractiveView  +----->+ json/jsonl    +----->+ content kind      |
   | RedirectedOutput |      | xml/html      |      | load strategy     |
-  | DiffInput        |      | plain/jinja   |      | transform plan    |
+  | DiffInput        |      | toml/text     |      | transform plan    |
   +------------------+      +---------------+      | input shape       |
                                                    | syntax highlighter|
                                                    +---------+---------+
@@ -46,7 +46,7 @@ unit of work that shared runtimes can rely on:
 ```text
   LineIndexed
     Source text already has usable line boundaries and does not need a
-    formatter before viewing. Plain text and Jinja use this shape today.
+    formatter before viewing. TOML, plain text, and Jinja use this shape today.
 
   RecordStream
     Input is a sequence of independent newline-delimited records. The first
@@ -57,7 +57,7 @@ unit of work that shared runtimes can rely on:
   WholeDocument
     Correct formatting depends on document-level parser state. The transformed
     document normally has to be produced before the viewer can index it. JSON,
-    XML, HTML, and unknown non-record inputs use this shape today.
+    XML, and HTML use this shape today.
 ```
 
 Optimizations should say which shape they target. Record-stream work such as
@@ -72,11 +72,14 @@ behavior, temp-file indexing, syntax checkpoints, and viewer readback.
 | JSON | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed JSON | Pretty-printed JSON | Structured JSON/XML-style |
 | JSONL/NDJSON | RecordStream | Lazy transformed records spooled and indexed on demand | Pretty-printed records | Pretty-printed records; TTY diff can open lazily | Structured JSON/XML-style |
 | XML/HTML/XHTML | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed XML-compatible markup | Pretty-printed XML-compatible markup | Structured JSON/XML-style |
+| TOML | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | TOML |
 | Plain text | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | Plain |
 | Jinja | LineIndexed | Raw source indexed without rendering or rewriting content | Passthrough | Passthrough | Jinja template spans |
 
-Unknown extensions are sniffed with a bounded prefix. Extensions remain a fast
-deterministic hint, but they are not the architecture boundary.
+Unknown extensions are sniffed with a bounded prefix. Unknown content that does
+not look like JSON, JSONL, or XML-compatible markup falls back to plain-text
+passthrough. Extensions remain a fast deterministic hint, but they are not the
+architecture boundary.
 
 ## Load Plans
 
@@ -85,7 +88,7 @@ The names below describe the behavior we want the code to make explicit:
 ```text
   EagerIndexedSource
     Read source text as-is, build line offsets, and serve windows from source
-    or a passthrough temp file. This is the plain/Jinja shape today.
+    or a passthrough temp file. This is the TOML/plain/Jinja shape today.
 
   LazyIndexedSource
     Future source-indexed variant for very large raw files where even first
