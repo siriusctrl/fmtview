@@ -92,6 +92,13 @@ fn explicit_profile(kind: FormatKind) -> TypeProfile {
             transform: TransformStrategy::Passthrough,
             syntax: SyntaxKind::Toml,
         },
+        FormatKind::Markdown => TypeProfile {
+            content: FormatKind::Markdown,
+            shape: ContentShape::LineIndexed,
+            load: LoadPlan::EagerIndexedSource,
+            transform: TransformStrategy::Passthrough,
+            syntax: SyntaxKind::Markdown,
+        },
         FormatKind::Plain => TypeProfile {
             content: FormatKind::Plain,
             shape: ContentShape::LineIndexed,
@@ -121,6 +128,7 @@ fn extension_kind(source: &InputSource) -> Option<FormatKind> {
         Some("jsonl" | "ndjson") => Some(FormatKind::Jsonl),
         Some("xml" | "html" | "htm" | "xhtml") => Some(FormatKind::Xml),
         Some("toml") => Some(FormatKind::Toml),
+        Some("md" | "markdown" | "mdown" | "mkd") => Some(FormatKind::Markdown),
         Some("txt" | "text" | "log") => Some(FormatKind::Plain),
         Some("j2" | "jinja" | "jinja2") => Some(FormatKind::Jinja),
         _ => None,
@@ -296,6 +304,25 @@ mod tests {
     }
 
     #[test]
+    fn resolves_markdown_extension_to_passthrough_profile() {
+        let (_temp, source) = source_with_suffix(b"# fmtview\n\n- fast viewer\n", ".md");
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Auto,
+                indent: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.content, FormatKind::Markdown);
+        assert_eq!(profile.shape, ContentShape::LineIndexed);
+        assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
+        assert_eq!(profile.transform, TransformStrategy::Passthrough);
+        assert_eq!(profile.syntax, SyntaxKind::Markdown);
+    }
+
+    #[test]
     fn unknown_textual_content_falls_back_to_plain_profile() {
         let (_temp, source) = source_with_suffix(b"hello world\nnot json\n", ".weird");
         let profile = TypeProfile::resolve(
@@ -365,6 +392,13 @@ mod tests {
                 LoadPlan::EagerIndexedSource,
                 TransformStrategy::Passthrough,
                 SyntaxKind::Toml,
+            ),
+            (
+                FormatKind::Markdown,
+                ContentShape::LineIndexed,
+                LoadPlan::EagerIndexedSource,
+                TransformStrategy::Passthrough,
+                SyntaxKind::Markdown,
             ),
             (
                 FormatKind::Plain,

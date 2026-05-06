@@ -1,5 +1,6 @@
 mod cache;
 mod line;
+mod markdown;
 mod metrics;
 mod prewarm;
 mod search;
@@ -11,6 +12,7 @@ mod wrap;
 
 pub(super) use cache::*;
 pub(super) use line::{rendered_row_count, wrapped_row_count};
+pub(super) use markdown::*;
 pub(super) use metrics::*;
 pub(super) use prewarm::*;
 pub(super) use tail::*;

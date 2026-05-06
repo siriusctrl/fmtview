@@ -185,12 +185,28 @@ fn viewport_can_start_inside_wrapped_logical_line() {
     };
     let mut cache = RenderedLineCache::default();
 
-    let first = render_viewport(&lines, 1, 0, 2, request, &mut cache, None);
+    let first = render_viewport(
+        &lines,
+        1,
+        0,
+        2,
+        request,
+        &mut cache,
+        ViewportRenderOptions::default(),
+    );
     assert_eq!(first.last_line_number, Some(1));
     assert_eq!(span_text(&first.lines[0].spans), "1 │ abcd");
     assert_eq!(span_text(&first.lines[1].spans), "  ┆ efgh");
 
-    let second = render_viewport(&lines, 1, 1, 2, request, &mut cache, None);
+    let second = render_viewport(
+        &lines,
+        1,
+        1,
+        2,
+        request,
+        &mut cache,
+        ViewportRenderOptions::default(),
+    );
     assert_eq!(second.last_line_number, Some(1));
     assert_eq!(span_text(&second.lines[0].spans), "  ┆ efgh");
     assert_eq!(span_text(&second.lines[1].spans), "  ┆ ijkl");
@@ -211,11 +227,112 @@ fn viewport_reports_actual_last_logical_line() {
     };
     let mut cache = RenderedLineCache::default();
 
-    let viewport = render_viewport(&lines, 1, 2, 3, request, &mut cache, None);
+    let viewport = render_viewport(
+        &lines,
+        1,
+        2,
+        3,
+        request,
+        &mut cache,
+        ViewportRenderOptions::default(),
+    );
 
     assert_eq!(viewport.last_line_number, Some(2));
     assert_eq!(span_text(&viewport.lines[0].spans), "  ┆ ijkl");
     assert_eq!(span_text(&viewport.lines[1].spans), "2 │ next");
+}
+
+#[test]
+fn markdown_viewport_reuses_inner_code_highlighter() {
+    let lines = vec![
+        "```json".to_owned(),
+        r#"{"ok": true}"#.to_owned(),
+        "```".to_owned(),
+    ];
+    let line_modes = vec![
+        SyntaxKind::Markdown,
+        SyntaxKind::Structured,
+        SyntaxKind::Markdown,
+    ];
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter_digits: 1,
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: SyntaxKind::Markdown,
+        },
+        row_limit: 8,
+    };
+    let mut cache = RenderedLineCache::default();
+
+    let viewport = render_viewport(
+        &lines,
+        1,
+        0,
+        3,
+        request,
+        &mut cache,
+        ViewportRenderOptions {
+            line_modes: Some(&line_modes),
+            search_query: None,
+        },
+    );
+
+    assert_eq!(span_text(&viewport.lines[1].spans), r#"2 │ {"ok": true}"#);
+    assert_eq!(
+        styles_for_text(&viewport.lines[1].spans, r#""ok""#),
+        vec![key_style()]
+    );
+    assert_eq!(
+        styles_for_text(&viewport.lines[1].spans, "true"),
+        vec![bool_style()]
+    );
+}
+
+#[test]
+fn markdown_syntax_cache_resolves_fence_state_before_window() {
+    let mut temp = NamedTempFile::new().unwrap();
+    writeln!(temp, "# notes").unwrap();
+    writeln!(temp, "```toml").unwrap();
+    writeln!(temp, "[viewer]").unwrap();
+    writeln!(temp, "mode = \"markdown\"").unwrap();
+    writeln!(temp, "```").unwrap();
+    let file = IndexedTempFile::new("notes".to_owned(), temp).unwrap();
+    let lines = file.read_window(2, 1).unwrap();
+    let mut cache = MarkdownSyntaxCache::default();
+
+    let modes = cache
+        .line_modes(&file, 2, &lines, SyntaxKind::Markdown)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(modes, vec![SyntaxKind::Toml]);
+}
+
+#[test]
+fn markdown_syntax_cache_keeps_interval_checkpoints_only() {
+    let mut temp = NamedTempFile::new().unwrap();
+    for index in 0..1_600 {
+        if index == 10 {
+            writeln!(temp, "```toml").unwrap();
+        } else if index == 1_200 {
+            writeln!(temp, "```").unwrap();
+        } else {
+            writeln!(temp, "line {index}").unwrap();
+        }
+    }
+    let file = IndexedTempFile::new("notes".to_owned(), temp).unwrap();
+    let mut cache = MarkdownSyntaxCache::default();
+
+    for start in 0..1_500 {
+        let lines = file.read_window(start, 1).unwrap();
+        cache
+            .line_modes(&file, start, &lines, SyntaxKind::Markdown)
+            .unwrap();
+    }
+
+    assert_eq!(cache.checkpoint_count(), 3);
 }
 
 #[test]
@@ -335,7 +452,7 @@ fn wrapped_tail_view_renders_last_full_page() {
         3,
         request,
         &mut cache,
-        None,
+        ViewportRenderOptions::default(),
     );
 
     assert_eq!(
@@ -381,9 +498,25 @@ fn eof_wrap_offset_clamps_to_last_full_page() {
     let lines = file.read_window(0, 2).unwrap();
     let mut cache = RenderedLineCache::default();
 
-    let partial = render_viewport(&lines, 1, 2, 2, request, &mut cache, None);
+    let partial = render_viewport(
+        &lines,
+        1,
+        2,
+        2,
+        request,
+        &mut cache,
+        ViewportRenderOptions::default(),
+    );
     let max_offset = effective_top_row_offset(1, 2, context, &cache, Some(tail));
-    let clamped = render_viewport(&lines, 1, max_offset, 2, request, &mut cache, None);
+    let clamped = render_viewport(
+        &lines,
+        1,
+        max_offset,
+        2,
+        request,
+        &mut cache,
+        ViewportRenderOptions::default(),
+    );
     let progress = viewer_progress_percent(&file, context, 1, clamped.bottom);
 
     assert_eq!(
@@ -768,7 +901,10 @@ fn wrapped_search_jumps_to_visual_row_containing_match() {
         4,
         request,
         &mut cache,
-        Some("needle"),
+        ViewportRenderOptions {
+            line_modes: None,
+            search_query: Some("needle"),
+        },
     );
 
     assert!(viewport.lines.iter().any(|line| {
@@ -982,7 +1118,15 @@ fn non_search_viewport_render_does_not_paint_background_cells() {
     };
     let mut cache = RenderedLineCache::default();
 
-    let viewport = render_viewport(&lines, 1, 0, 16, request, &mut cache, None);
+    let viewport = render_viewport(
+        &lines,
+        1,
+        0,
+        16,
+        request,
+        &mut cache,
+        ViewportRenderOptions::default(),
+    );
 
     assert_eq!(background_cell_count(&viewport.lines), 0);
 }
@@ -1332,7 +1476,7 @@ fn perf_huge_wrapped_line_paths() {
         visible_height,
         request,
         &mut cache,
-        None,
+        ViewportRenderOptions::default(),
     );
     let tail_render = started.elapsed();
     eprintln!("huge wrapped tail-window render: {tail_render:?}");
@@ -1387,7 +1531,15 @@ fn perf_repeated_viewport_scroll_render() {
     let mut background_cells = 0_usize;
 
     for top in 0..400 {
-        let viewport = render_viewport(&lines[top..], top + 1, 0, 27, request, &mut cache, None);
+        let viewport = render_viewport(
+            &lines[top..],
+            top + 1,
+            0,
+            27,
+            request,
+            &mut cache,
+            ViewportRenderOptions::default(),
+        );
         rendered_rows += viewport.lines.len();
         background_cells += background_cell_count(&viewport.lines);
     }
@@ -1439,7 +1591,15 @@ fn perf_terminal_scroll_draw_bytes() {
     let mut background_cells = 0_usize;
 
     for top in 0..400 {
-        let viewport = render_viewport(&lines[top..], top + 1, 0, 32, request, &mut cache, None);
+        let viewport = render_viewport(
+            &lines[top..],
+            top + 1,
+            0,
+            32,
+            request,
+            &mut cache,
+            ViewportRenderOptions::default(),
+        );
         rendered_rows += viewport.lines.len();
         background_cells += background_cell_count(&viewport.lines);
         let body_lines = viewport.lines;
@@ -1463,6 +1623,10 @@ fn perf_terminal_scroll_draw_bytes() {
         byte_count.get()
     );
     assert!(byte_count.get() > 0);
+    assert_eq!(
+        background_cells, 0,
+        "non-search scrolling should not repaint styled background cells"
+    );
     assert!(
         elapsed < Duration::from_millis(1_500),
         "terminal scroll draw took {elapsed:?}"
@@ -1503,7 +1667,15 @@ fn perf_terminal_visual_row_scroll_bytes() {
     let mut background_cells = 0_usize;
 
     for row_offset in 0..400 {
-        let viewport = render_viewport(&lines, 1, row_offset, 32, request, &mut cache, None);
+        let viewport = render_viewport(
+            &lines,
+            1,
+            row_offset,
+            32,
+            request,
+            &mut cache,
+            ViewportRenderOptions::default(),
+        );
         rendered_rows += viewport.lines.len();
         background_cells += background_cell_count(&viewport.lines);
         let position = ViewPosition { top: 0, row_offset };

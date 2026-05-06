@@ -12,6 +12,10 @@ for GitHub Release notes, so every published version must have a matching
 
 - Treat unknown non-structured inputs as plain-text passthrough instead of
   failing through the record formatter.
+- Add Markdown passthrough support with `.md`/`.markdown` detection,
+  `--type markdown`, Markdown syntax highlighting, and fenced code-block
+  highlighting that reuses existing JSON/TOML/XML/Jinja highlighters in the TTY
+  viewer.
 - Add TOML passthrough support with `.toml` detection, `--type toml`, and TOML
   syntax highlighting in the TTY viewer.
 

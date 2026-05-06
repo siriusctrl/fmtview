@@ -51,6 +51,7 @@ fn detect_kind(source: &InputSource) -> Result<FormatKind> {
         Some("jsonl" | "ndjson") => return Ok(FormatKind::Jsonl),
         Some("xml" | "html" | "htm" | "xhtml") => return Ok(FormatKind::Xml),
         Some("toml") => return Ok(FormatKind::Toml),
+        Some("md" | "markdown" | "mdown" | "mkd") => return Ok(FormatKind::Markdown),
         Some("txt" | "text" | "log") => return Ok(FormatKind::Plain),
         Some("j2" | "jinja" | "jinja2") => return Ok(FormatKind::Jinja),
         _ => {}

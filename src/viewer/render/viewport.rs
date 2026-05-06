@@ -4,6 +4,13 @@ use super::{
     search::apply_search_highlight,
     types::{RenderContext, RenderRequest, RenderedViewport, ViewPosition, ViewportBottom},
 };
+use crate::syntax::SyntaxKind;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(in crate::viewer) struct ViewportRenderOptions<'a> {
+    pub(in crate::viewer) line_modes: Option<&'a [SyntaxKind]>,
+    pub(in crate::viewer) search_query: Option<&'a str>,
+}
 
 pub(in crate::viewer) fn render_viewport(
     lines: &[String],
@@ -12,7 +19,7 @@ pub(in crate::viewer) fn render_viewport(
     height: usize,
     request: RenderRequest,
     cache: &mut RenderedLineCache,
-    search_query: Option<&str>,
+    options: ViewportRenderOptions<'_>,
 ) -> RenderedViewport {
     let mut rendered = Vec::with_capacity(height);
     let mut last_line_number = None;
@@ -32,12 +39,15 @@ pub(in crate::viewer) fn render_viewport(
             first_line_number,
             top_row_offset,
             height.saturating_add(1),
-            request,
+            line_request(
+                request,
+                options.line_modes.and_then(|modes| modes.first().copied()),
+            ),
         );
         if !top_rows.is_empty() {
             last_line_number = Some(first_line_number);
         }
-        if search_query.is_some() {
+        if options.search_query.is_some() {
             for row in top_rows.into_iter().take(height) {
                 bottom = Some(ViewportBottom {
                     line_index: first_line_number - 1,
@@ -46,7 +56,7 @@ pub(in crate::viewer) fn render_viewport(
                 });
                 rendered.push(apply_search_highlight(
                     row.line,
-                    search_query,
+                    options.search_query,
                     request.context.gutter_digits,
                 ));
             }
@@ -69,12 +79,23 @@ pub(in crate::viewer) fn render_viewport(
 
         let remaining = height - rendered.len();
         let line_number = first_line_number + index + 1;
-        let rows = cache.get_or_render_window(line, line_number, 0, remaining, request);
+        let rows = cache.get_or_render_window(
+            line,
+            line_number,
+            0,
+            remaining,
+            line_request(
+                request,
+                options
+                    .line_modes
+                    .and_then(|modes| modes.get(index + 1).copied()),
+            ),
+        );
         let taken = rows.len().min(remaining);
         if taken > 0 {
             last_line_number = Some(line_number);
         }
-        if search_query.is_some() {
+        if options.search_query.is_some() {
             for row in rows.into_iter().take(remaining) {
                 bottom = Some(ViewportBottom {
                     line_index: line_number - 1,
@@ -83,7 +104,7 @@ pub(in crate::viewer) fn render_viewport(
                 });
                 rendered.push(apply_search_highlight(
                     row.line,
-                    search_query,
+                    options.search_query,
                     request.context.gutter_digits,
                 ));
             }
@@ -103,6 +124,19 @@ pub(in crate::viewer) fn render_viewport(
         lines: rendered,
         last_line_number,
         bottom,
+    }
+}
+
+fn line_request(request: RenderRequest, mode: Option<SyntaxKind>) -> RenderRequest {
+    let Some(mode) = mode else {
+        return request;
+    };
+    RenderRequest {
+        context: RenderContext {
+            mode,
+            ..request.context
+        },
+        ..request
     }
 }
 

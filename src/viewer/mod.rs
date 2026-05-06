@@ -27,11 +27,11 @@ use crate::syntax::SyntaxKind;
 
 use input::{ViewState, drain_events, process_search_step, reset_top_row_offset};
 use render::{
-    LineWindowCache, RenderContext, RenderRequest, RenderedLineCache, TailPositionCache,
-    ViewPosition, continuation_indent, effective_top_row_offset, exact_top_line_tail_offset,
-    format_count, is_after_tail, last_full_logical_page_top, line_number_digits, next_wrap_end,
-    prewarm_render_cache, render_row_limit, render_viewport, rendered_row_count,
-    viewer_progress_percent,
+    LineWindowCache, MarkdownSyntaxCache, RenderContext, RenderRequest, RenderedLineCache,
+    TailPositionCache, ViewPosition, ViewportRenderOptions, continuation_indent,
+    effective_top_row_offset, exact_top_line_tail_offset, format_count, is_after_tail,
+    last_full_logical_page_top, line_number_digits, next_wrap_end, prewarm_render_cache,
+    render_row_limit, render_viewport, rendered_row_count, viewer_progress_percent,
 };
 #[cfg(test)]
 use terminal::draw_cells;
@@ -174,6 +174,7 @@ fn run_loop(
 struct ViewerCaches {
     line: LineWindowCache,
     render: RenderedLineCache,
+    markdown: MarkdownSyntaxCache,
     tail: TailPositionCache,
     breadcrumb: JsonBreadcrumbCache,
 }
@@ -297,6 +298,9 @@ fn draw_view(
             exact_top_line_tail_offset(lines.lines, visible_height, render_context);
     }
     state.wrap_bounds_stale = false;
+    let line_modes = caches
+        .markdown
+        .line_modes(file, state.top, lines.lines, mode)?;
 
     let mut viewport = render_viewport(
         lines.lines,
@@ -305,7 +309,10 @@ fn draw_view(
         visible_height,
         render_request,
         &mut caches.render,
-        active_search_query(state),
+        ViewportRenderOptions {
+            line_modes: line_modes.as_deref(),
+            search_query: active_search_query(state),
+        },
     );
     let mut max_top_row_offset = effective_top_row_offset(
         state.top + 1,
@@ -323,7 +330,10 @@ fn draw_view(
             visible_height,
             render_request,
             &mut caches.render,
-            active_search_query(state),
+            ViewportRenderOptions {
+                line_modes: line_modes.as_deref(),
+                search_query: active_search_query(state),
+            },
         );
     }
     max_top_row_offset = effective_top_row_offset(
@@ -344,7 +354,10 @@ fn draw_view(
             visible_height,
             render_request,
             &mut caches.render,
-            active_search_query(state),
+            ViewportRenderOptions {
+                line_modes: line_modes.as_deref(),
+                search_query: active_search_query(state),
+            },
         );
         max_top_row_offset = effective_top_row_offset(
             state.top + 1,
@@ -421,8 +434,8 @@ fn draw_view(
         file,
         &mut caches.line,
         &mut caches.render,
-        state.top,
-        state.top_row_offset,
+        &mut caches.markdown,
+        position,
         visible_height,
         render_request,
     );

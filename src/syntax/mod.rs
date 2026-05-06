@@ -1,6 +1,7 @@
 mod checkpoints;
 mod jinja;
 mod json;
+mod markdown;
 mod toml;
 mod util;
 mod xml;
@@ -16,6 +17,8 @@ use ratatui::text::Span;
 use crate::viewer::palette::plain_style;
 use jinja::highlight_jinja_line_window;
 use json::highlight_json_like_window;
+pub(crate) use markdown::MarkdownFenceState;
+use markdown::highlight_markdown_line_window;
 use toml::highlight_toml_line_window;
 use util::push_span_window;
 use xml::highlight_xml_line_window;
@@ -25,6 +28,7 @@ pub(crate) enum SyntaxKind {
     Plain,
     Structured,
     Toml,
+    Markdown,
     Jinja,
 }
 
@@ -56,6 +60,9 @@ pub(crate) fn highlight_content_window_indexed(
             highlight_structured_window(line, window_start, window_end, index)
         }
         SyntaxKind::Toml => highlight_toml_line_window(line, window_start, window_end, index),
+        SyntaxKind::Markdown => {
+            highlight_markdown_line_window(line, window_start, window_end, index)
+        }
         SyntaxKind::Jinja => highlight_jinja_line_window(line, window_start, window_end, index),
     }
 }
@@ -154,6 +161,51 @@ mod tests {
         let text = r#"database.port = 5432 # local port"#;
         let spans = highlight_content(text, SyntaxKind::Toml);
         assert_eq!(span_text(&spans), text);
+    }
+
+    #[test]
+    fn markdown_highlight_preserves_visible_text() {
+        let text = r#"## Title with `code` and [link](https://example.com)"#;
+        let spans = highlight_content(text, SyntaxKind::Markdown);
+        assert_eq!(span_text(&spans), text);
+    }
+
+    #[test]
+    fn markdown_fence_maps_known_languages_to_existing_syntax() {
+        let lines = vec![
+            "```json".to_owned(),
+            r#"{"ok": true}"#.to_owned(),
+            "```".to_owned(),
+            "```toml".to_owned(),
+            "ok = true".to_owned(),
+            "```".to_owned(),
+            "```jinja".to_owned(),
+            "{{ value }}".to_owned(),
+            "```".to_owned(),
+            "```unknown".to_owned(),
+            "still code".to_owned(),
+            "```".to_owned(),
+        ];
+
+        let modes = markdown::markdown_line_syntaxes(&lines, MarkdownFenceState::default());
+
+        assert_eq!(
+            modes,
+            vec![
+                SyntaxKind::Markdown,
+                SyntaxKind::Structured,
+                SyntaxKind::Markdown,
+                SyntaxKind::Markdown,
+                SyntaxKind::Toml,
+                SyntaxKind::Markdown,
+                SyntaxKind::Markdown,
+                SyntaxKind::Jinja,
+                SyntaxKind::Markdown,
+                SyntaxKind::Markdown,
+                SyntaxKind::Plain,
+                SyntaxKind::Markdown,
+            ]
+        );
     }
 
     #[test]

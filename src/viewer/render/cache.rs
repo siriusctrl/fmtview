@@ -71,9 +71,30 @@ impl LineWindowCache {
 
 #[derive(Debug, Default)]
 pub(in crate::viewer) struct RenderedLineCache {
-    pub(in crate::viewer) request: Option<RenderRequest>,
+    pub(in crate::viewer) request: Option<RenderCacheKey>,
     pub(in crate::viewer) lines: HashMap<usize, CachedRenderedLine>,
     pub(in crate::viewer) order: VecDeque<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::viewer) struct RenderCacheKey {
+    gutter_digits: usize,
+    x: usize,
+    width: usize,
+    wrap: bool,
+    row_limit: usize,
+}
+
+impl From<RenderRequest> for RenderCacheKey {
+    fn from(request: RenderRequest) -> Self {
+        Self {
+            gutter_digits: request.context.gutter_digits,
+            x: request.context.x,
+            width: request.context.width,
+            wrap: request.context.wrap,
+            row_limit: request.row_limit,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +106,7 @@ pub(in crate::viewer) struct RenderedVisualRow {
 
 #[derive(Debug, Default)]
 pub(in crate::viewer) struct CachedRenderedLine {
+    pub(in crate::viewer) request: Option<RenderRequest>,
     pub(in crate::viewer) chunks: VecDeque<RenderedLineChunk>,
     pub(in crate::viewer) total_rows: Option<usize>,
     pub(in crate::viewer) index: LineRenderIndex,
@@ -129,14 +151,15 @@ impl RenderedLineCache {
         max_rows: usize,
         request: RenderRequest,
     ) -> Vec<RenderedVisualRow> {
-        if self.request != Some(request) {
-            self.request = Some(request);
-            self.lines.clear();
-            self.order.clear();
-        }
-
         if max_rows == 0 {
             return Vec::new();
+        }
+
+        let key = RenderCacheKey::from(request);
+        if self.request != Some(key) {
+            self.request = Some(key);
+            self.lines.clear();
+            self.order.clear();
         }
 
         if !self.lines.contains_key(&line_number) {
@@ -189,6 +212,13 @@ impl CachedRenderedLine {
         max_rows: usize,
         request: RenderRequest,
     ) -> Vec<RenderedVisualRow> {
+        if self.request != Some(request) {
+            self.request = Some(request);
+            self.chunks.clear();
+            self.total_rows = None;
+            self.index = LineRenderIndex::default();
+        }
+
         if let Some(rows) = self.cached_window(row_start, max_rows) {
             return rows;
         }

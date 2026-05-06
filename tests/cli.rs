@@ -176,6 +176,43 @@ fn formats_toml_showcase_as_passthrough() {
 }
 
 #[test]
+fn auto_detects_markdown_as_passthrough() {
+    let mut input = TempFileBuilder::new().suffix(".md").tempfile().unwrap();
+    input
+        .write_all(b"# Title\n\n- `code` and [link](https://example.com)\n")
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.arg(input.path())
+        .assert()
+        .success()
+        .stdout(predicate::eq(
+            "# Title\n\n- `code` and [link](https://example.com)\n",
+        ));
+}
+
+#[test]
+fn markdown_type_passthrough_keeps_stdout_scriptable() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["--type", "markdown", "--literal", "# Title\n\nText\n"])
+        .assert()
+        .success()
+        .stdout(predicate::eq("# Title\n\nText\n"));
+}
+
+#[test]
+fn formats_markdown_showcase_as_passthrough() {
+    let example = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/notes.md");
+    let expected = std::fs::read_to_string(&example).unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    let assert = cmd.arg(example).assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+
+    assert_eq!(stdout, expected);
+}
+
+#[test]
 fn diffs_plain_inputs_without_formatting() {
     let mut left = NamedTempFile::new().unwrap();
     let mut right = NamedTempFile::new().unwrap();

@@ -13,7 +13,7 @@ The core boundary is:
   |                  |      |               |      |                   |
   | InteractiveView  +----->+ json/jsonl    +----->+ content kind      |
   | RedirectedOutput |      | xml/html      |      | load strategy     |
-  | DiffInput        |      | toml/text     |      | transform plan    |
+  | DiffInput        |      | md/toml/text  |      | transform plan    |
   +------------------+      +---------------+      | input shape       |
                                                    | syntax highlighter|
                                                    +---------+---------+
@@ -46,7 +46,8 @@ unit of work that shared runtimes can rely on:
 ```text
   LineIndexed
     Source text already has usable line boundaries and does not need a
-    formatter before viewing. TOML, plain text, and Jinja use this shape today.
+    formatter before viewing. Markdown, TOML, plain text, and Jinja use this
+    shape today.
 
   RecordStream
     Input is a sequence of independent newline-delimited records. The first
@@ -72,6 +73,7 @@ behavior, temp-file indexing, syntax checkpoints, and viewer readback.
 | JSON | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed JSON | Pretty-printed JSON | Structured JSON/XML-style |
 | JSONL/NDJSON | RecordStream | Lazy transformed records spooled and indexed on demand | Pretty-printed records | Pretty-printed records; TTY diff can open lazily | Structured JSON/XML-style |
 | XML/HTML/XHTML | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed XML-compatible markup | Pretty-printed XML-compatible markup | Structured JSON/XML-style |
+| Markdown | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | Markdown, with known fenced code blocks routed to existing highlighters |
 | TOML | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | TOML |
 | Plain text | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | Plain |
 | Jinja | LineIndexed | Raw source indexed without rendering or rewriting content | Passthrough | Passthrough | Jinja template spans |
@@ -88,7 +90,8 @@ The names below describe the behavior we want the code to make explicit:
 ```text
   EagerIndexedSource
     Read source text as-is, build line offsets, and serve windows from source
-    or a passthrough temp file. This is the TOML/plain/Jinja shape today.
+    or a passthrough temp file. This is the Markdown/TOML/plain/Jinja shape
+    today.
 
   LazyIndexedSource
     Future source-indexed variant for very large raw files where even first

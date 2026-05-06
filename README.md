@@ -1,7 +1,7 @@
 # fmtview
 
 Fast CLI viewing, highlighting, search, and diffing for JSON, JSONL,
-XML-compatible markup, TOML, plain text, and Jinja templates.
+XML-compatible markup, Markdown, TOML, plain text, and Jinja templates.
 
 `fmtview` is built for the workflow where you want to inspect data quickly in a
 terminal: open large files without waiting for a full render, keep syntax
@@ -13,6 +13,7 @@ fmtview payload.json
 fmtview events.jsonl
 fmtview response.xml
 fmtview page.html
+fmtview notes.md
 fmtview config.toml
 fmtview template.html.j2
 fmtview app.log
@@ -37,15 +38,16 @@ embedded markup, wrapped records, or formatted diffs.
 
 - View files in a terminal UI with line numbers, progress, and indent-aware
   soft wrap.
-- Highlight JSON, XML-compatible markup, embedded markup in JSON strings, TOML,
-  and Jinja templates.
+- Highlight JSON, XML-compatible markup, embedded markup in JSON strings,
+  Markdown, TOML, and Jinja templates.
 - Search the visible text without loading rendered output into memory.
 - Diff inputs after applying each input's profile, with interactive
   single-column and side-by-side layouts in a TTY and unified patches on
   redirected stdout.
 - Format JSON, JSONL, and XML-compatible markup when that is the right content
   strategy.
-- Preview TOML, plain text, and Jinja templates without rewriting their content.
+- Preview Markdown, TOML, plain text, and Jinja templates without rewriting
+  their content.
 - Scroll with the keyboard, mouse wheel, or a trackpad without re-rendering on
   every individual input event.
 - Highlight JSON string escape tokens such as `\n`, `\t`, `\r`, `\"`, and
@@ -84,9 +86,9 @@ the current use case:
 ```
 
 That is why JSON and XML can be formatted, JSONL can open lazily record by
-record, and TOML, plain text, or Jinja templates can stay passthrough while
-still getting fast view/search/diff behavior. See `docs/architecture.md` for
-the maintainer-facing design notes.
+record, and Markdown, TOML, plain text, or Jinja templates can stay passthrough
+while still getting fast view/search/diff behavior. See `docs/architecture.md`
+for the maintainer-facing design notes.
 
 ## Install
 
@@ -155,6 +157,9 @@ Known extensions still provide a fast, deterministic hint:
 - `.json` -> JSON formatting.
 - `.jsonl` and `.ndjson` -> lazy JSONL record formatting.
 - `.xml`, `.html`, `.htm`, and `.xhtml` -> XML-compatible markup formatting.
+- `.md`, `.markdown`, `.mdown`, and `.mkd` -> Markdown passthrough with
+  Markdown highlighting in the TTY viewer. Fenced `json`, `jsonl`, `toml`,
+  `xml`/`html`, and `jinja` blocks reuse the matching viewer highlighter.
 - `.toml` -> TOML passthrough with TOML highlighting in the TTY viewer.
 - `.txt`, `.text`, and `.log` -> plain-text passthrough.
 - `.j2`, `.jinja`, and `.jinja2`, including names such as `.html.j2`, ->
@@ -175,6 +180,9 @@ Use `--type` when stdin or an unusual extension needs an explicit profile.
 
 Other types are intentionally passthrough:
 
+- Markdown is indexed, wrapped, and highlighted, but not rendered to HTML or
+  reformatted. Known fenced code blocks reuse the same highlighters as
+  top-level files.
 - TOML is indexed and highlighted, but not reformatted.
 - Plain text is indexed and viewed as-is.
 - Jinja templates are indexed and highlighted as templates, but `fmtview` does
@@ -191,6 +199,7 @@ Write output:
 ```sh
 fmtview data.xml > pretty.xml
 fmtview page.html > pretty.html
+fmtview notes.md > notes.copy.md
 fmtview config.toml > config.copy.toml
 fmtview template.html.j2 > template.copy.html.j2
 fmtview app.log > app.log.copy
@@ -200,9 +209,10 @@ cat events.jsonl | fmtview --type jsonl > pretty.jsonl
 JSONL input is still processed one record at a time, but each record is
 pretty-printed with structural indentation. Deeply nested records expand across
 multiple output lines.
-TOML, plain text, and Jinja inputs are passthrough types: redirected stdout
-preserves the input content instead of formatting it, while the TTY viewer still
-provides scrolling, wrapping, search, and syntax highlighting where available.
+Markdown, TOML, plain text, and Jinja inputs are passthrough types: redirected
+stdout preserves the input content instead of formatting it, while the TTY
+viewer still provides scrolling, wrapping, search, and syntax highlighting where
+available.
 
 Diff after applying each input's profile:
 
@@ -210,6 +220,7 @@ Diff after applying each input's profile:
 fmtview diff left.json right.json
 fmtview diff left.xml right.xml > formatted.diff
 fmtview diff --type jsonl old.jsonl new.jsonl
+fmtview diff --type markdown old.md new.md
 fmtview diff --type toml old.toml new.toml
 fmtview diff --type plain old.log new.log
 ```
@@ -234,6 +245,7 @@ fmtview examples/showcase.json
 fmtview examples/events.jsonl
 fmtview examples/response.xml
 fmtview examples/page.html
+fmtview examples/notes.md
 fmtview examples/config.toml
 fmtview examples/template.html.j2
 fmtview diff examples/diff-left.json examples/diff-right.json
@@ -250,6 +262,9 @@ structure during formatting. `examples/page.html` is well-formed HTML that
 exercises the XML-compatible markup formatter.
 `examples/template.html.j2` exercises Jinja variables, blocks, comments, and
 raw sections without rendering or reformatting template statements.
+`examples/notes.md` exercises Markdown headings, lists, blockquotes, links,
+inline code, and fenced code with nested highlighting, without rendering the
+Markdown document.
 `examples/config.toml` exercises TOML sections, keys, strings, arrays, numbers,
 and booleans without reformatting the file.
 `examples/diff-left.json` and `examples/diff-right.json` are a paired diff
@@ -376,8 +391,8 @@ rendered output in memory for browsing.
 - Lazy preview writes transformed records into a temporary spool and keeps compact
   offsets, not formatted strings, in memory. The title shows `N+` lines while
   the session index is still incomplete and idle time extends the index.
-- Passthrough inputs, such as TOML, plain text, and Jinja templates, are indexed
-  without content rewriting.
+- Passthrough inputs, such as Markdown, TOML, plain text, and Jinja templates,
+  are indexed without content rewriting.
 - The terminal viewer uses compact ANSI redraws and avoids repainting invisible
   background cells during normal scrolling.
 - Very long wrapped lines use terminal scroll regions for visual-row scrolling,
@@ -390,8 +405,8 @@ rendered output in memory for browsing.
   prewarmed around the current viewport.
 - Highlighting and wrapping scan only the visible prefix of long lines.
 - Viewer search scans the indexed visible text in bounded chunks.
-- JSON, JSONL, XML-compatible markup, TOML, plain text, and Jinja templates are
-  processed incrementally where their load strategy allows it.
+- JSON, JSONL, XML-compatible markup, Markdown, TOML, plain text, and Jinja
+  templates are processed incrementally where their load strategy allows it.
 - JSON numbers are written from their original tokens instead of being coerced
   through native integer or floating-point types.
 

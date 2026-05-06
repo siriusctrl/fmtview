@@ -7,6 +7,7 @@ pub enum FormatKind {
     Jsonl,
     Xml,
     Toml,
+    Markdown,
     Plain,
     Jinja,
 }

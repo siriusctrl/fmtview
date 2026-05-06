@@ -1,7 +1,7 @@
 {
   "name": "fmtview",
   "version": "0.3.0",
-  "description": "Fast CLI viewer for highlighting, search, and diffs across JSON, JSONL, markup, TOML, text, and Jinja",
+  "description": "Fast CLI viewer for highlighting, search, and diffs across JSON, JSONL, markup, Markdown, TOML, text, and Jinja",
   "license": "MIT",
   "homepage": "https://github.com/siriusctrl/fmtview#readme",
   "repository": {
@@ -15,6 +15,7 @@
     "json",
     "jsonl",
     "xml",
+    "markdown",
     "toml",
     "jinja",
     "cli",
