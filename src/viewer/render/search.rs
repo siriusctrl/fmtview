@@ -22,7 +22,12 @@ pub(in crate::viewer) fn apply_search_highlight(
         .iter()
         .map(|span| span.content.as_ref())
         .collect::<String>();
-    let ranges = search_match_ranges(&visual_text, query, gutter_digits + 3);
+    let start_char = if gutter_digits == 0 {
+        0
+    } else {
+        gutter_digits + 3
+    };
+    let ranges = search_match_ranges(&visual_text, query, start_char);
     if ranges.is_empty() {
         return line;
     }

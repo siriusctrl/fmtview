@@ -15,18 +15,212 @@ fn slash_search_finds_and_repeats_matches() {
     assert!(!state.search_active);
     assert_eq!(state.search_query, "needle");
     assert!(state.search_task.is_some());
+    assert!(process_search_index_step(&file, &mut state).unwrap());
 
     assert!(process_search_step(&file, &mut state).unwrap());
     assert_eq!(state.search_cursor, Some(1));
+    assert_eq!(state.search_match_ordinal, Some(1));
     assert_eq!(state.search_message.as_deref(), Some("match: needle"));
 
     handle_key_event(KeyCode::Char('n'), KeyModifiers::NONE, &mut state, 4, 10);
     assert!(process_search_step(&file, &mut state).unwrap());
     assert_eq!(state.search_cursor, Some(3));
+    assert_eq!(state.search_match_ordinal, Some(2));
 
     handle_key_event(KeyCode::Char('N'), KeyModifiers::NONE, &mut state, 4, 10);
     assert!(process_search_step(&file, &mut state).unwrap());
     assert_eq!(state.search_cursor, Some(1));
+    assert_eq!(state.search_match_ordinal, Some(1));
+}
+
+#[test]
+fn search_match_index_counts_occurrences_lazily() {
+    let file = indexed_lines(&[
+        "needle one needle two",
+        "middle",
+        "needle three",
+        "tail needle four",
+    ]);
+    let mut state = ViewState::default();
+
+    start_search(
+        &mut state,
+        "needle".to_owned(),
+        SearchDirection::Forward,
+        0,
+        file.line_count(),
+    );
+
+    assert!(process_search_index_step(&file, &mut state).unwrap());
+    let index = state.search_index.as_ref().unwrap();
+    assert_eq!(index.matches, 4);
+    assert_eq!(index.counted_lines, 4);
+    assert!(index.exact);
+    assert_eq!(search_count_text(&state).as_deref(), Some("4 matches"));
+}
+
+#[test]
+fn search_count_text_shows_current_match_ordinal() {
+    let file = indexed_lines(&[
+        "needle one needle two",
+        "middle",
+        "needle three",
+        "tail needle four",
+    ]);
+    let mut state = ViewState::default();
+
+    start_search(
+        &mut state,
+        "needle".to_owned(),
+        SearchDirection::Forward,
+        2,
+        file.line_count(),
+    );
+
+    assert!(process_search_step(&file, &mut state).unwrap());
+    assert_eq!(state.search_cursor, Some(2));
+    assert_eq!(state.search_match_ordinal, None);
+    assert!(process_search_index_step(&file, &mut state).unwrap());
+    assert_eq!(state.search_match_ordinal, Some(3));
+
+    assert_eq!(search_count_text(&state).as_deref(), Some("3/4 matches"));
+}
+
+#[test]
+fn search_ordinal_does_not_scan_unindexed_prefix() {
+    struct SparseSearchFile {
+        reads_before_target: Cell<usize>,
+    }
+
+    impl ViewFile for SparseSearchFile {
+        fn label(&self) -> &str {
+            "sparse"
+        }
+
+        fn line_count(&self) -> usize {
+            1_000
+        }
+
+        fn byte_len(&self) -> u64 {
+            0
+        }
+
+        fn byte_offset_for_line(&self, _line: usize) -> u64 {
+            0
+        }
+
+        fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>> {
+            if start < 900 {
+                self.reads_before_target
+                    .set(self.reads_before_target.get().saturating_add(1));
+            }
+            Ok((start..start.saturating_add(count).min(self.line_count()))
+                .map(|line| {
+                    if line == 900 {
+                        "needle".to_owned()
+                    } else {
+                        "line".to_owned()
+                    }
+                })
+                .collect())
+        }
+    }
+
+    let file = SparseSearchFile {
+        reads_before_target: Cell::new(0),
+    };
+    let mut state = ViewState::default();
+
+    start_search(
+        &mut state,
+        "needle".to_owned(),
+        SearchDirection::Forward,
+        900,
+        file.line_count(),
+    );
+
+    assert!(process_search_step(&file, &mut state).unwrap());
+    assert_eq!(state.search_cursor, Some(900));
+    assert_eq!(state.search_match_ordinal, None);
+    assert_eq!(file.reads_before_target.get(), 0);
+}
+
+#[test]
+fn search_count_text_keeps_lazy_suffix_with_current_match_ordinal() {
+    let file = indexed_lines(&["needle one", "needle two", "needle three"]);
+    let mut state = ViewState::default();
+
+    start_search(
+        &mut state,
+        "needle".to_owned(),
+        SearchDirection::Forward,
+        1,
+        file.line_count(),
+    );
+
+    assert!(process_search_step(&file, &mut state).unwrap());
+    assert_eq!(state.search_match_ordinal, None);
+    state.search_match_ordinal = Some(2);
+    let index = state.search_index.as_mut().unwrap();
+    index.matches = 2;
+    index.counted_lines = 2;
+    index.line_match_totals = vec![1, 2];
+    index.exact = false;
+
+    assert_eq!(search_count_text(&state).as_deref(), Some("2/2+ matches"));
+}
+
+#[test]
+fn search_match_index_keeps_lazy_suffix_for_incomplete_files() {
+    struct IncompleteViewFile {
+        lines: Vec<String>,
+    }
+
+    impl ViewFile for IncompleteViewFile {
+        fn label(&self) -> &str {
+            "lazy"
+        }
+
+        fn line_count(&self) -> usize {
+            self.lines.len()
+        }
+
+        fn line_count_exact(&self) -> bool {
+            false
+        }
+
+        fn byte_len(&self) -> u64 {
+            0
+        }
+
+        fn byte_offset_for_line(&self, _line: usize) -> u64 {
+            0
+        }
+
+        fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>> {
+            Ok(self.lines.iter().skip(start).take(count).cloned().collect())
+        }
+    }
+
+    let file = IncompleteViewFile {
+        lines: vec!["needle".to_owned(), "needle needle".to_owned()],
+    };
+    let mut state = ViewState::default();
+
+    start_search(
+        &mut state,
+        "needle".to_owned(),
+        SearchDirection::Forward,
+        0,
+        file.line_count(),
+    );
+
+    assert!(process_search_index_step(&file, &mut state).unwrap());
+    let index = state.search_index.as_ref().unwrap();
+    assert_eq!(index.matches, 3);
+    assert_eq!(index.counted_lines, 2);
+    assert!(!index.exact);
+    assert_eq!(search_count_text(&state).as_deref(), Some("3+ matches"));
 }
 
 #[test]

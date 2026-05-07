@@ -9,6 +9,10 @@ pub(in crate::viewer) fn line_number_gutter(
     line_number: usize,
     gutter_digits: usize,
 ) -> Span<'static> {
+    if gutter_digits == 0 {
+        return Span::raw("");
+    }
+
     Span::styled(format!("{line_number:>gutter_digits$} │ "), gutter_style())
 }
 
@@ -16,6 +20,10 @@ pub(in crate::viewer) fn continuation_gutter(
     row_index: usize,
     gutter_digits: usize,
 ) -> Span<'static> {
+    if gutter_digits == 0 {
+        return Span::raw("");
+    }
+
     let marker = continuation_gutter_marker(row_index);
     Span::styled(format!("{:>gutter_digits$} {marker} ", ""), gutter_style())
 }

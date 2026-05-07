@@ -197,6 +197,7 @@ fn draw_view(
             area,
             styled,
             sticky: Vec::new(),
+            selection_mode: false,
             title,
             footer_text,
             position,

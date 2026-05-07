@@ -1,4 +1,4 @@
-use super::search::{SearchTarget, SearchTask};
+use super::search::{SearchMatchIndex, SearchTarget, SearchTask};
 
 pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) top: usize,
@@ -13,8 +13,12 @@ pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) search_query: String,
     pub(in crate::viewer) search_message: Option<String>,
     pub(in crate::viewer) search_task: Option<SearchTask>,
+    pub(in crate::viewer) search_index: Option<SearchMatchIndex>,
+    pub(in crate::viewer) search_match_ordinal: Option<usize>,
+    pub(in crate::viewer) search_match_target: Option<SearchTarget>,
     pub(in crate::viewer) search_target: Option<SearchTarget>,
     pub(in crate::viewer) search_cursor: Option<usize>,
+    pub(in crate::viewer) mouse_capture: bool,
 }
 
 impl Default for ViewState {
@@ -32,8 +36,12 @@ impl Default for ViewState {
             search_query: String::new(),
             search_message: None,
             search_task: None,
+            search_index: None,
+            search_match_ordinal: None,
+            search_match_target: None,
             search_target: None,
             search_cursor: None,
+            mouse_capture: true,
         }
     }
 }
@@ -42,12 +50,14 @@ impl Default for ViewState {
 pub(in crate::viewer) struct EventAction {
     pub(in crate::viewer) dirty: bool,
     pub(in crate::viewer) quit: bool,
+    pub(in crate::viewer) mouse_capture: Option<bool>,
 }
 
 impl EventAction {
     pub(in crate::viewer) fn merge(&mut self, next: Self) {
         self.dirty |= next.dirty;
         self.quit |= next.quit;
+        self.mouse_capture = next.mouse_capture.or(self.mouse_capture);
     }
 }
 

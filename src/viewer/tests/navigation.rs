@@ -66,12 +66,23 @@ fn unknown_wrapped_tail_keeps_scrolling_inside_current_line() {
 fn footer_wrap_hint_matches_current_mode() {
     let state = ViewState::default();
     assert!(idle_footer_text(&state).contains("w unwrap"));
+    assert!(idle_footer_text(&state).contains("m select"));
 
     let state = ViewState {
         wrap: false,
         ..ViewState::default()
     };
     assert!(idle_footer_text(&state).contains("w wrap"));
+}
+
+#[test]
+fn footer_shows_mouse_restore_hint_when_selection_mode_is_active() {
+    let state = ViewState {
+        mouse_capture: false,
+        ..ViewState::default()
+    };
+
+    assert!(idle_footer_text(&state).contains("m mouse"));
 }
 
 #[test]

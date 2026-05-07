@@ -24,6 +24,25 @@ fn styled_line_keeps_a_gutter() {
 }
 
 #[test]
+fn zero_width_gutter_renders_selectable_text_only() {
+    let line = render_logical_line(
+        r#"  "name": "fmtview","#,
+        12,
+        1,
+        RenderContext {
+            gutter_digits: 0,
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: SyntaxKind::Structured,
+        },
+    )
+    .remove(0);
+
+    assert_eq!(span_text(&line.spans), r#"  "name": "fmtview","#);
+}
+
+#[test]
 fn wrap_uses_continuation_gutter_and_indent() {
     let lines = render_logical_line(
         r#"  "payload": "abcdefghijklmnopqrstuvwxyz","#,

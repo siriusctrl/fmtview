@@ -42,6 +42,7 @@ fn terminal_renderer_applies_plain_style_to_default_spans() {
             area: Rect::new(0, 0, 24, 4),
             styled: vec![Line::from(Span::raw("plain text"))],
             sticky: Vec::new(),
+            selection_mode: false,
             title: " test ".to_owned(),
             footer_text: " footer ".to_owned(),
             position: ViewPosition {
@@ -54,6 +55,85 @@ fn terminal_renderer_applies_plain_style_to_default_spans() {
 
     let output = String::from_utf8(output.borrow().clone()).unwrap();
     assert!(output.contains("\x1b[38;5;145mplain text"));
+}
+
+#[test]
+fn selection_mode_draws_body_without_frame() {
+    let output = Rc::new(RefCell::new(Vec::new()));
+    let writer = CapturingWriter {
+        output: Rc::clone(&output),
+    };
+    let backend = CrosstermBackend::new(writer);
+    let mut terminal = ViewerTerminal::new(backend);
+
+    terminal
+        .draw(TerminalFrame {
+            area: Rect::new(0, 0, 24, 4),
+            styled: vec![Line::from(Span::raw("plain text"))],
+            sticky: Vec::new(),
+            selection_mode: true,
+            title: " test ".to_owned(),
+            footer_text: " footer ".to_owned(),
+            position: ViewPosition {
+                top: 0,
+                row_offset: 0,
+            },
+            scroll_hint: None,
+        })
+        .unwrap();
+
+    let output = String::from_utf8(output.borrow().clone()).unwrap();
+    assert!(output.contains("plain text"));
+    assert!(!output.contains("┌"));
+    assert!(!output.contains("│"));
+}
+
+#[test]
+fn selection_mode_change_forces_full_redraw_even_with_scroll_hint() {
+    let output = Rc::new(RefCell::new(Vec::new()));
+    let writer = CapturingWriter {
+        output: Rc::clone(&output),
+    };
+    let backend = CrosstermBackend::new(writer);
+    let mut terminal = ViewerTerminal::new(backend);
+
+    terminal
+        .draw(TerminalFrame {
+            area: Rect::new(0, 0, 24, 5),
+            styled: vec![Line::from(Span::raw("plain text"))],
+            sticky: Vec::new(),
+            selection_mode: true,
+            title: " test ".to_owned(),
+            footer_text: " footer ".to_owned(),
+            position: ViewPosition {
+                top: 0,
+                row_offset: 0,
+            },
+            scroll_hint: None,
+        })
+        .unwrap();
+    let position = ViewPosition {
+        top: 0,
+        row_offset: 1,
+    };
+    let scroll_hint = terminal.scroll_hint(position);
+    assert!(scroll_hint.is_some());
+
+    terminal
+        .draw(TerminalFrame {
+            area: Rect::new(0, 0, 24, 5),
+            styled: vec![Line::from(Span::raw("plain text"))],
+            sticky: Vec::new(),
+            selection_mode: false,
+            title: " test ".to_owned(),
+            footer_text: " footer ".to_owned(),
+            position,
+            scroll_hint,
+        })
+        .unwrap();
+
+    let output = String::from_utf8(output.borrow().clone()).unwrap();
+    assert!(output.matches("\x1b[2J").count() >= 2);
 }
 
 #[test]
@@ -82,4 +162,19 @@ fn shifted_wheel_scrolls_horizontally_in_nowrap() {
 
     assert!(action.dirty);
     assert_eq!(state.x, 0);
+}
+
+#[test]
+fn mouse_capture_toggle_reports_terminal_mode_change() {
+    let mut state = ViewState::default();
+
+    let action = handle_key_event(KeyCode::Char('m'), KeyModifiers::NONE, &mut state, 10, 5);
+    assert!(action.dirty);
+    assert_eq!(action.mouse_capture, Some(false));
+    assert!(!state.mouse_capture);
+
+    let action = handle_key_event(KeyCode::Char('m'), KeyModifiers::NONE, &mut state, 10, 5);
+    assert!(action.dirty);
+    assert_eq!(action.mouse_capture, Some(true));
+    assert!(state.mouse_capture);
 }

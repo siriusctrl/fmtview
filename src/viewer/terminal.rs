@@ -17,6 +17,7 @@ pub(super) struct TerminalFrame {
     pub(super) area: Rect,
     pub(super) styled: Vec<Line<'static>>,
     pub(super) sticky: Vec<Line<'static>>,
+    pub(super) selection_mode: bool,
     pub(super) title: String,
     pub(super) footer_text: String,
     pub(super) position: ViewPosition,
@@ -29,6 +30,7 @@ pub(super) struct ViewerTerminal<B> {
     scratch: Option<Buffer>,
     previous_position: Option<ViewPosition>,
     previous_sticky_rows: usize,
+    previous_selection_mode: Option<bool>,
     output: Vec<u8>,
 }
 
@@ -43,6 +45,7 @@ where
             scratch: None,
             previous_position: None,
             previous_sticky_rows: 0,
+            previous_selection_mode: None,
             output: Vec::with_capacity(16 * 1024),
         }
     }
@@ -71,12 +74,15 @@ where
             &mut current,
             frame.styled,
             frame.sticky,
+            frame.selection_mode,
             frame.title,
             frame.footer_text,
         );
         match self.previous.take() {
             Some(previous)
-                if previous.area == current.area && self.previous_sticky_rows == sticky_rows =>
+                if previous.area == current.area
+                    && self.previous_sticky_rows == sticky_rows
+                    && self.previous_selection_mode == Some(frame.selection_mode) =>
             {
                 draw_diff(
                     &mut self.backend,
@@ -93,6 +99,7 @@ where
                 let empty = Buffer::empty(frame.area);
                 draw_cells_with_buffer(&mut self.backend, empty.diff(&current), &mut self.output)?;
                 self.previous_position = None;
+                self.previous_selection_mode = None;
                 self.scratch = previous;
             }
         }
@@ -101,6 +108,7 @@ where
         self.previous = Some(current);
         self.previous_position = Some(frame.position);
         self.previous_sticky_rows = sticky_rows;
+        self.previous_selection_mode = Some(frame.selection_mode);
         Ok(())
     }
 
@@ -331,6 +339,7 @@ fn render_frame(
     buffer: &mut Buffer,
     styled: Vec<Line<'static>>,
     sticky: Vec<Line<'static>>,
+    selection_mode: bool,
     title: String,
     footer_text: String,
 ) {
@@ -347,7 +356,11 @@ fn render_frame(
         height: area.height.saturating_sub(1),
     };
     if body.height > 0 {
-        render_body(buffer, body, styled, sticky, &title);
+        if selection_mode {
+            render_selectable_body(buffer, body, styled, sticky);
+        } else {
+            render_body(buffer, body, styled, sticky, &title);
+        }
     }
 
     buffer.set_stringn(
@@ -357,6 +370,39 @@ fn render_frame(
         usize::from(area.width),
         gutter_style(),
     );
+}
+
+fn render_selectable_body(
+    buffer: &mut Buffer,
+    area: Rect,
+    styled: Vec<Line<'static>>,
+    sticky: Vec<Line<'static>>,
+) {
+    let sticky_rows = sticky.len().min(usize::from(area.height));
+    for (row, line) in sticky.into_iter().take(sticky_rows).enumerate() {
+        set_line_fast(
+            buffer,
+            area.x,
+            area.y.saturating_add(row as u16),
+            &line,
+            area.width,
+        );
+    }
+    for (row, line) in styled
+        .into_iter()
+        .take(usize::from(area.height).saturating_sub(sticky_rows))
+        .enumerate()
+    {
+        set_line_fast(
+            buffer,
+            area.x,
+            area.y
+                .saturating_add(sticky_rows as u16)
+                .saturating_add(row as u16),
+            &line,
+            area.width,
+        );
+    }
 }
 
 fn render_body(

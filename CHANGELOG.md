@@ -8,6 +8,16 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Show the current search match ordinal and lazy total in the viewer footer,
+  using a `+` suffix while the count is still based on the currently indexed
+  portion of the file.
+- Add a viewer mouse-selection mode toggle with `m`, so users can temporarily
+  release mouse capture and hide the frame and line-number gutter for native
+  terminal text selection, then press `m` again to restore wheel and trackpad
+  handling.
+
 ## [0.3.2] - 2026-05-06
 
 ### Fixed

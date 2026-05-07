@@ -252,7 +252,8 @@ fmtview diff examples/diff-left.json examples/diff-right.json
 ```
 
 Use the mouse wheel or trackpad to scroll, `Space`/`f` and `b` to page, `w` to
-toggle wrap/nowrap, and `q` to exit. `examples/showcase.json` includes embedded
+toggle wrap/nowrap, `m` to toggle terminal text selection, and `q` to exit.
+`examples/showcase.json` includes embedded
 XML, a deliberately mismatched XML closing tag, escaped special tokens, nested
 JSON, arrays, booleans, nulls, and an oversized single logical line near the top
 of the file for wrapped scroll testing.
@@ -284,6 +285,7 @@ Trackpad    vertical scroll; horizontal scroll in nowrap mode
 Shift+Wheel horizontal scroll in nowrap mode
 /           search visible text
 n/N         next/previous search match
+m           toggle mouse selection mode
 Digits+Enter jump to a line number, for example 1200 Enter
 Backspace   edit a pending prompt
 j/k         scroll down/up by logical line
@@ -339,11 +341,18 @@ case-sensitive and runs over the visible text you are viewing. `fmtview` jumps
 to the next matching line, then `n` and `N` repeat the search forward and
 backward with wrap-around. Matches visible in the current viewport are
 highlighted with a warm background without replacing JSON or markup syntax
-colors.
+colors. The footer shows the current match ordinal and total from the session
+search index, such as `2/8 matches`. A `+` suffix means the count is still
+growing as lazy line indexing or background match counting advances. If a match
+is beyond the counted prefix, the ordinal appears after the lazy index catches
+up instead of blocking the viewer.
 
 Mouse capture is enabled while the viewer is open so wheel and trackpad events
-go to `fmtview`. If your terminal uses mouse capture for selection, hold the
-terminal's normal bypass modifier, usually Shift.
+go to `fmtview`. Press `m` to release mouse capture when you want native
+terminal text selection and copying. Selection mode hides the viewer frame and
+line-number gutter so dragging over body rows copies the visible text rather
+than the UI chrome. Press `m` again to restore viewer mouse and trackpad
+handling.
 
 Soft wrap is enabled by default. Continuation rows preserve the original
 indentation, with a capped extra indent so deeply nested documents still have

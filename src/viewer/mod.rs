@@ -30,7 +30,9 @@ use crate::load::IndexedTempFile;
 use crate::load::ViewFile;
 use crate::syntax::SyntaxKind;
 
-use input::{ViewState, drain_events, process_search_step, reset_top_row_offset};
+use input::{
+    ViewState, drain_events, process_search_index_step, process_search_step, reset_top_row_offset,
+};
 use render::{
     LineWindowCache, RenderContext, RenderRequest, RenderedLineCache, TailPositionCache,
     ViewPosition, ViewportRenderOptions, continuation_indent, effective_top_row_offset,
@@ -142,6 +144,13 @@ fn run_loop(
         if state.search_task.is_some() {
             dirty |= process_search_step(file, &mut state)?;
         }
+        if state
+            .search_index
+            .as_ref()
+            .is_some_and(|index| !index.exact)
+        {
+            dirty |= process_search_index_step(file, &mut state)?;
+        }
 
         if dirty {
             draw_view(terminal, file, mode, &mut state, &mut caches)?;
@@ -170,9 +179,26 @@ fn run_loop(
         if action.quit {
             break;
         }
+        if let Some(enabled) = action.mouse_capture {
+            apply_mouse_capture(terminal, enabled)?;
+        }
         dirty |= action.dirty;
     }
 
+    Ok(())
+}
+
+fn apply_mouse_capture(
+    terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,
+    enabled: bool,
+) -> Result<()> {
+    if enabled {
+        execute!(terminal.backend_mut(), EnableMouseCapture)
+            .context("failed to enable mouse capture")?;
+    } else {
+        execute!(terminal.backend_mut(), DisableMouseCapture)
+            .context("failed to disable mouse capture")?;
+    }
     Ok(())
 }
 
@@ -191,6 +217,7 @@ struct DrawLayout {
     visible_width: usize,
     base_visible_height: usize,
     gutter_width: usize,
+    selection_mode: bool,
     context: RenderContext,
 }
 
@@ -339,7 +366,7 @@ fn draw_view(
         top: state.top,
         row_offset: state.top_row_offset,
     };
-    let scroll_hint = if state.wrap {
+    let scroll_hint = if state.wrap && state.mouse_capture {
         terminal
             .scroll_hint(position)
             .or_else(|| logical_scroll_hint(terminal, &caches.render, position))
@@ -379,7 +406,10 @@ fn draw_view(
             line_count_text(file)
         )
     } else if let Some(message) = &state.search_message {
-        format!(" {message} | / search | n/N | Esc clear ")
+        format!(
+            " {message}{} | / search | n/N | Esc clear ",
+            search_count_suffix(state)
+        )
     } else {
         idle_footer_text(state)
     };
@@ -389,6 +419,7 @@ fn draw_view(
             area: layout.area,
             styled,
             sticky: sticky.lines,
+            selection_mode: layout.selection_mode,
             title,
             footer_text,
             position,
@@ -410,15 +441,30 @@ fn draw_view(
 }
 
 fn draw_layout(size: Size, file: &dyn ViewFile, state: &ViewState, mode: SyntaxKind) -> DrawLayout {
+    let selection_mode = !state.mouse_capture;
     let area = Rect::new(0, 0, size.width, size.height);
-    let visible_width = usize::from(size.width.saturating_sub(2));
-    let base_visible_height = usize::from(size.height.saturating_sub(3));
-    let gutter_digits = if file.line_count_exact() {
+    let visible_width = if selection_mode {
+        usize::from(size.width)
+    } else {
+        usize::from(size.width.saturating_sub(2))
+    };
+    let base_visible_height = if selection_mode {
+        usize::from(size.height.saturating_sub(1))
+    } else {
+        usize::from(size.height.saturating_sub(3))
+    };
+    let gutter_digits = if selection_mode {
+        0
+    } else if file.line_count_exact() {
         line_number_digits(file.line_count())
     } else {
         line_number_digits(file.line_count()).max(4)
     };
-    let gutter_width = gutter_digits + 3;
+    let gutter_width = if gutter_digits == 0 {
+        0
+    } else {
+        gutter_digits + 3
+    };
     let content_width = visible_width.saturating_sub(gutter_width);
 
     DrawLayout {
@@ -426,6 +472,7 @@ fn draw_layout(size: Size, file: &dyn ViewFile, state: &ViewState, mode: SyntaxK
         visible_width,
         base_visible_height,
         gutter_width,
+        selection_mode,
         context: RenderContext {
             gutter_digits,
             x: state.x,
@@ -796,12 +843,49 @@ fn known_line_rows(render_cache: &RenderedLineCache, zero_based_line: usize) -> 
 
 fn idle_footer_text(state: &ViewState) -> String {
     let wrap_hint = if state.wrap { "w unwrap" } else { "w wrap" };
+    let mouse_hint = if state.mouse_capture {
+        "m select"
+    } else {
+        "m mouse"
+    };
     let position = wrap_position_text(state)
         .map(|position| format!("{position} | "))
         .unwrap_or_default();
+    let search = search_count_text(state)
+        .map(|count| format!("{count} | "))
+        .unwrap_or_default();
     format!(
-        " {position}q/Esc quit | {wrap_hint} | / search n/N | wheel/j/k | 123 Enter | Space/f,b "
+        " {position}{search}q/Esc quit | {wrap_hint} | {mouse_hint} | / search n/N | wheel/j/k | 123 Enter | Space/f,b "
     )
+}
+
+fn search_count_suffix(state: &ViewState) -> String {
+    search_count_text(state)
+        .map(|count| format!(" | {count}"))
+        .unwrap_or_default()
+}
+
+fn search_count_text(state: &ViewState) -> Option<String> {
+    let index = state.search_index.as_ref()?;
+    if index.query != state.search_query {
+        return None;
+    }
+
+    let suffix = if index.exact { "" } else { "+" };
+    let matches = state
+        .search_match_ordinal
+        .map(|ordinal| index.matches.max(ordinal))
+        .unwrap_or(index.matches);
+    let noun = if matches == 1 { "match" } else { "matches" };
+    if let Some(ordinal) = state.search_match_ordinal {
+        return Some(format!(
+            "{}/{}{suffix} {noun}",
+            format_count(ordinal),
+            format_count(matches)
+        ));
+    }
+
+    Some(format!("{}{suffix} {noun}", format_count(matches)))
 }
 
 fn display_mode_text(state: &ViewState) -> String {

@@ -84,6 +84,7 @@ pub(in crate::viewer) fn handle_event_with_count(
         Event::Resize(_, _) => EventAction {
             dirty: true,
             quit: false,
+            mouse_capture: None,
         },
         _ => EventAction::default(),
     }
@@ -112,6 +113,7 @@ pub(in crate::viewer) fn handle_key_event_with_count(
         return EventAction {
             dirty: false,
             quit: true,
+            mouse_capture: None,
         };
     }
 
@@ -119,6 +121,7 @@ pub(in crate::viewer) fn handle_key_event_with_count(
         return EventAction {
             dirty: handle_search_input_key(code, modifiers, state, line_count),
             quit: false,
+            mouse_capture: None,
         };
     }
 
@@ -126,6 +129,7 @@ pub(in crate::viewer) fn handle_key_event_with_count(
         return EventAction {
             dirty: handle_jump_input_key(code, modifiers, state, line_count, line_count_exact),
             quit: false,
+            mouse_capture: None,
         };
     }
 
@@ -148,6 +152,15 @@ pub(in crate::viewer) fn handle_key_event_with_count(
             return EventAction {
                 dirty: false,
                 quit: true,
+                mouse_capture: None,
+            };
+        }
+        KeyCode::Char('m') if plain_key(modifiers) => {
+            state.mouse_capture = !state.mouse_capture;
+            return EventAction {
+                dirty: true,
+                quit: false,
+                mouse_capture: Some(state.mouse_capture),
             };
         }
         KeyCode::Char('w') => {
@@ -172,7 +185,11 @@ pub(in crate::viewer) fn handle_key_event_with_count(
         _ => false,
     };
 
-    EventAction { dirty, quit: false }
+    EventAction {
+        dirty,
+        quit: false,
+        mouse_capture: None,
+    }
 }
 
 pub(in crate::viewer) fn handle_mouse_event(
@@ -199,5 +216,9 @@ pub(in crate::viewer) fn handle_mouse_event(
         _ => false,
     };
 
-    EventAction { dirty, quit: false }
+    EventAction {
+        dirty,
+        quit: false,
+        mouse_capture: None,
+    }
 }

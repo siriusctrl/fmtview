@@ -20,6 +20,27 @@ pub(in crate::viewer) struct SearchTask {
     pub(in crate::viewer) remaining: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::viewer) struct SearchMatchIndex {
+    pub(in crate::viewer) query: String,
+    pub(in crate::viewer) counted_lines: usize,
+    pub(in crate::viewer) matches: usize,
+    pub(in crate::viewer) line_match_totals: Vec<usize>,
+    pub(in crate::viewer) exact: bool,
+}
+
+impl SearchMatchIndex {
+    fn new(query: String) -> Self {
+        Self {
+            query,
+            counted_lines: 0,
+            matches: 0,
+            line_match_totals: Vec::new(),
+            exact: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::viewer) enum SearchDirection {
     Forward,
@@ -51,6 +72,8 @@ pub(in crate::viewer) fn start_search_prompt(state: &mut ViewState) -> bool {
     state.search_task = None;
     state.search_target = None;
     state.search_cursor = None;
+    state.search_match_ordinal = None;
+    state.search_match_target = None;
     true
 }
 
@@ -137,6 +160,9 @@ pub(in crate::viewer) fn start_search(
     state.search_message = Some(format!("searching: {query}"));
     state.search_target = None;
     state.search_cursor = None;
+    state.search_match_ordinal = None;
+    state.search_match_target = None;
+    ensure_search_match_index(state, &query);
     if line_count == 0 {
         state.search_task = None;
         state.search_message = Some(format!("not found: {query}"));
@@ -152,9 +178,23 @@ pub(in crate::viewer) fn start_search(
     true
 }
 
+fn ensure_search_match_index(state: &mut ViewState, query: &str) {
+    if state
+        .search_index
+        .as_ref()
+        .is_some_and(|index| index.query == query)
+    {
+        return;
+    }
+
+    state.search_index = Some(SearchMatchIndex::new(query.to_owned()));
+}
+
 pub(in crate::viewer) fn cancel_search_task(state: &mut ViewState) -> bool {
     state.search_task = None;
     state.search_target = None;
+    state.search_match_ordinal = None;
+    state.search_match_target = None;
     state.search_message = Some("search canceled".to_owned());
     true
 }
@@ -163,6 +203,56 @@ pub(in crate::viewer) fn clear_search_message(state: &mut ViewState) -> bool {
     let was_active = state.search_message.is_some();
     state.search_message = None;
     was_active
+}
+
+pub(in crate::viewer) fn process_search_index_step(
+    file: &dyn ViewFile,
+    state: &mut ViewState,
+) -> Result<bool> {
+    if state.search_query.is_empty() {
+        state.search_index = None;
+        return Ok(false);
+    }
+
+    let Some(mut index) = state.search_index.take() else {
+        return Ok(false);
+    };
+    if index.query != state.search_query {
+        state.search_index = Some(SearchMatchIndex::new(state.search_query.clone()));
+        return Ok(true);
+    }
+    if index.exact {
+        state.search_index = Some(index);
+        return Ok(false);
+    }
+
+    let line_count = file.line_count();
+    let old_counted_lines = index.counted_lines;
+    let old_matches = index.matches;
+    let old_exact = index.exact;
+
+    if index.counted_lines < line_count {
+        let count = (line_count - index.counted_lines).min(SEARCH_CHUNK_LINES);
+        let lines = file.read_window(index.counted_lines, count)?;
+        for line in &lines {
+            index.matches = index
+                .matches
+                .saturating_add(line.matches(&index.query).count());
+            index.line_match_totals.push(index.matches);
+        }
+        index.counted_lines = index.counted_lines.saturating_add(lines.len());
+    }
+
+    if file.line_count_exact() && index.counted_lines >= file.line_count() {
+        index.exact = true;
+    }
+
+    let dirty = index.counted_lines != old_counted_lines
+        || index.matches != old_matches
+        || index.exact != old_exact;
+    state.search_index = Some(index);
+    let ordinal_dirty = update_search_match_ordinal(file, state)?;
+    Ok(dirty || ordinal_dirty)
 }
 
 pub(in crate::viewer) fn process_search_step(
@@ -177,6 +267,8 @@ pub(in crate::viewer) fn process_search_step(
     if let Some(target) = step.found {
         state.search_cursor = Some(target.line);
         state.search_target = Some(target);
+        state.search_match_target = Some(target);
+        state.search_match_ordinal = search_match_ordinal_from_index(file, state, target)?;
         state.search_message = Some(format!("match: {}", task.query));
         return Ok(true);
     }
@@ -193,12 +285,67 @@ pub(in crate::viewer) fn process_search_step(
     }
     if task.remaining == 0 || step.scanned == 0 {
         state.search_target = None;
+        state.search_match_ordinal = None;
+        state.search_match_target = None;
         state.search_message = Some(format!("not found: {}", task.query));
         return Ok(true);
     }
 
     state.search_task = Some(task);
     Ok(false)
+}
+
+fn update_search_match_ordinal(file: &dyn ViewFile, state: &mut ViewState) -> Result<bool> {
+    let previous = state.search_match_ordinal;
+    state.search_match_ordinal = state
+        .search_match_target
+        .map(|target| search_match_ordinal_from_index(file, state, target))
+        .transpose()?
+        .flatten();
+    Ok(state.search_match_ordinal != previous)
+}
+
+pub(in crate::viewer) fn search_match_ordinal_from_index(
+    file: &dyn ViewFile,
+    state: &ViewState,
+    target: SearchTarget,
+) -> Result<Option<usize>> {
+    let Some(index) = state.search_index.as_ref() else {
+        return Ok(None);
+    };
+    if index.query != state.search_query
+        || index.query.is_empty()
+        || target.line >= index.counted_lines
+    {
+        return Ok(None);
+    };
+
+    let lines = file.read_window(target.line, 1)?;
+    let Some(target_line) = lines.first() else {
+        return Ok(None);
+    };
+    let byte_index = floor_char_boundary(target_line, target.byte_index.min(target_line.len()));
+    let previous_matches = if target.line == 0 {
+        0
+    } else {
+        let Some(matches) = index.line_match_totals.get(target.line - 1) else {
+            return Ok(None);
+        };
+        *matches
+    };
+    let matches_before_target = target_line[..byte_index].matches(&index.query).count();
+    Ok(Some(
+        previous_matches
+            .saturating_add(matches_before_target)
+            .saturating_add(1),
+    ))
+}
+
+fn floor_char_boundary(text: &str, mut index: usize) -> usize {
+    while index > 0 && !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
