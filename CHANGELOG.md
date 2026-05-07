@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-05-07
+
 ### Added
 
 - Show the current search match ordinal and lazy total in the viewer footer,
