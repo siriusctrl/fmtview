@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-05-18
+
 ### Fixed
 
 - Keep wrapped Markdown rows with wide Unicode characters inside the viewer
