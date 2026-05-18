@@ -1,4 +1,5 @@
 use super::*;
+use unicode_width::UnicodeWidthStr;
 
 #[test]
 fn slices_by_character_not_byte() {
@@ -60,6 +61,33 @@ fn wrap_uses_continuation_gutter_and_indent() {
     assert!(lines.len() > 1);
     assert!(span_text(&lines[0].spans).starts_with(" 7 │ "));
     assert!(span_text(&lines[1].spans).starts_with("   ┆     "));
+}
+
+#[test]
+fn markdown_wrap_respects_wide_character_display_width() {
+    let content_width = 18;
+    let gutter_width = 4;
+    let lines = render_logical_line(
+        "- 这是一个很长的 markdown 列表项，里面有 emoji 😊😊 和 [链接](https://example.com/some/really/long/path)。",
+        3,
+        8,
+        RenderContext {
+            gutter_digits: 1,
+            x: 0,
+            width: content_width,
+            wrap: true,
+            mode: SyntaxKind::Markdown,
+        },
+    );
+
+    assert!(lines.len() > 1);
+    for line in lines {
+        let text = span_text(&line.spans);
+        assert!(
+            UnicodeWidthStr::width(text.as_str()) <= gutter_width + content_width,
+            "wrapped row exceeded viewer content width: {text:?}"
+        );
+    }
 }
 
 #[test]

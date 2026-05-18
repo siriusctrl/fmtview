@@ -8,6 +8,11 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep wrapped Markdown rows with wide Unicode characters inside the viewer
+  frame instead of clipping later content at the right edge.
+
 ## [0.3.3] - 2026-05-07
 
 ### Added

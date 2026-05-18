@@ -352,6 +352,7 @@ dependencies = [
  "quick-xml",
  "ratatui",
  "tempfile",
+ "unicode-width",
 ]
 
 [[package]]

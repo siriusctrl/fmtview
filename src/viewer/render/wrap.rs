@@ -1,4 +1,5 @@
 use super::super::WRAP_CHECKPOINT_INTERVAL_ROWS;
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Default)]
 pub(in crate::viewer) struct WrapCheckpointIndex {
@@ -172,19 +173,23 @@ pub(in crate::viewer) fn next_wrap_end(
     }
 
     let min_end = (row_width / 2).max(1);
-    let mut consumed = 0_usize;
+    let mut consumed_width = 0_usize;
+    let mut consumed_chars = 0_usize;
     let mut hard_end = None;
     let mut best_end = None;
 
     for (offset, ch) in line[start_byte..].char_indices() {
-        if consumed >= row_width {
+        let width = char_display_width(ch);
+        if consumed_width > 0 && consumed_width.saturating_add(width) > row_width {
             break;
         }
-        consumed += 1;
+        consumed_width = consumed_width.saturating_add(width);
+        consumed_chars = consumed_chars.saturating_add(1);
         let byte_end = start_byte + offset + ch.len_utf8();
-        let char_end = start_char + consumed;
+        let char_end = start_char + consumed_chars;
         hard_end = Some((byte_end, char_end));
-        if consumed >= min_end && (ch.is_whitespace() || matches!(ch, ',' | '>' | '}' | ']' | ';'))
+        if consumed_width >= min_end
+            && (ch.is_whitespace() || matches!(ch, ',' | '>' | '}' | ']' | ';'))
         {
             best_end = Some((byte_end, char_end));
         }
@@ -237,8 +242,18 @@ pub(in crate::viewer) fn continuation_indent(line: &str, width: usize) -> usize 
     let indent = line
         .chars()
         .take_while(|ch| ch.is_whitespace())
-        .map(|ch| if ch == '\t' { 2 } else { 1 })
+        .map(|ch| {
+            if ch == '\t' {
+                2
+            } else {
+                char_display_width(ch)
+            }
+        })
         .sum::<usize>()
         + 2;
     indent.min(24).min(width / 2)
+}
+
+fn char_display_width(ch: char) -> usize {
+    UnicodeWidthChar::width(ch).unwrap_or(1)
 }

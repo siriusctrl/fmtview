@@ -19,6 +19,7 @@ memchr = "2.8.0"
 quick-xml = "0.39.2"
 ratatui = { version = "0.30.0", default-features = false, features = ["crossterm"] }
 tempfile = "3.27.0"
+unicode-width = "0.2.2"
 
 [dev-dependencies]
 assert_cmd = "2.2.1"
