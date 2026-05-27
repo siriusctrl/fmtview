@@ -8,6 +8,16 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Add `]`/`[` structural block navigation in the terminal viewer for JSON,
+  JSONL, XML/HTML, Markdown, TOML, Jinja, and plain-text paragraph starts.
+
+### Changed
+
+- Shorten the idle viewer footer and clarify the digit-plus-Enter line jump
+  hint.
+
 ## [0.3.4] - 2026-05-18
 
 ### Fixed

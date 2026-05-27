@@ -34,6 +34,7 @@ mod navigation;
 mod perf;
 mod render;
 mod search;
+mod structure;
 mod syntax;
 mod terminal;
 mod viewport;

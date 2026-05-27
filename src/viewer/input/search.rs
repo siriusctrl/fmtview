@@ -74,6 +74,7 @@ pub(in crate::viewer) fn start_search_prompt(state: &mut ViewState) -> bool {
     state.search_cursor = None;
     state.search_match_ordinal = None;
     state.search_match_target = None;
+    state.structure_cursor = None;
     true
 }
 
@@ -162,6 +163,7 @@ pub(in crate::viewer) fn start_search(
     state.search_cursor = None;
     state.search_match_ordinal = None;
     state.search_match_target = None;
+    state.structure_cursor = None;
     ensure_search_match_index(state, &query);
     if line_count == 0 {
         state.search_task = None;

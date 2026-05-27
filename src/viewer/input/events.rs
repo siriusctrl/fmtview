@@ -18,6 +18,7 @@ use super::{
         start_repeat_search, start_search_prompt,
     },
     state::{EventAction, ViewState},
+    structure::{StructureDirection, start_structure_navigation},
 };
 
 pub(in crate::viewer) fn drain_events(
@@ -145,6 +146,18 @@ pub(in crate::viewer) fn handle_key_event_with_count(
         KeyCode::Char('N') if plain_key(modifiers) => {
             start_repeat_search(state, line_count, SearchDirection::Backward)
         }
+        KeyCode::Char(']') if plain_key(modifiers) => start_structure_navigation(
+            state,
+            line_count,
+            line_count_exact,
+            StructureDirection::Forward,
+        ),
+        KeyCode::Char('[') if plain_key(modifiers) => start_structure_navigation(
+            state,
+            line_count,
+            line_count_exact,
+            StructureDirection::Backward,
+        ),
         KeyCode::Enter => false,
         KeyCode::Esc if state.search_task.is_some() => cancel_search_task(state),
         KeyCode::Esc if state.search_message.is_some() => clear_search_message(state),
@@ -168,14 +181,30 @@ pub(in crate::viewer) fn handle_key_event_with_count(
             reset_top_row_offset(state);
             true
         }
-        KeyCode::Down | KeyCode::Char('j') => scroll_down(state, line_count),
-        KeyCode::Up | KeyCode::Char('k') => scroll_up(state, line_count),
-        KeyCode::PageDown | KeyCode::Char(' ') | KeyCode::Char('f') => {
-            page_down(state, line_count, page)
+        KeyCode::Down | KeyCode::Char('j') => {
+            let dirty = scroll_down(state, line_count);
+            clear_structure_cursor_if_dirty(state, dirty)
         }
-        KeyCode::PageUp | KeyCode::Char('b') => page_up(state, line_count, page),
-        KeyCode::Home | KeyCode::Char('g') => set_top(state, 0),
-        KeyCode::End | KeyCode::Char('G') => set_file_end(state, line_count),
+        KeyCode::Up | KeyCode::Char('k') => {
+            let dirty = scroll_up(state, line_count);
+            clear_structure_cursor_if_dirty(state, dirty)
+        }
+        KeyCode::PageDown | KeyCode::Char(' ') | KeyCode::Char('f') => {
+            let dirty = page_down(state, line_count, page);
+            clear_structure_cursor_if_dirty(state, dirty)
+        }
+        KeyCode::PageUp | KeyCode::Char('b') => {
+            let dirty = page_up(state, line_count, page);
+            clear_structure_cursor_if_dirty(state, dirty)
+        }
+        KeyCode::Home | KeyCode::Char('g') => {
+            let dirty = set_top(state, 0);
+            clear_structure_cursor_if_dirty(state, dirty)
+        }
+        KeyCode::End | KeyCode::Char('G') => {
+            let dirty = set_file_end(state, line_count);
+            clear_structure_cursor_if_dirty(state, dirty)
+        }
         KeyCode::Right | KeyCode::Char('l') if !state.wrap => {
             scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
         }
@@ -205,8 +234,14 @@ pub(in crate::viewer) fn handle_mouse_event(
         MouseEventKind::ScrollUp if modifiers.contains(KeyModifiers::SHIFT) && !state.wrap => {
             scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
         }
-        MouseEventKind::ScrollDown => scroll_down_by(state, line_count, MOUSE_SCROLL_LINES),
-        MouseEventKind::ScrollUp => scroll_up_by(state, line_count, MOUSE_SCROLL_LINES),
+        MouseEventKind::ScrollDown => {
+            let dirty = scroll_down_by(state, line_count, MOUSE_SCROLL_LINES);
+            clear_structure_cursor_if_dirty(state, dirty)
+        }
+        MouseEventKind::ScrollUp => {
+            let dirty = scroll_up_by(state, line_count, MOUSE_SCROLL_LINES);
+            clear_structure_cursor_if_dirty(state, dirty)
+        }
         MouseEventKind::ScrollRight if !state.wrap => {
             scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
         }
@@ -221,4 +256,11 @@ pub(in crate::viewer) fn handle_mouse_event(
         quit: false,
         mouse_capture: None,
     }
+}
+
+fn clear_structure_cursor_if_dirty(state: &mut ViewState, dirty: bool) -> bool {
+    if dirty {
+        state.structure_cursor = None;
+    }
+    dirty
 }

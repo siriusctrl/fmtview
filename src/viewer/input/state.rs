@@ -1,4 +1,7 @@
-use super::search::{SearchMatchIndex, SearchTarget, SearchTask};
+use super::{
+    search::{SearchMatchIndex, SearchTarget, SearchTask},
+    structure::StructureTask,
+};
 
 pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) top: usize,
@@ -18,6 +21,9 @@ pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) search_match_target: Option<SearchTarget>,
     pub(in crate::viewer) search_target: Option<SearchTarget>,
     pub(in crate::viewer) search_cursor: Option<usize>,
+    pub(in crate::viewer) structure_task: Option<StructureTask>,
+    pub(in crate::viewer) structure_target: Option<SearchTarget>,
+    pub(in crate::viewer) structure_cursor: Option<usize>,
     pub(in crate::viewer) mouse_capture: bool,
 }
 
@@ -41,6 +47,9 @@ impl Default for ViewState {
             search_match_target: None,
             search_target: None,
             search_cursor: None,
+            structure_task: None,
+            structure_target: None,
+            structure_cursor: None,
             mouse_capture: true,
         }
     }

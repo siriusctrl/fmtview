@@ -285,6 +285,7 @@ Trackpad    vertical scroll; horizontal scroll in nowrap mode
 Shift+Wheel horizontal scroll in nowrap mode
 /           search visible text
 n/N         next/previous search match
+]/[         next/previous structural block
 m           toggle mouse selection mode
 Digits+Enter jump to a line number, for example 1200 Enter
 Backspace   edit a pending prompt
@@ -335,6 +336,13 @@ indexed files, jumps seek through the formatted line-offset index instead of
 scanning from the top, so jumping to a deep line only reads the target window.
 On lazy record previews, jumps are bounded by the currently discovered session
 index while background preloading continues to extend it.
+
+To jump between structural blocks, press `]` or `[`. JSON and JSONL previews
+jump through composite JSON points such as object/array starts and fields whose
+value is an object or array, so expanded JSONL records navigate inside the
+current record before falling through to later records. XML/HTML jumps to start
+tags, Markdown to headings, TOML to table headers, Jinja to block-level
+template constructs, and plain text to paragraph starts.
 
 To search, press `/`, type a substring, and press Enter. Search is
 case-sensitive and runs over the visible text you are viewing. `fmtview` jumps
