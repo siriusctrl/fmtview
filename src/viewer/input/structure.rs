@@ -10,6 +10,7 @@ use super::{search::SearchTarget, state::ViewState};
 const STRUCTURE_CHUNK_LINES: usize = 4096;
 const STRUCTURE_PRELOAD_RECORDS: usize = 64;
 const STRUCTURE_PRELOAD_BUDGET: Duration = Duration::from_millis(6);
+const JSON_VISIBLE_COMPOSITE_LANDMARK_LINES: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::viewer) enum StructureDirection {
@@ -42,6 +43,95 @@ impl StructureViewport {
             && self.x == state.x
             && self.wrap == state.wrap
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StructureCandidateKind {
+    JsonRecordStart,
+    JsonArrayItemStart,
+    JsonCompositeField,
+    JsonRootStart,
+    XmlStartTag,
+    MarkdownHeading,
+    TomlTable,
+    JinjaBlock,
+    PlainParagraph,
+}
+
+impl StructureCandidateKind {
+    fn is_landmark_when_visible(self, line_span: Option<usize>) -> bool {
+        match self {
+            StructureCandidateKind::JsonRecordStart
+            | StructureCandidateKind::JsonArrayItemStart
+            | StructureCandidateKind::JsonRootStart
+            | StructureCandidateKind::MarkdownHeading
+            | StructureCandidateKind::TomlTable
+            | StructureCandidateKind::JinjaBlock
+            | StructureCandidateKind::PlainParagraph => true,
+            StructureCandidateKind::XmlStartTag => line_span.is_none_or(|span| span > 1),
+            StructureCandidateKind::JsonCompositeField => {
+                line_span.is_some_and(|span| span >= JSON_VISIBLE_COMPOSITE_LANDMARK_LINES)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CandidateVisibility {
+    fully_observed: bool,
+    end_line: Option<usize>,
+}
+
+impl CandidateVisibility {
+    fn unknown() -> Self {
+        Self {
+            fully_observed: false,
+            end_line: None,
+        }
+    }
+
+    fn fully_observed(end_line: usize) -> Self {
+        Self {
+            fully_observed: true,
+            end_line: Some(end_line),
+        }
+    }
+
+    fn partially_observed(end_line: Option<usize>) -> Self {
+        Self {
+            fully_observed: false,
+            end_line,
+        }
+    }
+
+    fn line_span(self, start_line: usize) -> Option<usize> {
+        self.end_line
+            .map(|end_line| end_line.saturating_sub(start_line).saturating_add(1))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StructureCandidate {
+    line: usize,
+    byte_index: usize,
+    kind: StructureCandidateKind,
+    indent: usize,
+}
+
+impl StructureCandidate {
+    fn target(self) -> SearchTarget {
+        SearchTarget {
+            line: self.line,
+            byte_index: self.byte_index,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StructureAnchor {
+    line: usize,
+    kind: Option<StructureCandidateKind>,
+    indent: usize,
 }
 
 pub(in crate::viewer) fn start_structure_navigation(
@@ -135,8 +225,8 @@ fn reached_structure_scan_end(file: &dyn ViewFile, task: &StructureTask) -> bool
 
 fn no_block_message(direction: StructureDirection) -> &'static str {
     match direction {
-        StructureDirection::Forward => "no next block",
-        StructureDirection::Backward => "no previous block",
+        StructureDirection::Forward => "no next structure",
+        StructureDirection::Backward => "no previous structure",
     }
 }
 
@@ -206,15 +296,17 @@ fn scan_structure_forward(
         });
     }
 
+    let anchor = structure_anchor(&lines, read_start, next_line.saturating_sub(1), syntax);
+    let mut candidates = Vec::new();
     let mut scanned = 0_usize;
     for offset in next_line - read_start..lines.len() {
         let line_number = read_start + offset;
-        if is_structure_point(
+        if let Some(kind) = structure_candidate_kind(
             syntax,
             lines.get(offset).map(String::as_str).unwrap_or_default(),
             lines.get(offset.saturating_sub(1)).map(String::as_str),
         ) {
-            if is_candidate_fully_observed(
+            let visibility = candidate_visibility(
                 syntax,
                 &lines,
                 read_start,
@@ -222,20 +314,27 @@ fn scan_structure_forward(
                 file.line_count(),
                 file.line_count_exact(),
                 viewport,
-            ) {
+            );
+            if should_skip_candidate(kind, line_number, visibility) {
                 scanned = scanned.saturating_add(1);
                 continue;
             }
-            return Ok(StructureStep {
-                found: Some(SearchTarget {
-                    line: line_number,
-                    byte_index: first_non_ws_byte(&lines[offset]),
-                }),
-                next_line: line_number,
-                scanned: scanned.saturating_add(1),
+            candidates.push(StructureCandidate {
+                line: line_number,
+                byte_index: first_non_ws_byte(&lines[offset]),
+                kind,
+                indent: leading_indent(&lines[offset]),
             });
         }
         scanned = scanned.saturating_add(1);
+    }
+
+    if let Some(candidate) = select_structure_candidate(&candidates, syntax, anchor) {
+        return Ok(StructureStep {
+            found: Some(candidate.target()),
+            next_line: candidate.line,
+            scanned: candidate.line.saturating_sub(next_line).saturating_add(1),
+        });
     }
 
     next_line = next_line.saturating_add(scanned);
@@ -265,6 +364,10 @@ fn scan_structure_backward(
     let start = next_line + 1 - count;
     let read_start = start.saturating_sub(1);
     let mut read_end = next_line.saturating_add(1);
+    let anchor_line = next_line.saturating_add(1);
+    if anchor_line < line_count {
+        read_end = read_end.max(anchor_line.saturating_add(1));
+    }
     if let Some(viewport) = viewport {
         read_end = read_end.max(viewport.bottom.saturating_add(1).min(line_count));
     }
@@ -278,15 +381,17 @@ fn scan_structure_backward(
         });
     }
 
+    let anchor = structure_anchor(&lines, read_start, anchor_line, syntax);
     let scan_end_offset = next_line.saturating_sub(read_start).min(lines.len() - 1);
+    let mut candidates = Vec::new();
     for offset in (start - read_start..=scan_end_offset).rev() {
         let line_number = read_start + offset;
-        if is_structure_point(
+        if let Some(kind) = structure_candidate_kind(
             syntax,
             lines.get(offset).map(String::as_str).unwrap_or_default(),
             lines.get(offset.saturating_sub(1)).map(String::as_str),
         ) {
-            if is_candidate_fully_observed(
+            let visibility = candidate_visibility(
                 syntax,
                 &lines,
                 read_start,
@@ -294,18 +399,25 @@ fn scan_structure_backward(
                 file.line_count(),
                 file.line_count_exact(),
                 viewport,
-            ) {
+            );
+            if should_skip_candidate(kind, line_number, visibility) {
                 continue;
             }
-            return Ok(StructureStep {
-                found: Some(SearchTarget {
-                    line: line_number,
-                    byte_index: first_non_ws_byte(&lines[offset]),
-                }),
-                next_line: line_number,
-                scanned: next_line.saturating_sub(line_number).saturating_add(1),
+            candidates.push(StructureCandidate {
+                line: line_number,
+                byte_index: first_non_ws_byte(&lines[offset]),
+                kind,
+                indent: leading_indent(&lines[offset]),
             });
         }
+    }
+
+    if let Some(candidate) = select_structure_candidate(&candidates, syntax, anchor) {
+        return Ok(StructureStep {
+            found: Some(candidate.target()),
+            next_line: candidate.line,
+            scanned: next_line.saturating_sub(candidate.line).saturating_add(1),
+        });
     }
 
     Ok(StructureStep {
@@ -315,7 +427,91 @@ fn scan_structure_backward(
     })
 }
 
-fn is_candidate_fully_observed(
+fn should_skip_candidate(
+    kind: StructureCandidateKind,
+    start_line: usize,
+    visibility: CandidateVisibility,
+) -> bool {
+    visibility.fully_observed && !kind.is_landmark_when_visible(visibility.line_span(start_line))
+}
+
+fn structure_anchor(
+    lines: &[String],
+    read_start: usize,
+    line: usize,
+    syntax: SyntaxKind,
+) -> Option<StructureAnchor> {
+    let offset = line.checked_sub(read_start)?;
+    let content = lines.get(offset)?;
+    let previous = offset
+        .checked_sub(1)
+        .and_then(|previous| lines.get(previous).map(String::as_str));
+    Some(StructureAnchor {
+        line,
+        kind: structure_candidate_kind(syntax, content, previous),
+        indent: leading_indent(content),
+    })
+}
+
+fn select_structure_candidate(
+    candidates: &[StructureCandidate],
+    syntax: SyntaxKind,
+    anchor: Option<StructureAnchor>,
+) -> Option<StructureCandidate> {
+    candidates
+        .iter()
+        .copied()
+        .min_by_key(|candidate| structure_candidate_rank(*candidate, syntax, anchor))
+}
+
+fn structure_candidate_rank(
+    candidate: StructureCandidate,
+    syntax: SyntaxKind,
+    anchor: Option<StructureAnchor>,
+) -> (usize, usize, usize) {
+    let distance = anchor
+        .map(|anchor| anchor.line.abs_diff(candidate.line))
+        .unwrap_or(candidate.line);
+    if syntax != SyntaxKind::Structured {
+        return (0, distance, 0);
+    }
+
+    let Some(anchor) = anchor else {
+        return (0, distance, json_candidate_priority(candidate.kind));
+    };
+
+    match anchor.kind {
+        Some(StructureCandidateKind::JsonArrayItemStart) => {
+            let scope = usize::from(candidate.indent > anchor.indent);
+            (scope, json_candidate_priority(candidate.kind), distance)
+        }
+        Some(StructureCandidateKind::JsonCompositeField) => {
+            let scope = usize::from(candidate.indent <= anchor.indent);
+            (scope, distance, json_candidate_priority(candidate.kind))
+        }
+        Some(StructureCandidateKind::JsonRecordStart | StructureCandidateKind::JsonRootStart) => {
+            let scope = usize::from(candidate.kind == StructureCandidateKind::JsonRecordStart);
+            (scope, distance, json_candidate_priority(candidate.kind))
+        }
+        _ => (0, distance, json_candidate_priority(candidate.kind)),
+    }
+}
+
+fn json_candidate_priority(kind: StructureCandidateKind) -> usize {
+    match kind {
+        StructureCandidateKind::JsonArrayItemStart => 0,
+        StructureCandidateKind::JsonRootStart => 1,
+        StructureCandidateKind::JsonRecordStart => 2,
+        StructureCandidateKind::JsonCompositeField => 3,
+        StructureCandidateKind::XmlStartTag => 4,
+        StructureCandidateKind::MarkdownHeading
+        | StructureCandidateKind::TomlTable
+        | StructureCandidateKind::JinjaBlock
+        | StructureCandidateKind::PlainParagraph => 5,
+    }
+}
+
+fn candidate_visibility(
     syntax: SyntaxKind,
     lines: &[String],
     read_start: usize,
@@ -323,16 +519,16 @@ fn is_candidate_fully_observed(
     line_count: usize,
     line_count_exact: bool,
     viewport: Option<StructureViewport>,
-) -> bool {
+) -> CandidateVisibility {
     let Some(viewport) = viewport else {
-        return false;
+        return CandidateVisibility::unknown();
     };
     let start_line = read_start + candidate_offset;
     if start_line < viewport.top || start_line > viewport.bottom {
-        return false;
+        return CandidateVisibility::unknown();
     }
     if start_line == viewport.top && viewport.top_row_offset > 0 {
-        return false;
+        return CandidateVisibility::unknown();
     }
 
     let Some(end_line) = structure_block_end(
@@ -344,16 +540,20 @@ fn is_candidate_fully_observed(
         line_count,
         line_count_exact,
     ) else {
-        return false;
+        return CandidateVisibility::unknown();
     };
     if end_line > viewport.bottom {
-        return false;
+        return CandidateVisibility::partially_observed(Some(end_line));
     }
     if end_line == viewport.bottom && !viewport.bottom_line_end {
-        return false;
+        return CandidateVisibility::partially_observed(Some(end_line));
     }
 
-    block_is_horizontally_observed(lines, read_start, start_line, end_line, viewport)
+    if block_is_horizontally_observed(lines, read_start, start_line, end_line, viewport) {
+        CandidateVisibility::fully_observed(end_line)
+    } else {
+        CandidateVisibility::partially_observed(Some(end_line))
+    }
 }
 
 fn structure_block_end(
@@ -718,39 +918,59 @@ fn block_is_horizontally_observed(
         .is_some_and(|block| block.iter().all(|line| line.width() <= viewport.width))
 }
 
+#[cfg(test)]
 pub(in crate::viewer) fn is_structure_point(
     syntax: SyntaxKind,
     line: &str,
     previous_line: Option<&str>,
 ) -> bool {
+    structure_candidate_kind(syntax, line, previous_line).is_some()
+}
+
+fn structure_candidate_kind(
+    syntax: SyntaxKind,
+    line: &str,
+    previous_line: Option<&str>,
+) -> Option<StructureCandidateKind> {
     match syntax {
-        SyntaxKind::Structured => is_structured_point(line),
-        SyntaxKind::Markdown => is_markdown_heading(line),
-        SyntaxKind::Toml => is_toml_table(line),
-        SyntaxKind::Jinja => is_jinja_block(line),
-        SyntaxKind::Plain => is_paragraph_start(line, previous_line),
+        SyntaxKind::Structured => structured_candidate_kind(line),
+        SyntaxKind::Markdown => {
+            is_markdown_heading(line).then_some(StructureCandidateKind::MarkdownHeading)
+        }
+        SyntaxKind::Toml => is_toml_table(line).then_some(StructureCandidateKind::TomlTable),
+        SyntaxKind::Jinja => is_jinja_block(line).then_some(StructureCandidateKind::JinjaBlock),
+        SyntaxKind::Plain => is_paragraph_start(line, previous_line)
+            .then_some(StructureCandidateKind::PlainParagraph),
     }
 }
 
-fn is_structured_point(line: &str) -> bool {
+fn structured_candidate_kind(line: &str) -> Option<StructureCandidateKind> {
     let trimmed = line.trim_start();
     if trimmed.starts_with('<') {
-        return is_xml_start_tag(trimmed);
+        return is_xml_start_tag(trimmed).then_some(StructureCandidateKind::XmlStartTag);
     }
-    is_json_composite_point(trimmed)
+    json_candidate_kind(line)
 }
 
-fn is_json_composite_point(trimmed: &str) -> bool {
-    let Some(first) = trimmed.as_bytes().first().copied() else {
-        return false;
-    };
+fn json_candidate_kind(line: &str) -> Option<StructureCandidateKind> {
+    let indent = leading_indent(line);
+    let trimmed = line.trim_start();
+    let first = trimmed.as_bytes().first().copied()?;
     if matches!(first, b'{' | b'[') {
-        return true;
+        return Some(if indent == 0 {
+            StructureCandidateKind::JsonRecordStart
+        } else if first == b'{' {
+            StructureCandidateKind::JsonArrayItemStart
+        } else {
+            StructureCandidateKind::JsonRootStart
+        });
     }
-    let Some(after_colon) = json_value_after_key(trimmed) else {
-        return false;
-    };
-    after_colon.starts_with('{') || after_colon.starts_with('[')
+    let after_colon = json_value_after_key(trimmed)?;
+    if after_colon.starts_with('{') || after_colon.starts_with('[') {
+        Some(StructureCandidateKind::JsonCompositeField)
+    } else {
+        None
+    }
 }
 
 fn json_value_after_key(trimmed: &str) -> Option<&str> {

@@ -8,6 +8,18 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Changed
+
+- Refine `]`/`[` viewer navigation from viewport-only smart block jumps into
+  ranked structure jumps, so visible JSON array items, JSONL record boundaries,
+  headings, tables, Jinja blocks, and paragraph starts remain stable jump
+  targets while small fully visible JSON detail blocks are still skipped.
+
+### Fixed
+
+- Keep repeated `]` at the viewer tail from moving the viewport upward while
+  showing the `no next structure` message.
+
 ## [0.3.5] - 2026-05-27
 
 ### Added

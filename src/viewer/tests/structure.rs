@@ -70,7 +70,7 @@ fn structure_points_are_format_specific() {
 }
 
 #[test]
-fn smart_structure_navigation_skips_fully_visible_json_blocks() {
+fn ranked_structure_navigation_skips_fully_visible_json_detail_blocks() {
     let file = indexed_file(&[
         "{",
         r#"  "small": {"#,
@@ -105,7 +105,166 @@ fn smart_structure_navigation_skips_fully_visible_json_blocks() {
 }
 
 #[test]
-fn smart_structure_navigation_keeps_partially_visible_json_blocks() {
+fn structure_navigation_lands_on_visible_json_array_items() {
+    let file = indexed_file(&[
+        "[",
+        "  {",
+        r#"    "id": 1"#,
+        "  },",
+        "  {",
+        r#"    "id": 2"#,
+        "  },",
+        "  {",
+        r#"    "id": 3"#,
+        "  }",
+        "]",
+    ]);
+    let mut state = ViewState {
+        structure_viewport: Some(structure_viewport(0, 10)),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 1,
+            byte_index: 2
+        })
+    );
+
+    assert!(resolve_structure_target_position(
+        &mut state,
+        &file.read_window(0, file.line_count()).unwrap(),
+        10,
+        RenderContext {
+            gutter_digits: 2,
+            x: 0,
+            width: 80,
+            wrap: true,
+            mode: SyntaxKind::Structured,
+        }
+    ));
+    state.structure_viewport = Some(structure_viewport(1, 10));
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 4,
+            byte_index: 2
+        })
+    );
+}
+
+#[test]
+fn structure_navigation_prefers_sibling_array_item_over_nested_payload() {
+    let file = indexed_file(&[
+        "[",
+        "  {",
+        r#"    "id": 1,"#,
+        r#"    "payload": {"#,
+        r#"      "nested": {"#,
+        r#"        "x": 1"#,
+        "      }",
+        "    }",
+        "  },",
+        "  {",
+        r#"    "id": 2"#,
+        "  }",
+        "]",
+    ]);
+    let mut state = ViewState {
+        structure_cursor: Some(1),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 9,
+            byte_index: 2
+        })
+    );
+
+    let mut state = ViewState {
+        structure_cursor: Some(9),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Backward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 1,
+            byte_index: 2
+        })
+    );
+}
+
+#[test]
+fn structure_navigation_lands_on_large_visible_json_composite_fields() {
+    let file = indexed_file(&[
+        "{",
+        r#"  "payload": {"#,
+        r#"    "items": ["#,
+        "      {",
+        r#"        "id": 1"#,
+        "      }",
+        "    ]",
+        "  },",
+        r#"  "tail": {"#,
+        "  }",
+        "}",
+    ]);
+    let mut state = ViewState {
+        structure_viewport: Some(structure_viewport(0, 10)),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 1,
+            byte_index: 2
+        })
+    );
+}
+
+#[test]
+fn ranked_structure_navigation_keeps_partially_visible_json_blocks() {
     let file = indexed_file(&[
         "{",
         r#"  "small": {"#,
@@ -137,7 +296,7 @@ fn smart_structure_navigation_keeps_partially_visible_json_blocks() {
 }
 
 #[test]
-fn smart_structure_navigation_skips_visible_previous_blocks() {
+fn structure_navigation_lands_on_visible_previous_json_landmarks() {
     let file = indexed_file(&[
         "{",
         r#"  "large": {"#,
@@ -169,14 +328,14 @@ fn smart_structure_navigation_skips_visible_previous_blocks() {
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
-            line: 0,
-            byte_index: 0
+            line: 3,
+            byte_index: 6
         })
     );
 }
 
 #[test]
-fn smart_structure_navigation_treats_clipped_nowrap_blocks_as_unseen() {
+fn ranked_structure_navigation_treats_clipped_nowrap_blocks_as_unseen() {
     let file = indexed_file(&[
         "{",
         r#"  "small": {"#,
@@ -212,7 +371,7 @@ fn smart_structure_navigation_treats_clipped_nowrap_blocks_as_unseen() {
 }
 
 #[test]
-fn smart_structure_navigation_keeps_blocks_cut_off_by_wrapping() {
+fn ranked_structure_navigation_keeps_blocks_cut_off_by_wrapping() {
     let file = indexed_file(&[
         "{",
         r#"  "small": {"#,
@@ -247,7 +406,7 @@ fn smart_structure_navigation_keeps_blocks_cut_off_by_wrapping() {
 }
 
 #[test]
-fn smart_structure_navigation_skips_fully_visible_markdown_sections() {
+fn structure_navigation_lands_on_visible_markdown_headings() {
     let file = indexed_file(&[
         "# Title",
         "intro",
@@ -273,14 +432,14 @@ fn smart_structure_navigation_skips_fully_visible_markdown_sections() {
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
-            line: 4,
+            line: 2,
             byte_index: 0
         })
     );
 }
 
 #[test]
-fn smart_structure_navigation_skips_fully_visible_jinja_blocks() {
+fn structure_navigation_lands_on_visible_jinja_blocks() {
     let file = indexed_file(&[
         "<main>",
         "{% if user %}",
@@ -306,7 +465,7 @@ fn smart_structure_navigation_skips_fully_visible_jinja_blocks() {
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
-            line: 4,
+            line: 1,
             byte_index: 0
         })
     );
@@ -323,7 +482,10 @@ fn bracket_keys_start_structure_navigation_tasks() {
     let action = handle_key_event(KeyCode::Char('['), KeyModifiers::NONE, &mut state, 10, 5);
     assert!(action.dirty);
     assert!(state.structure_task.is_none());
-    assert_eq!(state.search_message.as_deref(), Some("no previous block"));
+    assert_eq!(
+        state.search_message.as_deref(),
+        Some("no previous structure")
+    );
 }
 
 #[test]
@@ -514,7 +676,7 @@ fn structure_navigation_reports_missing_block() {
         StructureDirection::Forward,
     );
     assert!(process_structure_step(&file, &mut state, SyntaxKind::Markdown).unwrap());
-    assert_eq!(state.search_message.as_deref(), Some("no next block"));
+    assert_eq!(state.search_message.as_deref(), Some("no next structure"));
 }
 
 #[test]

@@ -526,6 +526,10 @@ fn sync_sticky_layout(
     let mut visible_height = layout.base_visible_height;
     let mut tail = None;
     let preserve_tail = state.preserve_tail_on_next_draw;
+    let preserved_tail_position = preserve_tail.then_some(ViewPosition {
+        top: state.top,
+        row_offset: state.top_row_offset,
+    });
     state.preserve_tail_on_next_draw = false;
 
     for _ in 0..3 {
@@ -538,6 +542,7 @@ fn sync_sticky_layout(
         )?;
         if preserve_tail {
             pin_state_to_tail(state, tail);
+            keep_preserved_tail_position(state, preserved_tail_position);
         }
         let next_lines = sticky_lines(
             mode,
@@ -575,6 +580,24 @@ fn pin_state_to_tail(state: &mut ViewState, tail: Option<ViewPosition>) {
 
     state.top = tail.top;
     state.top_row_offset = tail.row_offset;
+    state.top_max_row_offset = 0;
+    state.wrap_bounds_stale = state.wrap;
+}
+
+fn keep_preserved_tail_position(state: &mut ViewState, position: Option<ViewPosition>) {
+    let Some(position) = position else {
+        return;
+    };
+    // Sticky breadcrumbs can change the computed tail while rendering a status
+    // message; keep an already-tail viewport from moving upward.
+    if state.top > position.top
+        || (state.top == position.top && state.top_row_offset >= position.row_offset)
+    {
+        return;
+    }
+
+    state.top = position.top;
+    state.top_row_offset = position.row_offset;
     state.top_max_row_offset = 0;
     state.wrap_bounds_stale = state.wrap;
 }
@@ -690,7 +713,7 @@ fn idle_footer_text(state: &ViewState) -> String {
         .map(|count| format!("{count} | "))
         .unwrap_or_default();
     format!(
-        " {position}{search}{wrap_hint} | {mouse_hint} | / search n/N | ]/[ smart block | 123 Enter jump to line | Space/f,b "
+        " {position}{search}{wrap_hint} | {mouse_hint} | / search n/N | ]/[ structure | 123 Enter jump to line | Space/f,b "
     )
 }
 

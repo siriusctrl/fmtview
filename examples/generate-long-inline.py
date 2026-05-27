@@ -14,7 +14,7 @@ def inline_text(record: int) -> str:
         parts.append(
             "record {record:02d} segment {segment:03d} keeps one JSON string "
             "long enough to wrap through a terminal viewport while staying "
-            "inside one logical value; smart block jump should keep treating "
+            "inside one logical value; structure jump should keep treating "
             "the surrounding object as not fully observed until the wrapped "
             "inline value has really been read.".format(
                 record=record,
@@ -54,7 +54,7 @@ def medium_record(record: int) -> dict:
                 ),
             },
         },
-        "message": "Medium record for smart jump spacing.",
+        "message": "Medium record for structure jump spacing.",
     }
 
 
@@ -77,7 +77,7 @@ def long_record(record: int) -> dict:
                 "expected": "wrap fills the viewport",
             },
         },
-        "message": "Long inline JSONL record for smart block jump testing.",
+        "message": "Long inline JSONL record for structure jump testing.",
     }
 
 
