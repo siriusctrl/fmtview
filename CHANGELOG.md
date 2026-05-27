@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-05-27
+
 ### Added
 
 - Add `]`/`[` smart block navigation in the terminal viewer for JSON, JSONL,
