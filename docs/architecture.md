@@ -83,6 +83,37 @@ not look like JSON, JSONL, or XML-compatible markup falls back to plain-text
 passthrough. Extensions remain a fast deterministic hint, but they are not the
 architecture boundary.
 
+## Smart Block Navigation
+
+Viewer `]`/`[` navigation is intentionally viewport-aware. A structural point
+is only a useful jump target when its block has not already been fully observed
+on screen. The shared structure scanner therefore has two steps:
+
+```text
+  candidate structure point
+          |
+          v
+  infer block extent for the active syntax
+          |
+          v
+  skip if the whole block is visible in the current viewport
+          |
+          v
+  otherwise publish a viewer target
+```
+
+The block extent rule is syntax-specific but the visibility rule is shared.
+JSON uses string-aware bracket pairing, Markdown uses heading levels, TOML uses
+the next table header, Jinja uses matching block/end tags, XML/HTML uses start
+and end tags where possible, and plain text uses paragraph boundaries. A block
+is not treated as fully observed if it starts above the current viewport, ends
+below it, is cut by a wrapped top or bottom row, or is horizontally clipped in
+nowrap mode.
+
+This keeps the UX focused on the next unseen structure instead of every
+syntactic marker, while avoiding format-specific scroll or clamp behavior in
+the input handlers.
+
 ## Load Plans
 
 The names below describe the behavior we want the code to make explicit:

@@ -10,13 +10,22 @@ for GitHub Release notes, so every published version must have a matching
 
 ### Added
 
-- Add `]`/`[` structural block navigation in the terminal viewer for JSON,
-  JSONL, XML/HTML, Markdown, TOML, Jinja, and plain-text paragraph starts.
+- Add `]`/`[` smart block navigation in the terminal viewer for JSON, JSONL,
+  XML/HTML, Markdown, TOML, Jinja, and plain-text paragraph starts.
+- Add a generated `examples/long-inline.jsonl` fixture for testing wrapped
+  inline values that fill multiple viewer viewports.
 
 ### Changed
 
 - Shorten the idle viewer footer and clarify the digit-plus-Enter line jump
   hint.
+- Skip blocks that are already fully visible when using `]`/`[` so navigation
+  lands on the next block that has not been fully observed in the viewport.
+
+### Fixed
+
+- Keep `]` at the file tail from moving the wrapped viewer one row upward when
+  reporting `no next block`.
 
 ## [0.3.4] - 2026-05-18
 

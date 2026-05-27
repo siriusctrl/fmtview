@@ -32,7 +32,8 @@ use crate::load::ViewFile;
 use crate::syntax::SyntaxKind;
 
 use input::{
-    ViewState, drain_events, process_search_index_step, process_search_step, process_structure_step,
+    StructureViewport, ViewState, drain_events, process_search_index_step, process_search_step,
+    process_structure_step,
 };
 use position::{adjust_state_for_visible_height, resolve_targets_from_view};
 #[cfg(test)]
@@ -393,6 +394,25 @@ fn draw_view(
         .last_line_number
         .unwrap_or(current)
         .min(file.line_count());
+    state.structure_viewport = Some(StructureViewport {
+        top: state.top,
+        top_row_offset: state.top_row_offset,
+        bottom: bottom.saturating_sub(1),
+        bottom_line_end: viewport
+            .bottom
+            .as_ref()
+            .is_none_or(|bottom| bottom.line_end),
+        x: state.x,
+        width: layout.context.width,
+        wrap: state.wrap,
+    });
+    state.viewport_at_tail = file.line_count_exact()
+        && file.line_count() > 0
+        && bottom == file.line_count()
+        && viewport
+            .bottom
+            .as_ref()
+            .is_none_or(|bottom| bottom.line_end);
     let progress = viewer_progress_percent(file, layout.context, bottom, viewport.bottom);
     let styled = viewport.lines;
     let display_mode = display_mode_text(state);
@@ -505,6 +525,8 @@ fn sync_sticky_layout(
     let mut lines = Vec::new();
     let mut visible_height = layout.base_visible_height;
     let mut tail = None;
+    let preserve_tail = state.preserve_tail_on_next_draw;
+    state.preserve_tail_on_next_draw = false;
 
     for _ in 0..3 {
         tail = adjust_state_for_visible_height(
@@ -514,6 +536,9 @@ fn sync_sticky_layout(
             layout.context,
             tail_cache,
         )?;
+        if preserve_tail {
+            pin_state_to_tail(state, tail);
+        }
         let next_lines = sticky_lines(
             mode,
             breadcrumb,
@@ -538,6 +563,20 @@ fn sync_sticky_layout(
         visible_height,
         tail,
     })
+}
+
+fn pin_state_to_tail(state: &mut ViewState, tail: Option<ViewPosition>) {
+    let Some(tail) = tail else {
+        return;
+    };
+    if state.top == tail.top && state.top_row_offset == tail.row_offset {
+        return;
+    }
+
+    state.top = tail.top;
+    state.top_row_offset = tail.row_offset;
+    state.top_max_row_offset = 0;
+    state.wrap_bounds_stale = state.wrap;
 }
 
 fn refresh_sticky_after_position_change(
@@ -651,7 +690,7 @@ fn idle_footer_text(state: &ViewState) -> String {
         .map(|count| format!("{count} | "))
         .unwrap_or_default();
     format!(
-        " {position}{search}{wrap_hint} | {mouse_hint} | / search n/N | [/] prev/next block | 123 Enter jump to line | Space/f,b "
+        " {position}{search}{wrap_hint} | {mouse_hint} | / search n/N | ]/[ smart block | 123 Enter jump to line | Space/f,b "
     )
 }
 

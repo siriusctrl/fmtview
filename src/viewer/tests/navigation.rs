@@ -109,6 +109,70 @@ fn end_key_targets_wrapped_file_tail_even_on_last_line() {
 }
 
 #[test]
+fn no_next_block_redraw_preserves_wrapped_tail_with_sticky_rows() {
+    let mut temp = NamedTempFile::new().unwrap();
+    let long = "tail wrap ".repeat(32);
+    writeln!(temp, "{{").unwrap();
+    writeln!(temp, r#"  "payload": {{"#).unwrap();
+    writeln!(temp, r#"    "long": "{long}""#).unwrap();
+    writeln!(temp, "  }}").unwrap();
+    writeln!(temp, "}}").unwrap();
+    temp.flush().unwrap();
+    let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
+
+    let mut state = ViewState::default();
+    let layout = draw_layout(
+        ratatui::layout::Size::new(48, 8),
+        &file,
+        &state,
+        SyntaxKind::Structured,
+    );
+    let sticky_visible_height = visible_height_for_sticky(layout.base_visible_height, 1);
+    let base_tail = compute_tail_position(&file, layout.base_visible_height, layout.context)
+        .expect("base tail");
+    let sticky_tail =
+        compute_tail_position(&file, sticky_visible_height, layout.context).expect("sticky tail");
+    assert_ne!(
+        base_tail, sticky_tail,
+        "fixture must expose the base-height/sticky-height tail mismatch"
+    );
+
+    state.top = sticky_tail.top;
+    state.top_row_offset = sticky_tail.row_offset;
+    state.viewport_at_tail = true;
+    state.preserve_tail_on_next_draw = true;
+    let mut breadcrumb = JsonBreadcrumbCache::default();
+    let mut tail_cache = TailPositionCache::default();
+
+    let sticky = sync_sticky_layout(
+        &file,
+        SyntaxKind::Structured,
+        &mut state,
+        &mut breadcrumb,
+        &mut tail_cache,
+        layout,
+    )
+    .unwrap();
+
+    assert!(!sticky.lines.is_empty());
+    assert_eq!(state.top, sticky_tail.top);
+    assert_eq!(state.top_row_offset, sticky_tail.row_offset);
+}
+
+#[test]
+fn manual_scroll_clears_pending_tail_preservation() {
+    let mut state = ViewState {
+        preserve_tail_on_next_draw: true,
+        ..ViewState::default()
+    };
+
+    let action = handle_key_event(KeyCode::Down, KeyModifiers::NONE, &mut state, 10, 5);
+
+    assert!(action.dirty);
+    assert!(!state.preserve_tail_on_next_draw);
+}
+
+#[test]
 fn digits_plus_enter_jumps_to_line_number() {
     let mut state = ViewState::default();
 

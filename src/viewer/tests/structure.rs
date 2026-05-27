@@ -9,6 +9,18 @@ fn indexed_file(lines: &[&str]) -> IndexedTempFile {
     IndexedTempFile::new("test".to_owned(), temp).unwrap()
 }
 
+fn structure_viewport(top: usize, bottom: usize) -> StructureViewport {
+    StructureViewport {
+        top,
+        top_row_offset: 0,
+        bottom,
+        bottom_line_end: true,
+        x: 0,
+        width: 80,
+        wrap: true,
+    }
+}
+
 #[test]
 fn structure_points_are_format_specific() {
     assert!(is_structure_point(
@@ -55,6 +67,249 @@ fn structure_points_are_format_specific() {
         "same paragraph",
         Some("previous text")
     ));
+}
+
+#[test]
+fn smart_structure_navigation_skips_fully_visible_json_blocks() {
+    let file = indexed_file(&[
+        "{",
+        r#"  "small": {"#,
+        r#"    "x": 1"#,
+        "  },",
+        r#"  "large": {"#,
+        r#"    "nested": {"#,
+        r#"      "x": 1"#,
+        "    }",
+        "  }",
+        "}",
+    ]);
+    let mut state = ViewState {
+        structure_viewport: Some(structure_viewport(0, 4)),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 4,
+            byte_index: 2
+        })
+    );
+}
+
+#[test]
+fn smart_structure_navigation_keeps_partially_visible_json_blocks() {
+    let file = indexed_file(&[
+        "{",
+        r#"  "small": {"#,
+        r#"    "x": 1"#,
+        "  },",
+        r#"  "large": {"#,
+        "  }",
+        "}",
+    ]);
+    let mut state = ViewState {
+        structure_viewport: Some(structure_viewport(0, 2)),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 1,
+            byte_index: 2
+        })
+    );
+}
+
+#[test]
+fn smart_structure_navigation_skips_visible_previous_blocks() {
+    let file = indexed_file(&[
+        "{",
+        r#"  "large": {"#,
+        r#"    "items": ["#,
+        "      {",
+        r#"        "id": 1"#,
+        "      }",
+        "    ]",
+        "  },",
+        r#"  "small": {"#,
+        r#"    "x": 1"#,
+        "  }",
+        "}",
+    ]);
+    let mut state = ViewState {
+        top: 1,
+        structure_cursor: Some(10),
+        structure_viewport: Some(structure_viewport(1, 10)),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Backward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 0,
+            byte_index: 0
+        })
+    );
+}
+
+#[test]
+fn smart_structure_navigation_treats_clipped_nowrap_blocks_as_unseen() {
+    let file = indexed_file(&[
+        "{",
+        r#"  "small": {"#,
+        r#"    "long": "abcdefghijklmnopqrstuvwxyz""#,
+        "  },",
+        r#"  "large": {"#,
+        "  }",
+        "}",
+    ]);
+    let mut state = ViewState {
+        structure_viewport: Some(StructureViewport {
+            wrap: false,
+            width: 12,
+            ..structure_viewport(0, 3)
+        }),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 1,
+            byte_index: 2
+        })
+    );
+}
+
+#[test]
+fn smart_structure_navigation_keeps_blocks_cut_off_by_wrapping() {
+    let file = indexed_file(&[
+        "{",
+        r#"  "small": {"#,
+        r#"    "x": 1"#,
+        "  },",
+        r#"  "large": {"#,
+        "  }",
+        "}",
+    ]);
+    let mut state = ViewState {
+        structure_viewport: Some(StructureViewport {
+            bottom_line_end: false,
+            ..structure_viewport(0, 3)
+        }),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 1,
+            byte_index: 2
+        })
+    );
+}
+
+#[test]
+fn smart_structure_navigation_skips_fully_visible_markdown_sections() {
+    let file = indexed_file(&[
+        "# Title",
+        "intro",
+        "## Visible",
+        "body",
+        "## Large",
+        "detail",
+        "still",
+        "# Next",
+    ]);
+    let mut state = ViewState {
+        structure_viewport: Some(structure_viewport(0, 3)),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Markdown).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 4,
+            byte_index: 0
+        })
+    );
+}
+
+#[test]
+fn smart_structure_navigation_skips_fully_visible_jinja_blocks() {
+    let file = indexed_file(&[
+        "<main>",
+        "{% if user %}",
+        "  {{ user.name }}",
+        "{% endif %}",
+        "{% for item in items %}",
+        "  {{ item }}",
+        "{% endfor %}",
+        "</main>",
+    ]);
+    let mut state = ViewState {
+        structure_viewport: Some(structure_viewport(0, 3)),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, SyntaxKind::Jinja).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 4,
+            byte_index: 0
+        })
+    );
 }
 
 #[test]

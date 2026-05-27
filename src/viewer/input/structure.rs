@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
+use unicode_width::UnicodeWidthStr;
 
 use crate::{load::ViewFile, syntax::SyntaxKind};
 
@@ -20,6 +21,27 @@ pub(in crate::viewer) enum StructureDirection {
 pub(in crate::viewer) struct StructureTask {
     direction: StructureDirection,
     next_line: usize,
+    viewport: Option<StructureViewport>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::viewer) struct StructureViewport {
+    pub(in crate::viewer) top: usize,
+    pub(in crate::viewer) top_row_offset: usize,
+    pub(in crate::viewer) bottom: usize,
+    pub(in crate::viewer) bottom_line_end: bool,
+    pub(in crate::viewer) x: usize,
+    pub(in crate::viewer) width: usize,
+    pub(in crate::viewer) wrap: bool,
+}
+
+impl StructureViewport {
+    fn matches_state(self, state: &ViewState) -> bool {
+        self.top == state.top
+            && self.top_row_offset == state.top_row_offset
+            && self.x == state.x
+            && self.wrap == state.wrap
+    }
 }
 
 pub(in crate::viewer) fn start_structure_navigation(
@@ -33,21 +55,25 @@ pub(in crate::viewer) fn start_structure_navigation(
     state.search_target = None;
     state.search_task = None;
     if line_count == 0 {
-        state.search_message = Some(no_block_message(direction).to_owned());
+        set_no_block_message(state, direction);
         return true;
     }
 
     let anchor = state.structure_cursor.unwrap_or(state.top);
     let Some(next_line) = structure_start_line(anchor, line_count, line_count_exact, direction)
     else {
-        state.search_message = Some(no_block_message(direction).to_owned());
+        set_no_block_message(state, direction);
         return true;
     };
 
     state.search_message = None;
+    let viewport = state
+        .structure_viewport
+        .filter(|viewport| viewport.matches_state(state));
     state.structure_task = Some(StructureTask {
         direction,
         next_line,
+        viewport,
     });
     true
 }
@@ -71,7 +97,7 @@ pub(in crate::viewer) fn process_structure_step(
 
     task.next_line = step.next_line;
     if step.scanned == 0 || reached_structure_scan_end(file, &task) {
-        state.search_message = Some(no_block_message(task.direction).to_owned());
+        set_no_block_message(state, task.direction);
         return Ok(true);
     }
 
@@ -114,6 +140,13 @@ fn no_block_message(direction: StructureDirection) -> &'static str {
     }
 }
 
+fn set_no_block_message(state: &mut ViewState, direction: StructureDirection) {
+    state.search_message = Some(no_block_message(direction).to_owned());
+    if state.viewport_at_tail {
+        state.preserve_tail_on_next_draw = true;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StructureStep {
     found: Option<SearchTarget>,
@@ -127,8 +160,12 @@ fn scan_structure_chunk(
     syntax: SyntaxKind,
 ) -> Result<StructureStep> {
     match task.direction {
-        StructureDirection::Forward => scan_structure_forward(file, task.next_line, syntax),
-        StructureDirection::Backward => scan_structure_backward(file, task.next_line, syntax),
+        StructureDirection::Forward => {
+            scan_structure_forward(file, task.next_line, syntax, task.viewport)
+        }
+        StructureDirection::Backward => {
+            scan_structure_backward(file, task.next_line, syntax, task.viewport)
+        }
     }
 }
 
@@ -136,6 +173,7 @@ fn scan_structure_forward(
     file: &dyn ViewFile,
     mut next_line: usize,
     syntax: SyntaxKind,
+    viewport: Option<StructureViewport>,
 ) -> Result<StructureStep> {
     if next_line >= file.line_count() && !file.line_count_exact() {
         file.preload(
@@ -176,6 +214,18 @@ fn scan_structure_forward(
             lines.get(offset).map(String::as_str).unwrap_or_default(),
             lines.get(offset.saturating_sub(1)).map(String::as_str),
         ) {
+            if is_candidate_fully_observed(
+                syntax,
+                &lines,
+                read_start,
+                offset,
+                file.line_count(),
+                file.line_count_exact(),
+                viewport,
+            ) {
+                scanned = scanned.saturating_add(1);
+                continue;
+            }
             return Ok(StructureStep {
                 found: Some(SearchTarget {
                     line: line_number,
@@ -200,6 +250,7 @@ fn scan_structure_backward(
     file: &dyn ViewFile,
     next_line: usize,
     syntax: SyntaxKind,
+    viewport: Option<StructureViewport>,
 ) -> Result<StructureStep> {
     let line_count = file.line_count();
     if line_count == 0 || next_line >= line_count {
@@ -213,7 +264,11 @@ fn scan_structure_backward(
     let count = next_line.saturating_add(1).min(STRUCTURE_CHUNK_LINES);
     let start = next_line + 1 - count;
     let read_start = start.saturating_sub(1);
-    let read_count = count.saturating_add(start.saturating_sub(read_start));
+    let mut read_end = next_line.saturating_add(1);
+    if let Some(viewport) = viewport {
+        read_end = read_end.max(viewport.bottom.saturating_add(1).min(line_count));
+    }
+    let read_count = read_end.saturating_sub(read_start);
     let lines = file.read_window(read_start, read_count)?;
     if lines.is_empty() {
         return Ok(StructureStep {
@@ -223,13 +278,25 @@ fn scan_structure_backward(
         });
     }
 
-    for offset in (start - read_start..lines.len()).rev() {
+    let scan_end_offset = next_line.saturating_sub(read_start).min(lines.len() - 1);
+    for offset in (start - read_start..=scan_end_offset).rev() {
         let line_number = read_start + offset;
         if is_structure_point(
             syntax,
             lines.get(offset).map(String::as_str).unwrap_or_default(),
             lines.get(offset.saturating_sub(1)).map(String::as_str),
         ) {
+            if is_candidate_fully_observed(
+                syntax,
+                &lines,
+                read_start,
+                offset,
+                file.line_count(),
+                file.line_count_exact(),
+                viewport,
+            ) {
+                continue;
+            }
             return Ok(StructureStep {
                 found: Some(SearchTarget {
                     line: line_number,
@@ -246,6 +313,409 @@ fn scan_structure_backward(
         next_line: start.checked_sub(1).unwrap_or(usize::MAX),
         scanned: count,
     })
+}
+
+fn is_candidate_fully_observed(
+    syntax: SyntaxKind,
+    lines: &[String],
+    read_start: usize,
+    candidate_offset: usize,
+    line_count: usize,
+    line_count_exact: bool,
+    viewport: Option<StructureViewport>,
+) -> bool {
+    let Some(viewport) = viewport else {
+        return false;
+    };
+    let start_line = read_start + candidate_offset;
+    if start_line < viewport.top || start_line > viewport.bottom {
+        return false;
+    }
+    if start_line == viewport.top && viewport.top_row_offset > 0 {
+        return false;
+    }
+
+    let Some(end_line) = structure_block_end(
+        syntax,
+        lines,
+        read_start,
+        candidate_offset,
+        viewport.bottom,
+        line_count,
+        line_count_exact,
+    ) else {
+        return false;
+    };
+    if end_line > viewport.bottom {
+        return false;
+    }
+    if end_line == viewport.bottom && !viewport.bottom_line_end {
+        return false;
+    }
+
+    block_is_horizontally_observed(lines, read_start, start_line, end_line, viewport)
+}
+
+fn structure_block_end(
+    syntax: SyntaxKind,
+    lines: &[String],
+    read_start: usize,
+    start_offset: usize,
+    viewport_bottom: usize,
+    line_count: usize,
+    line_count_exact: bool,
+) -> Option<usize> {
+    match syntax {
+        SyntaxKind::Structured => {
+            structured_block_end(lines, read_start, start_offset, viewport_bottom)
+        }
+        SyntaxKind::Markdown => {
+            markdown_block_end(lines, read_start, start_offset, viewport_bottom)
+        }
+        SyntaxKind::Toml => toml_block_end(lines, read_start, start_offset, viewport_bottom),
+        SyntaxKind::Jinja => jinja_block_end(lines, read_start, start_offset, viewport_bottom),
+        SyntaxKind::Plain => paragraph_block_end(lines, read_start, start_offset, viewport_bottom),
+    }
+    .or_else(|| {
+        eof_block_end(
+            lines,
+            read_start,
+            viewport_bottom,
+            line_count,
+            line_count_exact,
+        )
+    })
+}
+
+fn max_observed_offset(
+    lines: &[String],
+    read_start: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    if lines.is_empty() || viewport_bottom < read_start {
+        return None;
+    }
+    Some((viewport_bottom - read_start).min(lines.len() - 1))
+}
+
+fn max_boundary_offset(
+    lines: &[String],
+    read_start: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    max_observed_offset(lines, read_start, viewport_bottom.saturating_add(1))
+}
+
+fn following_lines(
+    lines: &[String],
+    start_offset: usize,
+    max_offset: usize,
+) -> impl Iterator<Item = (usize, &String)> {
+    lines
+        .iter()
+        .enumerate()
+        .take(max_offset + 1)
+        .skip(start_offset + 1)
+}
+
+fn eof_block_end(
+    lines: &[String],
+    read_start: usize,
+    viewport_bottom: usize,
+    line_count: usize,
+    line_count_exact: bool,
+) -> Option<usize> {
+    if !line_count_exact || line_count == 0 {
+        return None;
+    }
+    let eof_line = line_count - 1;
+    let read_end = read_start.saturating_add(lines.len());
+    (eof_line <= viewport_bottom && eof_line < read_end).then_some(eof_line)
+}
+
+fn structured_block_end(
+    lines: &[String],
+    read_start: usize,
+    start_offset: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    let line = lines.get(start_offset)?;
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('<') {
+        return xml_block_end(lines, read_start, start_offset, viewport_bottom)
+            .or_else(|| indent_block_end(lines, read_start, start_offset, viewport_bottom));
+    }
+    json_block_end(lines, read_start, start_offset, viewport_bottom)
+}
+
+fn json_block_end(
+    lines: &[String],
+    read_start: usize,
+    start_offset: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    let max_offset = max_observed_offset(lines, read_start, viewport_bottom)?;
+    let mut depth = 0_usize;
+    let mut started = false;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (relative, line) in lines[start_offset..=max_offset].iter().enumerate() {
+        let offset = start_offset + relative;
+        let start_byte = if offset == start_offset {
+            first_json_open_byte(line)?
+        } else {
+            0
+        };
+        for (_, ch) in line[start_byte..].char_indices() {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_string = false;
+                }
+                continue;
+            }
+
+            match ch {
+                '"' => in_string = true,
+                '{' | '[' => {
+                    depth = depth.saturating_add(1);
+                    started = true;
+                }
+                '}' | ']' if started => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Some(read_start + offset);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    None
+}
+
+fn first_json_open_byte(line: &str) -> Option<usize> {
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, ch) in line.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '{' | '[' => return Some(index),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn xml_block_end(
+    lines: &[String],
+    read_start: usize,
+    start_offset: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    let max_offset = max_observed_offset(lines, read_start, viewport_bottom)?;
+    let trimmed = lines.get(start_offset)?.trim_start();
+    let tag = xml_start_tag_name(trimmed)?;
+    if xml_tag_is_self_contained(trimmed, &tag) {
+        return Some(read_start + start_offset);
+    }
+
+    let mut depth = 1_usize;
+    for (offset, line) in following_lines(lines, start_offset, max_offset) {
+        let line = line.as_str();
+        depth = depth.saturating_add(xml_start_tag_count(line, &tag));
+        let closing = xml_end_tag_count(line, &tag);
+        depth = depth.saturating_sub(closing);
+        if closing > 0 && depth == 0 {
+            return Some(read_start + offset);
+        }
+    }
+    None
+}
+
+fn xml_start_tag_name(trimmed: &str) -> Option<String> {
+    if !is_xml_start_tag(trimmed) {
+        return None;
+    }
+    let name_end = trimmed[1..]
+        .find(|ch: char| !is_xml_name_char(ch))
+        .map(|index| index + 1)
+        .unwrap_or(trimmed.len());
+    (name_end > 1).then(|| trimmed[1..name_end].to_owned())
+}
+
+fn xml_tag_is_self_contained(trimmed: &str, tag: &str) -> bool {
+    trimmed.contains("/>") || trimmed.contains(&format!("</{tag}>"))
+}
+
+fn xml_start_tag_count(line: &str, tag: &str) -> usize {
+    let mut count = 0_usize;
+    let mut rest = line;
+    let needle = format!("<{tag}");
+    while let Some(index) = rest.find(&needle) {
+        let after = &rest[index + needle.len()..];
+        if after.chars().next().is_none_or(|ch| !is_xml_name_char(ch))
+            && !after.trim_start().starts_with("/>")
+        {
+            count = count.saturating_add(1);
+        }
+        let advance = after.chars().next().map(char::len_utf8).unwrap_or(0);
+        rest = &after[advance..];
+    }
+    count
+}
+
+fn xml_end_tag_count(line: &str, tag: &str) -> usize {
+    line.matches(&format!("</{tag}>")).count()
+}
+
+fn is_xml_name_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | ':' | '.')
+}
+
+fn markdown_block_end(
+    lines: &[String],
+    read_start: usize,
+    start_offset: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    let max_offset = max_boundary_offset(lines, read_start, viewport_bottom)?;
+    let start_level = markdown_heading_level(lines.get(start_offset)?)?;
+    for (offset, line) in following_lines(lines, start_offset, max_offset) {
+        if markdown_heading_level(line).is_some_and(|level| level <= start_level) {
+            return Some(read_start + offset.saturating_sub(1));
+        }
+    }
+    None
+}
+
+fn toml_block_end(
+    lines: &[String],
+    read_start: usize,
+    start_offset: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    let max_offset = max_boundary_offset(lines, read_start, viewport_bottom)?;
+    for (offset, line) in following_lines(lines, start_offset, max_offset) {
+        if is_toml_table(line) {
+            return Some(read_start + offset.saturating_sub(1));
+        }
+    }
+    None
+}
+
+fn jinja_block_end(
+    lines: &[String],
+    read_start: usize,
+    start_offset: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    let max_offset = max_observed_offset(lines, read_start, viewport_bottom)?;
+    let start_keyword = jinja_keyword(lines.get(start_offset)?)?;
+    let Some(close_keyword) = jinja_close_keyword(start_keyword) else {
+        return Some(read_start + start_offset);
+    };
+    let open_keyword = jinja_open_keyword(start_keyword);
+    let mut depth = 1_usize;
+    for (offset, line) in following_lines(lines, start_offset, max_offset) {
+        let Some(keyword) = jinja_keyword(line) else {
+            continue;
+        };
+        if keyword == open_keyword {
+            depth = depth.saturating_add(1);
+        } else if keyword == close_keyword {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                return Some(read_start + offset);
+            }
+        }
+    }
+    None
+}
+
+fn paragraph_block_end(
+    lines: &[String],
+    read_start: usize,
+    start_offset: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    let max_offset = max_boundary_offset(lines, read_start, viewport_bottom)?;
+    for (offset, line) in following_lines(lines, start_offset, max_offset) {
+        if line.trim().is_empty() {
+            return Some(read_start + offset.saturating_sub(1));
+        }
+    }
+    None
+}
+
+fn indent_block_end(
+    lines: &[String],
+    read_start: usize,
+    start_offset: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    let max_offset = max_boundary_offset(lines, read_start, viewport_bottom)?;
+    let start_indent = leading_indent(lines.get(start_offset)?);
+    for (offset, line) in following_lines(lines, start_offset, max_offset) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if leading_indent(line) <= start_indent {
+            if is_same_indent_closing_line(line) {
+                return Some(read_start + offset);
+            }
+            return Some(read_start + offset.saturating_sub(1));
+        }
+    }
+    None
+}
+
+fn leading_indent(line: &str) -> usize {
+    line.chars().take_while(|ch| ch.is_whitespace()).count()
+}
+
+fn is_same_indent_closing_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('}')
+        || trimmed.starts_with(']')
+        || trimmed.starts_with("</")
+        || jinja_keyword(trimmed).is_some_and(|keyword| keyword.starts_with("end"))
+}
+
+fn block_is_horizontally_observed(
+    lines: &[String],
+    read_start: usize,
+    start_line: usize,
+    end_line: usize,
+    viewport: StructureViewport,
+) -> bool {
+    if viewport.wrap {
+        return true;
+    }
+    if viewport.x > 0 || viewport.width == 0 {
+        return false;
+    }
+    let start_offset = start_line.saturating_sub(read_start);
+    let end_offset = end_line.saturating_sub(read_start);
+    lines
+        .get(start_offset..=end_offset)
+        .is_some_and(|block| block.iter().all(|line| line.width() <= viewport.width))
 }
 
 pub(in crate::viewer) fn is_structure_point(
@@ -323,13 +793,18 @@ fn is_xml_start_tag(trimmed: &str) -> bool {
 }
 
 fn is_markdown_heading(line: &str) -> bool {
+    markdown_heading_level(line).is_some()
+}
+
+fn markdown_heading_level(line: &str) -> Option<usize> {
     let trimmed = line.trim_start();
     let hashes = trimmed.bytes().take_while(|byte| *byte == b'#').count();
-    (1..=6).contains(&hashes)
+    ((1..=6).contains(&hashes)
         && trimmed
             .as_bytes()
             .get(hashes)
-            .is_some_and(u8::is_ascii_whitespace)
+            .is_some_and(u8::is_ascii_whitespace))
+    .then_some(hashes)
 }
 
 fn is_toml_table(line: &str) -> bool {
@@ -338,33 +813,58 @@ fn is_toml_table(line: &str) -> bool {
 }
 
 fn is_jinja_block(line: &str) -> bool {
+    jinja_keyword(line).is_some_and(|keyword| {
+        matches!(
+            keyword,
+            "block"
+                | "endblock"
+                | "if"
+                | "elif"
+                | "else"
+                | "endif"
+                | "for"
+                | "endfor"
+                | "macro"
+                | "endmacro"
+                | "filter"
+                | "endfilter"
+                | "call"
+                | "endcall"
+                | "include"
+                | "extends"
+                | "set"
+                | "endset"
+                | "with"
+                | "endwith"
+        )
+    })
+}
+
+fn jinja_keyword(line: &str) -> Option<&str> {
     let trimmed = line.trim_start();
-    let Some(rest) = trimmed.strip_prefix("{%") else {
-        return false;
-    };
-    let keyword = rest.split_whitespace().next().unwrap_or_default();
-    matches!(
-        keyword,
-        "block"
-            | "endblock"
-            | "if"
-            | "elif"
-            | "else"
-            | "endif"
-            | "for"
-            | "endfor"
-            | "macro"
-            | "endmacro"
-            | "filter"
-            | "endfilter"
-            | "call"
-            | "endcall"
-            | "include"
-            | "extends"
-            | "set"
-            | "with"
-            | "endwith"
-    )
+    let rest = trimmed.strip_prefix("{%")?;
+    rest.split_whitespace().next()
+}
+
+fn jinja_open_keyword(keyword: &str) -> &str {
+    match keyword {
+        "elif" | "else" => "if",
+        _ => keyword,
+    }
+}
+
+fn jinja_close_keyword(keyword: &str) -> Option<&'static str> {
+    match keyword {
+        "block" => Some("endblock"),
+        "if" | "elif" | "else" => Some("endif"),
+        "for" => Some("endfor"),
+        "macro" => Some("endmacro"),
+        "filter" => Some("endfilter"),
+        "call" => Some("endcall"),
+        "set" => Some("endset"),
+        "with" => Some("endwith"),
+        _ => None,
+    }
 }
 
 fn is_paragraph_start(line: &str, previous_line: Option<&str>) -> bool {

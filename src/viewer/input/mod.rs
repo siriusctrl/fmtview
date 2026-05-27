@@ -10,7 +10,7 @@ pub(super) use events::drain_events;
 pub(super) use scroll::reset_top_row_offset;
 pub(super) use search::{SearchTarget, process_search_index_step, process_search_step};
 pub(super) use state::ViewState;
-pub(super) use structure::process_structure_step;
+pub(super) use structure::{StructureViewport, process_structure_step};
 
 #[cfg(test)]
 pub(super) use events::{handle_event, handle_key_event, handle_key_event_with_count};

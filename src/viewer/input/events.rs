@@ -261,6 +261,7 @@ pub(in crate::viewer) fn handle_mouse_event(
 fn clear_structure_cursor_if_dirty(state: &mut ViewState, dirty: bool) -> bool {
     if dirty {
         state.structure_cursor = None;
+        state.preserve_tail_on_next_draw = false;
     }
     dirty
 }

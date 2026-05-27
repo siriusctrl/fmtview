@@ -1,6 +1,6 @@
 use super::{
     search::{SearchMatchIndex, SearchTarget, SearchTask},
-    structure::StructureTask,
+    structure::{StructureTask, StructureViewport},
 };
 
 pub(in crate::viewer) struct ViewState {
@@ -24,6 +24,9 @@ pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) structure_task: Option<StructureTask>,
     pub(in crate::viewer) structure_target: Option<SearchTarget>,
     pub(in crate::viewer) structure_cursor: Option<usize>,
+    pub(in crate::viewer) structure_viewport: Option<StructureViewport>,
+    pub(in crate::viewer) viewport_at_tail: bool,
+    pub(in crate::viewer) preserve_tail_on_next_draw: bool,
     pub(in crate::viewer) mouse_capture: bool,
 }
 
@@ -50,6 +53,9 @@ impl Default for ViewState {
             structure_task: None,
             structure_target: None,
             structure_cursor: None,
+            structure_viewport: None,
+            viewport_at_tail: false,
+            preserve_tail_on_next_draw: false,
             mouse_capture: true,
         }
     }
