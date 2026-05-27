@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-05-27
+
 ### Changed
 
 - Refine `]`/`[` viewer navigation from viewport-only smart block jumps into
