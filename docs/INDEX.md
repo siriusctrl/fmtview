@@ -62,6 +62,16 @@ Code orientation:
     viewer, with input handling and rendering split by responsibility.
   - `terminal.rs` handles terminal diffing, ANSI writes, and scroll regions.
   - `input/` handles key/mouse state, scrolling, jumps, and search.
+    - `input/structure.rs` owns the `]`/`[` structure-navigation task state and
+      public viewer entry points.
+    - `input/structure/scan.rs` reads bounded chunks and drives forward/backward
+      lazy scans.
+    - `input/structure/candidate.rs` owns structure candidate kinds, anchors,
+      and ranking.
+    - `input/structure/visibility.rs` decides whether a candidate has already
+      been fully observed in the current viewport.
+    - `input/structure/syntax.rs` routes structure detection and block extent
+      logic to per-format modules under `input/structure/syntax/`.
   - `syntax_state.rs` owns viewer-time syntax state that depends on file
     windows, such as Markdown fenced-code line modes.
   - `render/` handles line windows, wrapping, visual rows, caches, progress,
@@ -69,7 +79,10 @@ Code orientation:
   - `palette.rs` owns viewer colors.
   - `tests/` keeps viewer regression and performance smoke coverage close to
     the private TUI internals, split by input, navigation, search, render,
-    terminal, cache, syntax, and viewport responsibility.
+    terminal, cache, syntax, and viewport responsibility. Structure-navigation
+    tests live under `tests/structure/` and mirror the implementation split:
+    detection, format behavior, interaction state, JSON ranking/visibility, and
+    target clamping.
 - `tests/cli.rs` covers CLI-level behavior.
 - `src/perf/` owns the Rust load/format performance harness used by the shell
   wrappers:

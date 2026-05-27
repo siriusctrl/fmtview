@@ -126,6 +126,28 @@ observable on the current screen. Format-specific code decides what counts as a
 candidate; shared viewer code still owns visibility, ranking, and scroll
 clamping.
 
+The implementation mirrors that split:
+
+```text
+  viewer/input/structure.rs
+    task lifecycle, no-result messages, and ViewState handoff
+
+  viewer/input/structure/scan.rs
+    bounded lazy chunk reads and forward/backward scan progress
+
+  viewer/input/structure/candidate.rs
+    candidate kind, anchor context, and ranking policy
+
+  viewer/input/structure/visibility.rs
+    viewport observation rules shared by all formats
+
+  viewer/input/structure/syntax.rs
+    syntax dispatcher plus shared block helpers
+
+  viewer/input/structure/syntax/*.rs
+    JSON, XML/HTML, Markdown, TOML, Jinja, and plain-text structure rules
+```
+
 ## Load Plans
 
 The names below describe the behavior we want the code to make explicit:
