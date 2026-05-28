@@ -11,11 +11,9 @@ const MOUSE_SCROLL_LINES: usize = 1;
 const MOUSE_HORIZONTAL_COLUMNS: usize = 4;
 use super::DiffViewState;
 
-mod navigation;
-
 #[cfg(test)]
-pub(super) use navigation::change_block_starts;
-pub(super) use navigation::{DiffJump, clamp_top, diff_scroll_hint, jump_change, scroll_by};
+pub(super) use super::navigation::change_block_starts;
+pub(super) use super::navigation::{DiffJump, clamp_top, diff_scroll_hint, jump_change, scroll_by};
 
 pub(super) fn drain_events(
     model: &DiffModel,
@@ -143,17 +141,17 @@ fn handle_key_event(
         }
         KeyCode::Home | KeyCode::Char('g') if plain_key(modifiers) => {
             state.change_cursor = None;
-            navigation::set_top(state, 0, 0, line_count)
+            super::navigation::set_top(state, 0, 0, line_count)
         }
         KeyCode::End | KeyCode::Char('G') if plain_key(modifiers) => {
             state.change_cursor = None;
-            navigation::set_tail_top(state, model, visible_height, width)
+            super::navigation::set_tail_top(state, model, visible_height, width)
         }
         KeyCode::Right | KeyCode::Char('l') if plain_key(modifiers) && !state.wrap => {
-            navigation::scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
+            super::navigation::scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
         }
         KeyCode::Left | KeyCode::Char('h') if plain_key(modifiers) && !state.wrap => {
-            navigation::scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
+            super::navigation::scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
         }
         _ => false,
     };
@@ -171,10 +169,10 @@ fn handle_mouse_event(
 ) -> DiffEventAction {
     let dirty = match kind {
         MouseEventKind::ScrollDown if modifiers.contains(KeyModifiers::SHIFT) && !state.wrap => {
-            navigation::scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
+            super::navigation::scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
         }
         MouseEventKind::ScrollUp if modifiers.contains(KeyModifiers::SHIFT) && !state.wrap => {
-            navigation::scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
+            super::navigation::scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
         }
         MouseEventKind::ScrollDown => {
             state.change_cursor = None;
@@ -197,10 +195,10 @@ fn handle_mouse_event(
             )
         }
         MouseEventKind::ScrollRight if !state.wrap => {
-            navigation::scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
+            super::navigation::scroll_x_by(&mut state.x, MOUSE_HORIZONTAL_COLUMNS as isize)
         }
         MouseEventKind::ScrollLeft if !state.wrap => {
-            navigation::scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
+            super::navigation::scroll_x_by(&mut state.x, -(MOUSE_HORIZONTAL_COLUMNS as isize))
         }
         _ => false,
     };

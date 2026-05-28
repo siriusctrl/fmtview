@@ -13,6 +13,7 @@ use crate::{
 };
 
 mod input;
+mod navigation;
 mod render;
 
 #[cfg(test)]

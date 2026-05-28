@@ -5,7 +5,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEv
 
 use super::super::{
     EVENT_DRAIN_BUDGET, EVENT_DRAIN_LIMIT, MOUSE_HORIZONTAL_COLUMNS, MOUSE_SCROLL_LINES,
-    navigation::{StructureDirection, start_structure_navigation},
+    structure::{StructureDirection, start_structure_navigation},
 };
 use super::{
     jump::{handle_jump_input_key, push_jump_digit},

@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{load::ViewFile, syntax::SyntaxKind};
 
-use super::super::input::ViewState;
+use super::input::ViewState;
 
 mod candidate;
 mod scan;

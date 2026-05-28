@@ -1,9 +1,9 @@
 mod breadcrumb;
 mod file;
 mod input;
-mod navigation;
 mod position;
 mod render;
+mod structure;
 mod syntax_state;
 
 use std::io::{self, Write};
@@ -125,6 +125,8 @@ use position::{
     resolve_search_target_position, resolve_structure_target_position, search_context_rows,
     visual_row_for_byte,
 };
+#[cfg(test)]
+use structure::*;
 #[cfg(test)]
 use syntax_state::MarkdownSyntaxCache;
 

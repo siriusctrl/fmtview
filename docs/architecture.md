@@ -129,22 +129,22 @@ clamping.
 The implementation mirrors that split:
 
 ```text
-  viewer/navigation/structure.rs
+  viewer/structure.rs
     task lifecycle, no-result messages, and ViewState handoff
 
-  viewer/navigation/structure/scan.rs
+  viewer/structure/scan.rs
     bounded lazy chunk reads and forward/backward scan progress
 
-  viewer/navigation/structure/candidate.rs
+  viewer/structure/candidate.rs
     candidate kind, anchor context, and ranking policy
 
-  viewer/navigation/structure/visibility.rs
+  viewer/structure/visibility.rs
     viewport observation rules shared by all formats
 
-  viewer/navigation/structure/syntax.rs
+  viewer/structure/syntax.rs
     syntax dispatcher plus shared block helpers
 
-  viewer/navigation/structure/syntax/*.rs
+  viewer/structure/syntax/*.rs
     JSON, XML/HTML, Markdown, TOML, Jinja, and plain-text structure rules
 ```
 

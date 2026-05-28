@@ -78,18 +78,17 @@ Code orientation:
     layout/sticky-breadcrumb coordination.
   - `breadcrumb.rs` builds compact sticky JSON key breadcrumbs for the viewer.
   - `input/` handles key/mouse state, scrolling, jumps, and search.
-  - `navigation/` owns higher-level viewer movement semantics after input has
-    been decoded.
-    - `navigation/structure.rs` owns the `]`/`[` structure-navigation task state
-      and public viewer entry points.
-    - `navigation/structure/scan.rs` reads bounded chunks and drives
-      forward/backward lazy scans.
-    - `navigation/structure/candidate.rs` owns structure candidate kinds,
-      anchors, and ranking.
-    - `navigation/structure/visibility.rs` decides whether a candidate has
-      already been fully observed in the current viewport.
-    - `navigation/structure/syntax.rs` routes structure detection and block
-      extent logic to per-format modules under `navigation/structure/syntax/`.
+  - `structure.rs` and `structure/` own the `]`/`[` smart structure jump:
+    task state, lazy scans, candidate ranking, viewport visibility, and
+    per-format structure rules.
+    - `structure/scan.rs` reads bounded chunks and drives forward/backward lazy
+      scans.
+    - `structure/candidate.rs` owns structure candidate kinds, anchors, and
+      ranking.
+    - `structure/visibility.rs` decides whether a candidate has already been
+      fully observed in the current viewport.
+    - `structure/syntax.rs` routes structure detection and block extent logic
+      to per-format modules under `structure/syntax/`.
   - `syntax_state.rs` owns viewer-time syntax state that depends on file
     windows, such as Markdown fenced-code line modes.
   - `render/` handles normal-viewer line windows, visual rows, caches,

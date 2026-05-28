@@ -36,13 +36,13 @@ use super::{
     EVENT_POLL_INTERVAL, LAZY_PRELOAD_BUDGET, LAZY_PRELOAD_LINES, LAZY_PRELOAD_RECORDS,
     TAIL_ROW_OFFSET, TERMINAL_SCROLL_HINT_MAX_ROWS,
     input::{ViewState, drain_events, process_search_index_step, process_search_step},
-    navigation::{StructureViewport, process_structure_step},
     position::resolve_targets_from_view,
     render::{
         RenderRequest, RenderedLineCache, ViewPosition, ViewportRenderOptions,
         effective_top_row_offset, exact_top_line_tail_offset, prewarm_render_cache,
         render_row_limit, render_viewport, viewer_progress_percent,
     },
+    structure::{StructureViewport, process_structure_step},
 };
 use crate::tui::screen::{ScrollHint, TerminalFrame, ViewerTerminal};
 

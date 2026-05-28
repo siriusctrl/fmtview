@@ -1,5 +1,5 @@
 use super::search::{SearchMatchIndex, SearchTarget, SearchTask};
-use crate::viewer::navigation::structure::{StructureTask, StructureViewport};
+use crate::viewer::structure::{StructureTask, StructureViewport};
 
 pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) top: usize,

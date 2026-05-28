@@ -16,8 +16,8 @@ use ratatui::{
 use tempfile::NamedTempFile;
 
 use super::input::*;
-use super::navigation::*;
 use super::render::*;
+use super::structure::*;
 use super::*;
 use crate::{
     input::InputSource,

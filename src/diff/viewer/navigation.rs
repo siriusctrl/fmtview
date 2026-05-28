@@ -4,7 +4,7 @@ use ratatui::backend::CrosstermBackend;
 
 use crate::diff::{DiffLayout, DiffModel};
 
-use super::super::{DIFF_SCROLL_HINT_MAX_ROWS, DiffViewState, render::diff_row_visual_count};
+use super::{DIFF_SCROLL_HINT_MAX_ROWS, DiffViewState, render::diff_row_visual_count};
 use crate::tui::screen::{ScrollHint, ScrollPosition, ViewerTerminal};
 
 #[derive(Debug, Clone, Copy)]
