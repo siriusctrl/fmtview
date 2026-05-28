@@ -4,7 +4,7 @@ use ratatui::{
     backend::Backend,
     buffer::{Buffer, Cell},
     layout::{Constraint, Layout, Rect, Size},
-    style::{Color, Modifier},
+    style::{Color, Modifier, Style},
     text::Line,
 };
 
@@ -23,6 +23,7 @@ pub(crate) struct TerminalFrame {
     pub(crate) selection_mode: bool,
     pub(crate) title: String,
     pub(crate) footer_text: String,
+    pub(crate) footer_style: Style,
     pub(crate) position: ScrollPosition,
     pub(crate) scroll_hint: Option<ScrollHint>,
 }
@@ -80,6 +81,7 @@ where
             frame.selection_mode,
             frame.title,
             frame.footer_text,
+            frame.footer_style,
         );
         match self.previous.take() {
             Some(previous)
@@ -345,6 +347,7 @@ fn render_frame(
     selection_mode: bool,
     title: String,
     footer_text: String,
+    footer_style: Style,
 ) {
     let area = buffer.area;
     if area.width == 0 || area.height == 0 {
@@ -371,7 +374,7 @@ fn render_frame(
         footer_y,
         footer_text,
         usize::from(area.width),
-        gutter_style(),
+        footer_style,
     );
 }
 

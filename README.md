@@ -153,10 +153,10 @@ streams use the lazy JSONL path, markup-looking documents use the XML-compatible
 formatter, and otherwise the input falls back to plain-text passthrough.
 
 If an auto-detected structured type cannot be formatted in the interactive
-viewer, `fmtview` falls back to plain-text viewing and shows a footer notice
-instead of closing with a parse error. Use `--type` when you want to force a
-specific profile. Redirected stdout remains strict and reports formatting
-errors instead of silently changing output semantics.
+viewer, `fmtview` falls back to plain-text viewing and shows a temporary red
+footer notice instead of closing with a parse error. Use `--type` when you want
+to force a specific profile. Redirected stdout remains strict and reports
+formatting errors instead of silently changing output semantics.
 
 Known extensions still provide a fast, deterministic hint:
 

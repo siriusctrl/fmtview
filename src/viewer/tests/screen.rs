@@ -45,6 +45,7 @@ fn terminal_renderer_applies_plain_style_to_default_spans() {
             selection_mode: false,
             title: " test ".to_owned(),
             footer_text: " footer ".to_owned(),
+            footer_style: gutter_style(),
             position: ViewPosition {
                 top: 0,
                 row_offset: 0,
@@ -74,6 +75,7 @@ fn selection_mode_draws_body_without_frame() {
             selection_mode: true,
             title: " test ".to_owned(),
             footer_text: " footer ".to_owned(),
+            footer_style: gutter_style(),
             position: ViewPosition {
                 top: 0,
                 row_offset: 0,
@@ -105,6 +107,7 @@ fn selection_mode_change_forces_full_redraw_even_with_scroll_hint() {
             selection_mode: true,
             title: " test ".to_owned(),
             footer_text: " footer ".to_owned(),
+            footer_style: gutter_style(),
             position: ViewPosition {
                 top: 0,
                 row_offset: 0,
@@ -127,6 +130,7 @@ fn selection_mode_change_forces_full_redraw_even_with_scroll_hint() {
             selection_mode: false,
             title: " test ".to_owned(),
             footer_text: " footer ".to_owned(),
+            footer_style: gutter_style(),
             position,
             scroll_hint,
         })

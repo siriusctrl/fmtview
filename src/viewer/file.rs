@@ -1,4 +1,7 @@
-use std::{io, time::Duration};
+use std::{
+    io,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use crossterm::{
@@ -32,6 +35,7 @@ pub(in crate::viewer) const LAZY_PRELOAD_BUDGET: Duration = Duration::from_milli
 pub(in crate::viewer) const JUMP_BUFFER_MAX_DIGITS: usize = 20;
 pub(in crate::viewer) const SEARCH_CHUNK_LINES: usize = 4096;
 pub(in crate::viewer) const TAIL_ROW_OFFSET: usize = usize::MAX;
+pub(in crate::viewer) const NOTICE_DURATION: Duration = Duration::from_secs(10);
 
 pub(in crate::viewer) mod breadcrumb;
 mod cache;
@@ -51,9 +55,9 @@ use input::{ViewState, drain_events, process_search_index_step, process_search_s
 use position::resolve_targets_from_view;
 use render::{
     RenderRequest, RenderedLineCache, ViewPosition, ViewportRenderOptions, draw_layout,
-    effective_top_row_offset, exact_top_line_tail_offset, file_footer_text, file_title_text,
-    prewarm_render_cache, refresh_sticky_after_position_change, render_row_limit, render_viewport,
-    sync_sticky_layout, viewer_progress_percent,
+    effective_top_row_offset, exact_top_line_tail_offset, file_footer_style, file_footer_text,
+    file_title_text, prewarm_render_cache, refresh_sticky_after_position_change, render_row_limit,
+    render_viewport, sync_sticky_layout, viewer_progress_percent,
 };
 use structure::{StructureViewport, process_structure_step};
 
@@ -63,14 +67,15 @@ pub(super) fn run_loop(
     mode: FormatKind,
     notice: Option<String>,
 ) -> Result<()> {
-    let mut state = ViewState {
-        notice_message: notice,
-        ..ViewState::default()
-    };
+    let mut state = ViewState::default();
+    if let Some(message) = notice {
+        state.set_notice(message, Instant::now(), NOTICE_DURATION);
+    }
     let mut dirty = true;
     let mut caches = ViewerCaches::default();
 
     loop {
+        dirty |= state.expire_notice(Instant::now());
         if state.search_task.is_some() {
             dirty |= process_search_step(file, &mut state)?;
         }
@@ -315,6 +320,7 @@ fn draw_view(
     let styled = viewport.lines;
     let title = file_title_text(file, state, current, bottom, progress);
     let footer_text = file_footer_text(file, state);
+    let footer_style = file_footer_style(state);
 
     terminal
         .draw(TerminalFrame {
@@ -324,6 +330,7 @@ fn draw_view(
             selection_mode: layout.selection_mode,
             title,
             footer_text,
+            footer_style,
             position,
             scroll_hint,
         })

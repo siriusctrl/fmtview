@@ -6,6 +6,7 @@ use ratatui::{backend::CrosstermBackend, layout::Rect};
 
 use crate::{
     diff::{DiffLayout, DiffView},
+    tui::palette::gutter_style,
     tui::screen::{TerminalFrame, ViewerTerminal},
 };
 
@@ -147,6 +148,7 @@ fn draw_view(
             selection_mode: false,
             title: rendered.title,
             footer_text: rendered.footer_text,
+            footer_style: gutter_style(),
             position: rendered.position,
             scroll_hint,
         })

@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use super::search::{SearchMatchIndex, SearchTarget, SearchTask};
 use crate::viewer::file::structure::{StructureTask, StructureViewport};
 
@@ -13,6 +15,7 @@ pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) search_buffer: String,
     pub(in crate::viewer) search_query: String,
     pub(in crate::viewer) notice_message: Option<String>,
+    pub(in crate::viewer) notice_expires_at: Option<Instant>,
     pub(in crate::viewer) search_message: Option<String>,
     pub(in crate::viewer) search_task: Option<SearchTask>,
     pub(in crate::viewer) search_index: Option<SearchMatchIndex>,
@@ -43,6 +46,7 @@ impl Default for ViewState {
             search_buffer: String::new(),
             search_query: String::new(),
             notice_message: None,
+            notice_expires_at: None,
             search_message: None,
             search_task: None,
             search_index: None,
@@ -79,5 +83,39 @@ impl EventAction {
 impl ViewState {
     pub(in crate::viewer) fn has_active_prompt(&self) -> bool {
         self.search_active || !self.jump_buffer.is_empty()
+    }
+
+    pub(in crate::viewer) fn set_notice(
+        &mut self,
+        message: String,
+        now: Instant,
+        duration: Duration,
+    ) {
+        self.notice_message = Some(message);
+        self.notice_expires_at = Some(now + duration);
+    }
+
+    pub(in crate::viewer) fn clear_notice(&mut self) -> bool {
+        let was_active = self.notice_message.is_some();
+        self.notice_message = None;
+        self.notice_expires_at = None;
+        was_active
+    }
+
+    pub(in crate::viewer) fn expire_notice(&mut self, now: Instant) -> bool {
+        if self
+            .notice_expires_at
+            .is_some_and(|expires_at| now >= expires_at)
+        {
+            return self.clear_notice();
+        }
+        false
+    }
+
+    pub(in crate::viewer) fn is_notice_visible(&self) -> bool {
+        !self.search_active
+            && self.jump_buffer.is_empty()
+            && self.search_message.is_none()
+            && self.notice_message.is_some()
     }
 }

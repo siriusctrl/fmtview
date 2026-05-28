@@ -98,7 +98,10 @@ use file::position::{
 #[cfg(test)]
 use file::structure::*;
 #[cfg(test)]
-use file::{MOUSE_HORIZONTAL_COLUMNS, MOUSE_SCROLL_LINES, TAIL_ROW_OFFSET, WRAP_RENDER_CHUNK_ROWS};
+use file::{
+    MOUSE_HORIZONTAL_COLUMNS, MOUSE_SCROLL_LINES, NOTICE_DURATION, TAIL_ROW_OFFSET,
+    WRAP_RENDER_CHUNK_ROWS,
+};
 
 #[cfg(test)]
 mod tests;

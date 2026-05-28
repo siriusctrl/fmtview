@@ -1,7 +1,9 @@
 use crate::load::ViewFile;
+use crate::tui::palette::{error_style, gutter_style};
 
 use super::super::input::ViewState;
 use super::{format_count, line_number_digits};
+use ratatui::style::Style;
 
 pub(in crate::viewer) fn file_title_text(
     file: &dyn ViewFile,
@@ -44,6 +46,14 @@ pub(in crate::viewer) fn file_footer_text(file: &dyn ViewFile, state: &ViewState
         )
     } else {
         idle_footer_text(state)
+    }
+}
+
+pub(in crate::viewer) fn file_footer_style(state: &ViewState) -> Style {
+    if state.is_notice_visible() {
+        error_style()
+    } else {
+        gutter_style()
     }
 }
 

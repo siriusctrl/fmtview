@@ -195,6 +195,7 @@ fn perf_terminal_scroll_draw_bytes() {
                 selection_mode: false,
                 title: " perf ".to_owned(),
                 footer_text: " q/Esc quit ".to_owned(),
+                footer_style: gutter_style(),
                 position,
                 scroll_hint: terminal.scroll_hint(position),
             })
@@ -271,6 +272,7 @@ fn perf_terminal_visual_row_scroll_bytes() {
                 selection_mode: false,
                 title: " perf ".to_owned(),
                 footer_text: " q/Esc quit ".to_owned(),
+                footer_style: gutter_style(),
                 position,
                 scroll_hint: terminal.scroll_hint(position),
             })

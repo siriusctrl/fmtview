@@ -94,12 +94,31 @@ fn notice_message_appears_in_footer_and_can_be_cleared() {
     };
 
     assert!(file_footer_text(&file, &state).contains("showing plain text"));
+    assert_eq!(file_footer_style(&state), error_style());
 
     let action = handle_key_event(KeyCode::Esc, KeyModifiers::NONE, &mut state, 1, 10);
 
     assert!(action.dirty);
     assert!(!action.quit);
     assert_eq!(state.notice_message, None);
+    assert_eq!(state.notice_expires_at, None);
+}
+
+#[test]
+fn notice_message_expires_after_deadline() {
+    let now = Instant::now();
+    let mut state = ViewState::default();
+    state.set_notice(
+        "showing plain text; use --type".to_owned(),
+        now,
+        NOTICE_DURATION,
+    );
+
+    assert!(!state.expire_notice(now + NOTICE_DURATION - Duration::from_millis(1)));
+    assert!(state.notice_message.is_some());
+    assert!(state.expire_notice(now + NOTICE_DURATION));
+    assert_eq!(state.notice_message, None);
+    assert_eq!(state.notice_expires_at, None);
 }
 
 #[test]
