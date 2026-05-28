@@ -5,12 +5,12 @@ use ratatui::{
 
 use crate::diff::{DiffChange, DiffRange};
 
-use super::super::super::{
+use crate::tui::{
     palette::{
         diff_added_inline_bg, diff_added_line_bg, diff_added_style, diff_removed_inline_bg,
         diff_removed_line_bg, diff_removed_style,
     },
-    render::char_count,
+    text::char_count,
 };
 
 #[derive(Debug, Clone, Copy)]

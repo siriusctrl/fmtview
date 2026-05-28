@@ -1,6 +1,6 @@
 use ratatui::{style::Style, text::Span};
 
-use crate::viewer::palette::{escape_style, plain_style, string_style};
+use crate::tui::palette::{escape_style, plain_style, string_style};
 
 pub(crate) fn highlight_string_segment_window(
     source: &str,

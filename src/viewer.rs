@@ -1,11 +1,9 @@
 mod breadcrumb;
-mod diff;
 mod file;
 mod input;
-pub(crate) mod palette;
+mod navigation;
 mod position;
 mod render;
-mod screen;
 mod syntax_state;
 
 use std::io::{self, Write};
@@ -18,9 +16,7 @@ use crossterm::{
 };
 use ratatui::backend::CrosstermBackend;
 
-use crate::{load::ViewFile, syntax::SyntaxKind};
-
-use screen::ViewerTerminal;
+use crate::{load::ViewFile, syntax::SyntaxKind, tui::screen::ViewerTerminal};
 
 const EVENT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
 const EVENT_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
@@ -31,11 +27,8 @@ const RENDER_CACHE_MAX_LINES: usize = 512;
 const RENDER_CACHE_MAX_ROWS_PER_LINE: usize = 256;
 const WRAP_RENDER_CHUNK_ROWS: usize = 64;
 const WRAP_RENDER_CHUNKS_PER_LINE: usize = 64;
-const WRAP_CHECKPOINT_INTERVAL_ROWS: usize = 256;
 const TERMINAL_SCROLL_HINT_MAX_ROWS: usize = 12;
 const WRAP_PREWARM_LOGICAL_LINES: usize = 4;
-const WRAP_GUTTER_MINOR_TICK_ROWS: usize = 8;
-const WRAP_GUTTER_MAJOR_TICK_ROWS: usize = 64;
 const PREWARM_PAGES: usize = 2;
 const PREWARM_MAX_LINES: usize = 192;
 const PREWARM_MAX_LINE_BYTES: usize = 16 * 1024;
@@ -52,7 +45,7 @@ pub fn run(file: Box<dyn ViewFile>, mode: SyntaxKind) -> Result<()> {
 }
 
 pub(crate) fn run_diff(view: crate::diff::DiffView) -> Result<()> {
-    run_terminal(|terminal| diff::run_loop(terminal, view))
+    run_terminal(|terminal| crate::diff::viewer::run_loop(terminal, view))
 }
 
 fn run_terminal<F>(run_loop: F) -> Result<()>
@@ -112,11 +105,18 @@ impl Drop for TerminalCleanup {
 #[cfg(test)]
 use crate::load::IndexedTempFile;
 #[cfg(test)]
+use crate::tui::{
+    palette::*,
+    screen::{TerminalFrame, draw_cells},
+};
+#[cfg(test)]
 use breadcrumb::JsonBreadcrumbCache;
 #[cfg(test)]
 use file::{
-    ViewerCaches, display_mode_text, draw_layout, idle_footer_text, search_count_text,
-    sync_sticky_layout, visible_height_for_sticky,
+    TestViewerCaches as ViewerCaches, test_display_mode_text as display_mode_text,
+    test_draw_layout as draw_layout, test_idle_footer_text as idle_footer_text,
+    test_search_count_text as search_count_text, test_sync_sticky_layout as sync_sticky_layout,
+    test_visible_height_for_sticky as visible_height_for_sticky,
 };
 #[cfg(test)]
 use position::{adjust_state_for_visible_height, resolve_targets_from_view};
@@ -125,8 +125,6 @@ use position::{
     resolve_search_target_position, resolve_structure_target_position, search_context_rows,
     visual_row_for_byte,
 };
-#[cfg(test)]
-use screen::{TerminalFrame, draw_cells};
 #[cfg(test)]
 use syntax_state::MarkdownSyntaxCache;
 

@@ -5,9 +5,10 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEv
 
 use crate::diff::DiffModel;
 
-use super::super::{
-    EVENT_DRAIN_BUDGET, EVENT_DRAIN_LIMIT, MOUSE_HORIZONTAL_COLUMNS, MOUSE_SCROLL_LINES,
-};
+const EVENT_DRAIN_BUDGET: Duration = Duration::from_millis(8);
+const EVENT_DRAIN_LIMIT: usize = 512;
+const MOUSE_SCROLL_LINES: usize = 1;
+const MOUSE_HORIZONTAL_COLUMNS: usize = 4;
 use super::DiffViewState;
 
 mod navigation;

@@ -1,12 +1,8 @@
 use ratatui::text::Line;
 
-use crate::syntax::SyntaxKind;
+use crate::{syntax::SyntaxKind, tui::screen::ScrollPosition};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::viewer) struct ViewPosition {
-    pub(in crate::viewer) top: usize,
-    pub(in crate::viewer) row_offset: usize,
-}
+pub(in crate::viewer) type ViewPosition = ScrollPosition;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::viewer) struct RenderRequest {

@@ -8,27 +8,30 @@ use ratatui::{
     text::Line,
 };
 
-use super::{
-    palette::{gutter_style, plain_style},
-    render::ViewPosition,
-};
+use super::palette::{gutter_style, plain_style};
 
-pub(super) struct TerminalFrame {
-    pub(super) area: Rect,
-    pub(super) styled: Vec<Line<'static>>,
-    pub(super) sticky: Vec<Line<'static>>,
-    pub(super) selection_mode: bool,
-    pub(super) title: String,
-    pub(super) footer_text: String,
-    pub(super) position: ViewPosition,
-    pub(super) scroll_hint: Option<ScrollHint>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ScrollPosition {
+    pub(crate) top: usize,
+    pub(crate) row_offset: usize,
 }
 
-pub(super) struct ViewerTerminal<B> {
+pub(crate) struct TerminalFrame {
+    pub(crate) area: Rect,
+    pub(crate) styled: Vec<Line<'static>>,
+    pub(crate) sticky: Vec<Line<'static>>,
+    pub(crate) selection_mode: bool,
+    pub(crate) title: String,
+    pub(crate) footer_text: String,
+    pub(crate) position: ScrollPosition,
+    pub(crate) scroll_hint: Option<ScrollHint>,
+}
+
+pub(crate) struct ViewerTerminal<B> {
     backend: B,
     previous: Option<Buffer>,
     scratch: Option<Buffer>,
-    previous_position: Option<ViewPosition>,
+    previous_position: Option<ScrollPosition>,
     previous_sticky_rows: usize,
     previous_selection_mode: Option<bool>,
     output: Vec<u8>,
@@ -38,7 +41,7 @@ impl<B> ViewerTerminal<B>
 where
     B: Backend<Error = io::Error> + Write,
 {
-    pub(super) fn new(backend: B) -> Self {
+    pub(crate) fn new(backend: B) -> Self {
         Self {
             backend,
             previous: None,
@@ -50,19 +53,19 @@ where
         }
     }
 
-    pub(super) fn backend_mut(&mut self) -> &mut B {
+    pub(crate) fn backend_mut(&mut self) -> &mut B {
         &mut self.backend
     }
 
-    pub(super) fn size(&self) -> io::Result<Size> {
+    pub(crate) fn size(&self) -> io::Result<Size> {
         self.backend.size()
     }
 
-    pub(super) fn show_cursor(&mut self) -> io::Result<()> {
+    pub(crate) fn show_cursor(&mut self) -> io::Result<()> {
         self.backend.show_cursor()
     }
 
-    pub(super) fn draw(&mut self, frame: TerminalFrame) -> io::Result<()> {
+    pub(crate) fn draw(&mut self, frame: TerminalFrame) -> io::Result<()> {
         let mut current = self
             .scratch
             .take()
@@ -112,7 +115,7 @@ where
         Ok(())
     }
 
-    pub(super) fn scroll_hint(&self, position: ViewPosition) -> Option<ScrollHint> {
+    pub(crate) fn scroll_hint(&self, position: ScrollPosition) -> Option<ScrollHint> {
         let previous = self.previous_position?;
         if previous.top != position.top {
             return None;
@@ -131,7 +134,7 @@ where
         Some(ScrollHint { amount, direction })
     }
 
-    pub(super) fn previous_position(&self) -> Option<ViewPosition> {
+    pub(crate) fn previous_position(&self) -> Option<ScrollPosition> {
         self.previous_position
     }
 }
@@ -164,7 +167,7 @@ where
 }
 
 #[cfg(test)]
-pub(super) fn draw_cells<'a, B, I>(backend: &mut B, content: I) -> io::Result<()>
+pub(crate) fn draw_cells<'a, B, I>(backend: &mut B, content: I) -> io::Result<()>
 where
     B: Write,
     I: IntoIterator<Item = (u16, u16, &'a Cell)>,
@@ -530,20 +533,20 @@ enum ScrollDirection {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct ScrollHint {
+pub(crate) struct ScrollHint {
     amount: u16,
     direction: ScrollDirection,
 }
 
 impl ScrollHint {
-    pub(super) fn up(amount: u16) -> Self {
+    pub(crate) fn up(amount: u16) -> Self {
         Self {
             amount,
             direction: ScrollDirection::Up,
         }
     }
 
-    pub(super) fn down(amount: u16) -> Self {
+    pub(crate) fn down(amount: u16) -> Self {
         Self {
             amount,
             direction: ScrollDirection::Down,

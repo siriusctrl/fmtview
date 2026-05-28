@@ -5,6 +5,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEv
 
 use super::super::{
     EVENT_DRAIN_BUDGET, EVENT_DRAIN_LIMIT, MOUSE_HORIZONTAL_COLUMNS, MOUSE_SCROLL_LINES,
+    navigation::{StructureDirection, start_structure_navigation},
 };
 use super::{
     jump::{handle_jump_input_key, push_jump_digit},
@@ -18,7 +19,6 @@ use super::{
         start_repeat_search, start_search_prompt,
     },
     state::{EventAction, ViewState},
-    structure::{StructureDirection, start_structure_navigation},
 };
 
 pub(in crate::viewer) fn drain_events(

@@ -8,4 +8,5 @@ mod perf;
 mod profile;
 mod syntax;
 mod transform;
+mod tui;
 mod viewer;

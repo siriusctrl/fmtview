@@ -1,6 +1,6 @@
 use crate::syntax::SyntaxKind;
 
-use super::super::search::SearchTarget;
+use crate::viewer::input::SearchTarget;
 
 const JSON_VISIBLE_COMPOSITE_LANDMARK_LINES: usize = 5;
 

@@ -3,6 +3,7 @@ mod lazy_records;
 mod model;
 mod stdout;
 mod view;
+pub(crate) mod viewer;
 
 #[cfg(test)]
 mod tests;

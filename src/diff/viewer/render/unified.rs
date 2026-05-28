@@ -3,17 +3,16 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::diff::{DiffModel, UnifiedDiffRow};
-
-use super::super::super::{
-    palette::{diff_added_style, diff_removed_style, gutter_style, plain_style},
-    render::wrapped_row_count,
-};
 use super::styles::DiffSide;
 use super::{
     DiffCellStyle, fill_row, push_number, push_structured_content, push_styled_text,
     push_wrapped_content_slice, render_message_window, styled_text_line,
     wrapped_content_visual_count,
+};
+use crate::diff::{DiffModel, UnifiedDiffRow};
+use crate::tui::{
+    palette::{diff_added_style, diff_removed_style, gutter_style, plain_style},
+    wrap::wrapped_row_count,
 };
 
 fn render_unified_row(

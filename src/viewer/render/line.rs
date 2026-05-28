@@ -1,16 +1,20 @@
 use ratatui::text::{Line, Span};
 
 use crate::syntax::{SyntaxKind, highlight_content, highlight_content_window_indexed};
-
-use super::super::palette::plain_style;
-use super::{
-    cache::{LineRenderIndex, RenderedVisualRow},
+use crate::tui::palette::plain_style;
+use crate::tui::{
     text::{
         byte_index_for_char, char_count, continuation_gutter, line_number_gutter, push_styled_span,
         slice_chars, slice_spans,
     },
+    wrap::{
+        continuation_indent, wrap_ranges_window_indexed, wrapped_row_count as tui_wrapped_row_count,
+    },
+};
+
+use super::{
+    cache::{LineRenderIndex, RenderedVisualRow},
     types::RenderContext,
-    wrap::{continuation_indent, next_wrap_end, wrap_ranges_window_indexed},
 };
 
 #[cfg(test)]
@@ -173,40 +177,11 @@ pub(in crate::viewer) fn rendered_row_count(line: &str, context: RenderContext) 
         return 1;
     }
 
-    wrapped_row_count(
+    tui_wrapped_row_count(
         line,
         context.width,
         continuation_indent(line, context.width),
     )
-}
-
-pub(in crate::viewer) fn wrapped_row_count(
-    line: &str,
-    width: usize,
-    continuation_indent: usize,
-) -> usize {
-    if line.is_empty() || width == 0 {
-        return 1;
-    }
-
-    let mut rows = 0_usize;
-    let mut start_byte = 0_usize;
-    let mut start_char = 0_usize;
-    while start_byte < line.len() {
-        let continuation = rows > 0;
-        let indent = if continuation {
-            continuation_indent.min(width.saturating_sub(1))
-        } else {
-            0
-        };
-        let row_width = width.saturating_sub(indent).max(1);
-        let (end_byte, end_char) = next_wrap_end(line, start_byte, start_char, row_width);
-        start_byte = end_byte.max(start_byte + 1).min(line.len());
-        start_char = end_char.max(start_char + 1);
-        rows = rows.saturating_add(1);
-    }
-
-    rows
 }
 
 pub(in crate::viewer) fn styled_segment(

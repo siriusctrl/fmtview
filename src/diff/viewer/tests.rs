@@ -5,9 +5,9 @@ use ratatui::text::Line;
 
 use crate::diff::{DiffLayout, DiffModel};
 
-use super::super::palette::{diff_removed_inline_bg, diff_removed_line_bg};
-use super::super::render::char_count;
 use super::{input::*, render::*};
+use crate::tui::palette::{diff_removed_inline_bg, diff_removed_line_bg};
+use crate::tui::text::char_count;
 
 fn sample_model() -> DiffModel {
     DiffModel::from_unified_patch(

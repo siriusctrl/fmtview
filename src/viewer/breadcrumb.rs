@@ -1,10 +1,9 @@
 use ratatui::text::{Line, Span};
 
 use crate::load::ViewFile;
-
-use super::{
+use crate::tui::{
     palette::{gutter_style, key_style},
-    render::char_count,
+    text::char_count,
 };
 
 const CHECKPOINT_INTERVAL: usize = 512;

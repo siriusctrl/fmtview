@@ -4,12 +4,12 @@ use anyhow::{Context, Result};
 use crossterm::event;
 use ratatui::{backend::CrosstermBackend, layout::Rect};
 
-use crate::diff::{DiffLayout, DiffView};
-
-use super::{
-    EVENT_POLL_INTERVAL,
-    render::{ViewPosition, format_count, progress_percent},
-    screen::{TerminalFrame, ViewerTerminal},
+use crate::{
+    diff::{DiffLayout, DiffView},
+    tui::{
+        screen::{ScrollPosition, TerminalFrame, ViewerTerminal},
+        text::format_count,
+    },
 };
 
 mod input;
@@ -22,6 +22,7 @@ use input::{clamp_top, diff_scroll_hint, drain_events};
 use render::render_rows_with_status;
 
 const SIDE_BY_SIDE_MIN_WIDTH: usize = 110;
+const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const DIFF_SCROLL_HINT_MAX_ROWS: usize = 12;
 const LAZY_DIFF_FIRST_OPEN_RECORDS: usize = 256;
 const LAZY_DIFF_IDLE_RECORDS: usize = 256;
@@ -53,7 +54,7 @@ impl DiffViewState {
     }
 }
 
-pub(super) fn run_loop(
+pub(crate) fn run_loop(
     terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,
     mut view: DiffView,
 ) -> Result<()> {
@@ -104,6 +105,14 @@ pub(super) fn run_loop(
     }
 
     Ok(())
+}
+
+fn progress_percent(bottom: usize, row_count: usize) -> usize {
+    bottom
+        .saturating_mul(100)
+        .min(row_count.saturating_mul(100))
+        .checked_div(row_count)
+        .unwrap_or(100)
 }
 
 fn initial_layout(width: u16) -> DiffLayout {
@@ -187,7 +196,7 @@ fn draw_view(
             " q/Esc quit | s single/split | {wrap_hint} | ]/[ next/prev block | j/k wheel | Space/b{horizontal} "
         )
     });
-    let position = ViewPosition {
+    let position = ScrollPosition {
         top: state.top,
         row_offset: state.top_row_offset,
     };

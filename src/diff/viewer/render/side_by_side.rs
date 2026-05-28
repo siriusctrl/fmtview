@@ -1,15 +1,14 @@
 use ratatui::text::{Line, Span};
 
-use crate::diff::{DiffModel, NumberedDiffLine, SideDiffRow, UnifiedDiffRow};
-
-use super::super::super::{
-    palette::{gutter_style, plain_style},
-    render::wrapped_row_count,
-};
 use super::styles::DiffSide;
 use super::{
     DiffCellStyle, NumberedCell, push_numbered_cell, push_numbered_cell_window,
     render_message_window, styled_text_line, wrapped_content_visual_count,
+};
+use crate::diff::{DiffModel, NumberedDiffLine, SideDiffRow, UnifiedDiffRow};
+use crate::tui::{
+    palette::{gutter_style, plain_style},
+    wrap::wrapped_row_count,
 };
 
 fn render_side_row(row: &SideDiffRow, model: &DiffModel, width: usize, x: usize) -> Line<'static> {

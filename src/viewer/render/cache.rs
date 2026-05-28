@@ -7,10 +7,8 @@ use crate::load::ViewFile;
 use crate::syntax::HighlightCheckpointIndex;
 
 use super::super::{RENDER_CACHE_MAX_LINES, WRAP_RENDER_CHUNK_ROWS, WRAP_RENDER_CHUNKS_PER_LINE};
-use super::{
-    line::render_logical_line_window_with_status_indexed, types::RenderRequest,
-    wrap::WrapCheckpointIndex,
-};
+use super::{line::render_logical_line_window_with_status_indexed, types::RenderRequest};
+use crate::tui::wrap::WrapCheckpointIndex;
 
 #[derive(Debug, Default)]
 pub(in crate::viewer) struct LineWindowCache {

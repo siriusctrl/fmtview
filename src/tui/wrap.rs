@@ -1,20 +1,20 @@
-use super::super::WRAP_CHECKPOINT_INTERVAL_ROWS;
+const WRAP_CHECKPOINT_INTERVAL_ROWS: usize = 256;
 use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Default)]
-pub(in crate::viewer) struct WrapCheckpointIndex {
-    pub(in crate::viewer) checkpoints: Vec<WrapCheckpoint>,
+pub(crate) struct WrapCheckpointIndex {
+    pub(crate) checkpoints: Vec<WrapCheckpoint>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::viewer) struct WrapCheckpoint {
-    pub(in crate::viewer) row: usize,
-    pub(in crate::viewer) start_byte: usize,
-    pub(in crate::viewer) start_char: usize,
+pub(crate) struct WrapCheckpoint {
+    pub(crate) row: usize,
+    pub(crate) start_byte: usize,
+    pub(crate) start_char: usize,
 }
 
 impl WrapCheckpointIndex {
-    pub(in crate::viewer) fn start_for(&self, row_start: usize) -> WrapCheckpoint {
+    pub(crate) fn start_for(&self, row_start: usize) -> WrapCheckpoint {
         self.checkpoints
             .iter()
             .rev()
@@ -27,7 +27,7 @@ impl WrapCheckpointIndex {
             })
     }
 
-    pub(in crate::viewer) fn remember(&mut self, checkpoint: WrapCheckpoint) {
+    pub(crate) fn remember(&mut self, checkpoint: WrapCheckpoint) {
         if checkpoint.row == 0 || checkpoint.row % WRAP_CHECKPOINT_INTERVAL_ROWS != 0 {
             return;
         }
@@ -43,22 +43,22 @@ impl WrapCheckpointIndex {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::viewer) struct WrapRange {
-    pub(in crate::viewer) start_char: usize,
-    pub(in crate::viewer) end_char: usize,
-    pub(in crate::viewer) start_byte: usize,
-    pub(in crate::viewer) end_byte: usize,
-    pub(in crate::viewer) continuation_indent: usize,
+pub(crate) struct WrapRange {
+    pub(crate) start_char: usize,
+    pub(crate) end_char: usize,
+    pub(crate) start_byte: usize,
+    pub(crate) end_byte: usize,
+    pub(crate) continuation_indent: usize,
 }
 
 #[derive(Debug)]
-pub(in crate::viewer) struct WrapWindow {
-    pub(in crate::viewer) ranges: Vec<WrapRange>,
-    pub(in crate::viewer) total_rows: Option<usize>,
+pub(crate) struct WrapWindow {
+    pub(crate) ranges: Vec<WrapRange>,
+    pub(crate) total_rows: Option<usize>,
 }
 
 #[cfg(test)]
-pub(in crate::viewer) fn wrap_ranges(
+pub(crate) fn wrap_ranges(
     line: &str,
     width: usize,
     continuation_indent: usize,
@@ -68,7 +68,7 @@ pub(in crate::viewer) fn wrap_ranges(
 }
 
 #[cfg(test)]
-pub(in crate::viewer) fn wrap_ranges_window(
+pub(crate) fn wrap_ranges_window(
     line: &str,
     width: usize,
     continuation_indent: usize,
@@ -78,7 +78,7 @@ pub(in crate::viewer) fn wrap_ranges_window(
     wrap_ranges_window_indexed(line, width, continuation_indent, row_start, max_rows, None)
 }
 
-pub(in crate::viewer) fn wrap_ranges_window_indexed(
+pub(crate) fn wrap_ranges_window_indexed(
     line: &str,
     width: usize,
     continuation_indent: usize,
@@ -161,7 +161,7 @@ pub(in crate::viewer) fn wrap_ranges_window_indexed(
     }
 }
 
-pub(in crate::viewer) fn next_wrap_end(
+pub(crate) fn next_wrap_end(
     line: &str,
     start_byte: usize,
     start_char: usize,
@@ -204,7 +204,7 @@ pub(in crate::viewer) fn next_wrap_end(
     best_end.unwrap_or(hard_end)
 }
 
-pub(in crate::viewer) fn next_wrap_end_ascii(
+pub(crate) fn next_wrap_end_ascii(
     bytes: &[u8],
     start_byte: usize,
     start_char: usize,
@@ -230,11 +230,11 @@ pub(in crate::viewer) fn next_wrap_end_ascii(
     (hard_byte, start_char + (hard_byte - start_byte))
 }
 
-pub(in crate::viewer) fn is_ascii_wrap_boundary(byte: u8) -> bool {
+pub(crate) fn is_ascii_wrap_boundary(byte: u8) -> bool {
     byte.is_ascii_whitespace() || matches!(byte, b',' | b'>' | b'}' | b']' | b';')
 }
 
-pub(in crate::viewer) fn continuation_indent(line: &str, width: usize) -> usize {
+pub(crate) fn continuation_indent(line: &str, width: usize) -> usize {
     if width < 8 {
         return 0;
     }
@@ -256,4 +256,29 @@ pub(in crate::viewer) fn continuation_indent(line: &str, width: usize) -> usize 
 
 fn char_display_width(ch: char) -> usize {
     UnicodeWidthChar::width(ch).unwrap_or(1)
+}
+
+pub(crate) fn wrapped_row_count(line: &str, width: usize, continuation_indent: usize) -> usize {
+    if line.is_empty() || width == 0 {
+        return 1;
+    }
+
+    let mut rows = 0_usize;
+    let mut start_byte = 0_usize;
+    let mut start_char = 0_usize;
+    while start_byte < line.len() {
+        let continuation = rows > 0;
+        let indent = if continuation {
+            continuation_indent.min(width.saturating_sub(1))
+        } else {
+            0
+        };
+        let row_width = width.saturating_sub(indent).max(1);
+        let (end_byte, end_char) = next_wrap_end(line, start_byte, start_char, row_width);
+        start_byte = end_byte.max(start_byte + 1).min(line.len());
+        start_char = end_char.max(start_char + 1);
+        rows = rows.saturating_add(1);
+    }
+
+    rows
 }

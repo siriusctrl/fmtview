@@ -4,7 +4,7 @@ use super::{
     checkpoints::HighlightCheckpointIndex,
     util::{highlight_string_segment_window, push_span_window, take_while},
 };
-use crate::viewer::palette::{
+use crate::tui::palette::{
     bool_style, key_style, number_style, plain_style, punctuation_style, string_style,
 };
 

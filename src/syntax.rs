@@ -14,7 +14,7 @@ pub(crate) use xml::highlight_xml_line;
 
 use ratatui::text::Span;
 
-use crate::viewer::palette::plain_style;
+use crate::tui::palette::plain_style;
 use jinja::highlight_jinja_line_window;
 use json::highlight_json_like_window;
 pub(crate) use markdown::MarkdownFenceState;

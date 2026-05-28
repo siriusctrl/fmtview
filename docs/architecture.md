@@ -129,24 +129,50 @@ clamping.
 The implementation mirrors that split:
 
 ```text
-  viewer/input/structure.rs
+  viewer/navigation/structure.rs
     task lifecycle, no-result messages, and ViewState handoff
 
-  viewer/input/structure/scan.rs
+  viewer/navigation/structure/scan.rs
     bounded lazy chunk reads and forward/backward scan progress
 
-  viewer/input/structure/candidate.rs
+  viewer/navigation/structure/candidate.rs
     candidate kind, anchor context, and ranking policy
 
-  viewer/input/structure/visibility.rs
+  viewer/navigation/structure/visibility.rs
     viewport observation rules shared by all formats
 
-  viewer/input/structure/syntax.rs
+  viewer/navigation/structure/syntax.rs
     syntax dispatcher plus shared block helpers
 
-  viewer/input/structure/syntax/*.rs
+  viewer/navigation/structure/syntax/*.rs
     JSON, XML/HTML, Markdown, TOML, Jinja, and plain-text structure rules
 ```
+
+## TTY Module Boundaries
+
+The interactive surface is split by responsibility rather than by every file
+that happens to draw terminal text:
+
+```text
+  viewer.rs
+    raw mode, alternate screen, mouse capture, and dispatch
+
+  tui/
+    reusable terminal primitives: color palette, screen repainting, gutter text,
+    display-width wrapping, and wrap checkpoints
+
+  viewer/
+    normal file viewer: file loop, input/search, structure navigation, sticky
+    breadcrumbs, render caches, viewport positioning, and syntax state
+
+  diff/viewer/
+    interactive diff viewer: diff-specific input, change-block navigation,
+    unified/side-by-side rendering, and lazy diff model preloading
+```
+
+This keeps the normal viewer from owning diff behavior, keeps diff rendering
+near the diff model, and prevents low-level terminal repaint or text wrapping
+from becoming file-viewer-specific code.
 
 ## Load Plans
 

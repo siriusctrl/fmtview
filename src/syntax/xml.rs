@@ -9,7 +9,7 @@ use super::{
         take_while,
     },
 };
-use crate::viewer::palette::{
+use crate::tui::palette::{
     attr_style, error_style, plain_style, punctuation_style, xml_depth_style,
 };
 

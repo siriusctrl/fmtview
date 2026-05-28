@@ -1,14 +1,11 @@
 use ratatui::{style::Style, text::Span};
 
-use super::super::{
-    WRAP_GUTTER_MAJOR_TICK_ROWS, WRAP_GUTTER_MINOR_TICK_ROWS,
-    palette::{gutter_style, plain_style},
-};
+use super::palette::{gutter_style, plain_style};
 
-pub(in crate::viewer) fn line_number_gutter(
-    line_number: usize,
-    gutter_digits: usize,
-) -> Span<'static> {
+const WRAP_GUTTER_MINOR_TICK_ROWS: usize = 8;
+const WRAP_GUTTER_MAJOR_TICK_ROWS: usize = 64;
+
+pub(crate) fn line_number_gutter(line_number: usize, gutter_digits: usize) -> Span<'static> {
     if gutter_digits == 0 {
         return Span::raw("");
     }
@@ -16,10 +13,7 @@ pub(in crate::viewer) fn line_number_gutter(
     Span::styled(format!("{line_number:>gutter_digits$} │ "), gutter_style())
 }
 
-pub(in crate::viewer) fn continuation_gutter(
-    row_index: usize,
-    gutter_digits: usize,
-) -> Span<'static> {
+pub(crate) fn continuation_gutter(row_index: usize, gutter_digits: usize) -> Span<'static> {
     if gutter_digits == 0 {
         return Span::raw("");
     }
@@ -28,7 +22,7 @@ pub(in crate::viewer) fn continuation_gutter(
     Span::styled(format!("{:>gutter_digits$} {marker} ", ""), gutter_style())
 }
 
-pub(in crate::viewer) fn continuation_gutter_marker(row_index: usize) -> char {
+pub(crate) fn continuation_gutter_marker(row_index: usize) -> char {
     if row_index > 0 && row_index % WRAP_GUTTER_MAJOR_TICK_ROWS == 0 {
         '┠'
     } else if row_index > 0 && row_index % WRAP_GUTTER_MINOR_TICK_ROWS == 0 {
@@ -38,7 +32,7 @@ pub(in crate::viewer) fn continuation_gutter_marker(row_index: usize) -> char {
     }
 }
 
-pub(in crate::viewer) fn format_count(value: usize) -> String {
+pub(crate) fn format_count(value: usize) -> String {
     let raw = value.to_string();
     let mut formatted = String::with_capacity(raw.len() + raw.len() / 3);
     let first_group = raw.len() % 3;
@@ -53,11 +47,7 @@ pub(in crate::viewer) fn format_count(value: usize) -> String {
     formatted
 }
 
-pub(in crate::viewer) fn slice_spans(
-    spans: &[Span<'static>],
-    start: usize,
-    end: usize,
-) -> Vec<Span<'static>> {
+pub(crate) fn slice_spans(spans: &[Span<'static>], start: usize, end: usize) -> Vec<Span<'static>> {
     if end <= start {
         return Vec::new();
     }
@@ -85,11 +75,7 @@ pub(in crate::viewer) fn slice_spans(
     sliced
 }
 
-pub(in crate::viewer) fn push_styled_span(
-    spans: &mut Vec<Span<'static>>,
-    text: String,
-    style: Style,
-) {
+pub(crate) fn push_styled_span(spans: &mut Vec<Span<'static>>, text: String, style: Style) {
     let style = if style == plain_style() {
         Style::default()
     } else {
@@ -110,7 +96,7 @@ pub(in crate::viewer) fn push_styled_span(
     spans.push(Span::styled(text, style));
 }
 
-pub(in crate::viewer) fn slice_chars(text: &str, start: usize, end: usize) -> String {
+pub(crate) fn slice_chars(text: &str, start: usize, end: usize) -> String {
     if end <= start {
         return String::new();
     }
@@ -127,7 +113,7 @@ pub(in crate::viewer) fn slice_chars(text: &str, start: usize, end: usize) -> St
     text.chars().skip(start).take(end - start).collect()
 }
 
-pub(in crate::viewer) fn char_count(text: &str) -> usize {
+pub(crate) fn char_count(text: &str) -> usize {
     if text.is_ascii() {
         text.len()
     } else {
@@ -135,7 +121,7 @@ pub(in crate::viewer) fn char_count(text: &str) -> usize {
     }
 }
 
-pub(in crate::viewer) fn byte_index_for_char(line: &str, char_index: usize) -> usize {
+pub(crate) fn byte_index_for_char(line: &str, char_index: usize) -> usize {
     if line.is_ascii() {
         return char_index.min(line.len());
     }

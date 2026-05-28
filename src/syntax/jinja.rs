@@ -7,7 +7,7 @@ use super::{
     util::{push_span_window, take_while},
     xml::highlight_inline_xml_window_indexed,
 };
-use crate::viewer::palette::{key_style, plain_style, punctuation_style, string_style};
+use crate::tui::palette::{key_style, plain_style, punctuation_style, string_style};
 
 pub(crate) fn highlight_jinja_line_window(
     line: &str,

@@ -60,33 +60,41 @@ Code orientation:
   - `lazy_records/` incrementally formats record streams for large TTY diffs.
   - `model/` parses unified patch rows, annotates inline changes, and builds
     the side-by-side row model.
+  - `viewer.rs` and `viewer/` own the interactive diff TTY surface: input,
+    wrapping, change-block navigation, and unified/side-by-side rendering.
+- `src/tui.rs` owns shared terminal UI primitives that are not specific to the
+  normal file viewer:
+  - `screen.rs` handles terminal buffer rendering, ANSI writes, scroll regions,
+    and buffer-delta repainting.
+  - `palette.rs` owns terminal colors used by syntax, viewer, and diff output.
+  - `text.rs` and `wrap.rs` own shared character-counting, gutter text,
+    display-width wrapping, and wrap checkpoint helpers.
 - `src/viewer.rs` owns the shared TTY lifecycle: raw mode, alternate screen,
   mouse capture setup, cleanup, and dispatch to file or diff viewer loops.
 - `src/viewer/` owns viewer submodules:
   - `file.rs` runs the normal file viewer loop and frame composition for
     indexed/lazy file windows.
+  - `file/` contains normal-viewer cache wiring, footer/status text, and
+    layout/sticky-breadcrumb coordination.
   - `breadcrumb.rs` builds compact sticky JSON key breadcrumbs for the viewer.
-  - `diff.rs` handles the interactive diff viewer loop; `diff/` contains its
-    input handling and single-column/side-by-side rendering.
-  - `screen.rs` handles terminal buffer rendering, ANSI writes, and scroll
-    regions. Its buffer-delta drawing is screen repaint logic, not file diff
-    generation.
   - `input/` handles key/mouse state, scrolling, jumps, and search.
-    - `input/structure.rs` owns the `]`/`[` structure-navigation task state and
-      public viewer entry points.
-    - `input/structure/scan.rs` reads bounded chunks and drives forward/backward
-      lazy scans.
-    - `input/structure/candidate.rs` owns structure candidate kinds, anchors,
-      and ranking.
-    - `input/structure/visibility.rs` decides whether a candidate has already
-      been fully observed in the current viewport.
-    - `input/structure/syntax.rs` routes structure detection and block extent
-      logic to per-format modules under `input/structure/syntax/`.
+  - `navigation/` owns higher-level viewer movement semantics after input has
+    been decoded.
+    - `navigation/structure.rs` owns the `]`/`[` structure-navigation task state
+      and public viewer entry points.
+    - `navigation/structure/scan.rs` reads bounded chunks and drives
+      forward/backward lazy scans.
+    - `navigation/structure/candidate.rs` owns structure candidate kinds,
+      anchors, and ranking.
+    - `navigation/structure/visibility.rs` decides whether a candidate has
+      already been fully observed in the current viewport.
+    - `navigation/structure/syntax.rs` routes structure detection and block
+      extent logic to per-format modules under `navigation/structure/syntax/`.
   - `syntax_state.rs` owns viewer-time syntax state that depends on file
     windows, such as Markdown fenced-code line modes.
-  - `render/` handles line windows, wrapping, visual rows, caches, progress,
-    prewarming, and the search highlight overlay.
-  - `palette.rs` owns viewer colors.
+  - `render/` handles normal-viewer line windows, visual rows, caches,
+    progress, prewarming, and the search highlight overlay. Shared text
+    wrapping lives in `src/tui/`.
   - `tests/` keeps white-box viewer regression and performance smoke coverage
     close to private TUI internals, split by input, navigation, search, render,
     screen, cache, syntax, and viewport responsibility. These tests stay under

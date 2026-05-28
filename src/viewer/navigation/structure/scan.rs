@@ -10,7 +10,7 @@ use super::{
     syntax::{first_non_ws_byte, leading_indent, structure_anchor, structure_candidate_kind},
     visibility::{candidate_visibility, should_skip_candidate},
 };
-use crate::viewer::input::search::SearchTarget;
+use crate::viewer::input::SearchTarget;
 
 const STRUCTURE_CHUNK_LINES: usize = 4096;
 const STRUCTURE_PRELOAD_RECORDS: usize = 64;

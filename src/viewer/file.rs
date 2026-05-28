@@ -6,33 +6,45 @@ use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Rect, Size},
-    text::Line,
-};
+use ratatui::backend::CrosstermBackend;
 
 use crate::load::ViewFile;
 use crate::syntax::SyntaxKind;
 
+mod cache;
+mod footer;
+mod layout;
+
+use cache::ViewerCaches;
+use footer::{display_mode_text, idle_footer_text, line_count_text, search_count_suffix};
+use layout::{draw_layout, refresh_sticky_after_position_change, sync_sticky_layout};
+
+#[cfg(test)]
+pub(super) use cache::ViewerCaches as TestViewerCaches;
+#[cfg(test)]
+pub(super) use footer::{
+    display_mode_text as test_display_mode_text, idle_footer_text as test_idle_footer_text,
+    search_count_text as test_search_count_text,
+};
+#[cfg(test)]
+pub(super) use layout::{
+    draw_layout as test_draw_layout, sync_sticky_layout as test_sync_sticky_layout,
+    visible_height_for_sticky as test_visible_height_for_sticky,
+};
+
 use super::{
     EVENT_POLL_INTERVAL, LAZY_PRELOAD_BUDGET, LAZY_PRELOAD_LINES, LAZY_PRELOAD_RECORDS,
     TAIL_ROW_OFFSET, TERMINAL_SCROLL_HINT_MAX_ROWS,
-    breadcrumb::JsonBreadcrumbCache,
-    input::{
-        StructureViewport, ViewState, drain_events, process_search_index_step, process_search_step,
-        process_structure_step,
-    },
-    position::{adjust_state_for_visible_height, resolve_targets_from_view},
+    input::{ViewState, drain_events, process_search_index_step, process_search_step},
+    navigation::{StructureViewport, process_structure_step},
+    position::resolve_targets_from_view,
     render::{
-        LineWindowCache, RenderContext, RenderRequest, RenderedLineCache, TailPositionCache,
-        ViewPosition, ViewportRenderOptions, effective_top_row_offset, exact_top_line_tail_offset,
-        format_count, line_number_digits, prewarm_render_cache, render_row_limit, render_viewport,
-        viewer_progress_percent,
+        RenderRequest, RenderedLineCache, ViewPosition, ViewportRenderOptions,
+        effective_top_row_offset, exact_top_line_tail_offset, prewarm_render_cache,
+        render_row_limit, render_viewport, viewer_progress_percent,
     },
-    screen::{ScrollHint, TerminalFrame, ViewerTerminal},
-    syntax_state::MarkdownSyntaxCache,
 };
+use crate::tui::screen::{ScrollHint, TerminalFrame, ViewerTerminal};
 
 pub(super) fn run_loop(
     terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,
@@ -106,31 +118,6 @@ fn apply_mouse_capture(
             .context("failed to disable mouse capture")?;
     }
     Ok(())
-}
-
-#[derive(Default)]
-pub(super) struct ViewerCaches {
-    pub(super) line: LineWindowCache,
-    render: RenderedLineCache,
-    markdown: MarkdownSyntaxCache,
-    pub(super) tail: TailPositionCache,
-    breadcrumb: JsonBreadcrumbCache,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(super) struct DrawLayout {
-    area: Rect,
-    visible_width: usize,
-    pub(super) base_visible_height: usize,
-    gutter_width: usize,
-    selection_mode: bool,
-    pub(super) context: RenderContext,
-}
-
-pub(super) struct StickyLayout {
-    pub(super) lines: Vec<Line<'static>>,
-    visible_height: usize,
-    tail: Option<ViewPosition>,
 }
 
 fn draw_view(
@@ -367,207 +354,6 @@ fn draw_view(
     Ok(())
 }
 
-pub(super) fn draw_layout(
-    size: Size,
-    file: &dyn ViewFile,
-    state: &ViewState,
-    mode: SyntaxKind,
-) -> DrawLayout {
-    let selection_mode = !state.mouse_capture;
-    let area = Rect::new(0, 0, size.width, size.height);
-    let visible_width = if selection_mode {
-        usize::from(size.width)
-    } else {
-        usize::from(size.width.saturating_sub(2))
-    };
-    let base_visible_height = if selection_mode {
-        usize::from(size.height.saturating_sub(1))
-    } else {
-        usize::from(size.height.saturating_sub(3))
-    };
-    let gutter_digits = if selection_mode {
-        0
-    } else if file.line_count_exact() {
-        line_number_digits(file.line_count())
-    } else {
-        line_number_digits(file.line_count()).max(4)
-    };
-    let gutter_width = if gutter_digits == 0 {
-        0
-    } else {
-        gutter_digits + 3
-    };
-    let content_width = visible_width.saturating_sub(gutter_width);
-
-    DrawLayout {
-        area,
-        visible_width,
-        base_visible_height,
-        gutter_width,
-        selection_mode,
-        context: RenderContext {
-            gutter_digits,
-            x: state.x,
-            width: content_width,
-            wrap: state.wrap,
-            mode,
-        },
-    }
-}
-
-pub(super) fn sync_sticky_layout(
-    file: &dyn ViewFile,
-    mode: SyntaxKind,
-    state: &mut ViewState,
-    breadcrumb: &mut JsonBreadcrumbCache,
-    tail_cache: &mut TailPositionCache,
-    layout: DrawLayout,
-) -> Result<StickyLayout> {
-    let mut lines = Vec::new();
-    let mut visible_height = layout.base_visible_height;
-    let mut tail = None;
-    let preserve_tail = state.preserve_tail_on_next_draw;
-    let preserved_tail_position = preserve_tail.then_some(ViewPosition {
-        top: state.top,
-        row_offset: state.top_row_offset,
-    });
-    state.preserve_tail_on_next_draw = false;
-
-    for _ in 0..3 {
-        tail = adjust_state_for_visible_height(
-            file,
-            state,
-            visible_height,
-            layout.context,
-            tail_cache,
-        )?;
-        if preserve_tail {
-            pin_state_to_tail(state, tail);
-            keep_preserved_tail_position(state, preserved_tail_position);
-        }
-        let next_lines = sticky_lines(
-            mode,
-            breadcrumb,
-            file,
-            state.top,
-            layout.visible_width,
-            layout.gutter_width,
-            layout.base_visible_height,
-        );
-        let next_visible_height =
-            visible_height_for_sticky(layout.base_visible_height, next_lines.len());
-        let stable = next_visible_height == visible_height;
-        lines = next_lines;
-        visible_height = next_visible_height;
-        if stable {
-            break;
-        }
-    }
-
-    Ok(StickyLayout {
-        lines,
-        visible_height,
-        tail,
-    })
-}
-
-fn pin_state_to_tail(state: &mut ViewState, tail: Option<ViewPosition>) {
-    let Some(tail) = tail else {
-        return;
-    };
-    if state.top == tail.top && state.top_row_offset == tail.row_offset {
-        return;
-    }
-
-    state.top = tail.top;
-    state.top_row_offset = tail.row_offset;
-    state.top_max_row_offset = 0;
-    state.wrap_bounds_stale = state.wrap;
-}
-
-fn keep_preserved_tail_position(state: &mut ViewState, position: Option<ViewPosition>) {
-    let Some(position) = position else {
-        return;
-    };
-    // Sticky breadcrumbs can change the computed tail while rendering a status
-    // message; keep an already-tail viewport from moving upward.
-    if state.top > position.top
-        || (state.top == position.top && state.top_row_offset >= position.row_offset)
-    {
-        return;
-    }
-
-    state.top = position.top;
-    state.top_row_offset = position.row_offset;
-    state.top_max_row_offset = 0;
-    state.wrap_bounds_stale = state.wrap;
-}
-
-fn refresh_sticky_after_position_change(
-    file: &dyn ViewFile,
-    mode: SyntaxKind,
-    state: &mut ViewState,
-    breadcrumb: &mut JsonBreadcrumbCache,
-    tail_cache: &mut TailPositionCache,
-    layout: DrawLayout,
-    sticky: &mut StickyLayout,
-) -> Result<bool> {
-    let final_lines = sticky_lines(
-        mode,
-        breadcrumb,
-        file,
-        state.top,
-        layout.visible_width,
-        layout.gutter_width,
-        layout.base_visible_height,
-    );
-    if final_lines.len() == sticky.lines.len() {
-        sticky.lines = final_lines;
-        return Ok(false);
-    }
-
-    sticky.lines = final_lines;
-    sticky.visible_height =
-        visible_height_for_sticky(layout.base_visible_height, sticky.lines.len());
-    sticky.tail = adjust_state_for_visible_height(
-        file,
-        state,
-        sticky.visible_height,
-        layout.context,
-        tail_cache,
-    )?;
-    sticky.lines = sticky_lines(
-        mode,
-        breadcrumb,
-        file,
-        state.top,
-        layout.visible_width,
-        layout.gutter_width,
-        layout.base_visible_height,
-    );
-    Ok(true)
-}
-
-fn sticky_lines(
-    mode: SyntaxKind,
-    breadcrumb: &mut JsonBreadcrumbCache,
-    file: &dyn ViewFile,
-    top: usize,
-    width: usize,
-    gutter_width: usize,
-    base_visible_height: usize,
-) -> Vec<Line<'static>> {
-    if mode == SyntaxKind::Structured {
-        breadcrumb.render(file, top, width, gutter_width, base_visible_height)
-    } else {
-        Vec::new()
-    }
-}
-
-pub(super) fn visible_height_for_sticky(base_visible_height: usize, sticky_rows: usize) -> usize {
-    base_visible_height.saturating_sub(sticky_rows).max(1)
-}
-
 fn active_search_query(state: &ViewState) -> Option<&str> {
     (!state.search_query.is_empty()).then_some(state.search_query.as_str())
 }
@@ -598,78 +384,4 @@ fn known_line_rows(render_cache: &RenderedLineCache, zero_based_line: usize) -> 
         return None;
     }
     u16::try_from(rows).ok()
-}
-
-pub(super) fn idle_footer_text(state: &ViewState) -> String {
-    let wrap_hint = if state.wrap { "w unwrap" } else { "w wrap" };
-    let mouse_hint = if state.mouse_capture {
-        "m select"
-    } else {
-        "m mouse"
-    };
-    let position = wrap_position_text(state)
-        .map(|position| format!("{position} | "))
-        .unwrap_or_default();
-    let search = search_count_text(state)
-        .map(|count| format!("{count} | "))
-        .unwrap_or_default();
-    format!(
-        " {position}{search}{wrap_hint} | {mouse_hint} | / search n/N | ]/[ structure | 123 Enter jump to line | Space/f,b "
-    )
-}
-
-fn search_count_suffix(state: &ViewState) -> String {
-    search_count_text(state)
-        .map(|count| format!(" | {count}"))
-        .unwrap_or_default()
-}
-
-pub(super) fn search_count_text(state: &ViewState) -> Option<String> {
-    let index = state.search_index.as_ref()?;
-    if index.query != state.search_query {
-        return None;
-    }
-
-    let suffix = if index.exact { "" } else { "+" };
-    let matches = state
-        .search_match_ordinal
-        .map(|ordinal| index.matches.max(ordinal))
-        .unwrap_or(index.matches);
-    let noun = if matches == 1 { "match" } else { "matches" };
-    if let Some(ordinal) = state.search_match_ordinal {
-        return Some(format!(
-            "{}/{}{suffix} {noun}",
-            format_count(ordinal),
-            format_count(matches)
-        ));
-    }
-
-    Some(format!("{}{suffix} {noun}", format_count(matches)))
-}
-
-pub(super) fn display_mode_text(state: &ViewState) -> String {
-    if state.wrap {
-        return wrap_position_text(state)
-            .map(|position| format!("wrap {position}"))
-            .unwrap_or_else(|| "wrap".to_owned());
-    }
-
-    format!("nowrap x:{}", state.x)
-}
-
-fn line_count_text(file: &dyn ViewFile) -> String {
-    let count = file.line_count();
-    if file.line_count_exact() {
-        count.to_string()
-    } else {
-        format!("{count}+")
-    }
-}
-
-fn wrap_position_text(state: &ViewState) -> Option<String> {
-    if !state.wrap || state.top_row_offset == 0 {
-        return None;
-    }
-
-    Some(format!("+{} rows", format_count(state.top_row_offset)))
 }

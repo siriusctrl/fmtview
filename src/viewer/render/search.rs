@@ -2,8 +2,8 @@ use std::ops::Range;
 
 use ratatui::text::{Line, Span};
 
-use super::super::palette::search_match_bg;
-use super::text::{char_count, push_styled_span, slice_chars};
+use crate::tui::palette::search_match_bg;
+use crate::tui::text::{char_count, push_styled_span, slice_chars};
 
 pub(in crate::viewer) fn apply_search_highlight(
     line: Line<'static>,

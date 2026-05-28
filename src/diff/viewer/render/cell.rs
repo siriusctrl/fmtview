@@ -3,16 +3,13 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::syntax::{SyntaxKind, highlight_content_window};
-
-use super::super::super::{
-    palette::{gutter_style, plain_style},
-    render::{
-        byte_index_for_char, char_count, continuation_indent, wrap_ranges_window_indexed,
-        wrapped_row_count,
-    },
-};
 use super::styles::{DiffCellStyle, push_diff_span_segments, slice_char_range};
+use crate::syntax::{SyntaxKind, highlight_content_window};
+use crate::tui::{
+    palette::{gutter_style, plain_style},
+    text::{byte_index_for_char, char_count},
+    wrap::{continuation_indent, wrap_ranges_window_indexed, wrapped_row_count},
+};
 
 pub(super) struct NumberedCell<'a> {
     pub(super) number: Option<usize>,

@@ -4,7 +4,7 @@ use super::{
     checkpoints::HighlightCheckpointIndex,
     util::{push_span_window, take_while},
 };
-use crate::viewer::palette::{key_style, plain_style, punctuation_style, string_style};
+use crate::tui::palette::{key_style, plain_style, punctuation_style, string_style};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct MarkdownFenceState {
