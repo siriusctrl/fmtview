@@ -68,6 +68,7 @@ pub(in crate::viewer) fn handle_search_input_key(
 pub(in crate::viewer) fn start_search_prompt(state: &mut ViewState) -> bool {
     state.search_active = true;
     state.search_buffer.clear();
+    state.notice_message = None;
     state.search_message = None;
     state.search_task = None;
     state.search_target = None;
@@ -202,7 +203,8 @@ pub(in crate::viewer) fn cancel_search_task(state: &mut ViewState) -> bool {
 }
 
 pub(in crate::viewer) fn clear_search_message(state: &mut ViewState) -> bool {
-    let was_active = state.search_message.is_some();
+    let was_active = state.search_message.is_some() || state.notice_message.is_some();
+    state.notice_message = None;
     state.search_message = None;
     was_active
 }

@@ -92,10 +92,12 @@ fn run_format(command: FormatCommand) -> Result<()> {
     let resolved_options = profile.format_options(command.indent);
 
     if should_view() {
-        viewer::run(
-            load::open_view_file(&input, &resolved_options, profile)?,
-            profile.content,
-        )
+        let opened = if command.kind == FormatKind::Auto {
+            load::open_view_file_with_fallback(&input, &resolved_options, profile, true)?
+        } else {
+            load::open_view_file(&input, &resolved_options, profile)?
+        };
+        viewer::run(opened.file, opened.content, opened.notice)
     } else {
         let formatted =
             transform::transform_source_to_temp(&input, &resolved_options, profile.transform)?;

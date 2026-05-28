@@ -61,8 +61,12 @@ pub(super) fn run_loop(
     terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,
     file: &dyn ViewFile,
     mode: FormatKind,
+    notice: Option<String>,
 ) -> Result<()> {
-    let mut state = ViewState::default();
+    let mut state = ViewState {
+        notice_message: notice,
+        ..ViewState::default()
+    };
     let mut dirty = true;
     let mut caches = ViewerCaches::default();
 

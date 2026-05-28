@@ -152,6 +152,12 @@ prefix of the content: JSON-looking documents use the JSON formatter, record
 streams use the lazy JSONL path, markup-looking documents use the XML-compatible
 formatter, and otherwise the input falls back to plain-text passthrough.
 
+If an auto-detected structured type cannot be formatted in the interactive
+viewer, `fmtview` falls back to plain-text viewing and shows a footer notice
+instead of closing with a parse error. Use `--type` when you want to force a
+specific profile. Redirected stdout remains strict and reports formatting
+errors instead of silently changing output semantics.
+
 Known extensions still provide a fast, deterministic hint:
 
 - `.json` -> JSON formatting.
@@ -439,6 +445,8 @@ rendered output in memory for browsing.
 This keeps the viewer usable for large files while preserving scriptable stdout
 behavior when you redirect output. Redirected formatting and diff output still
 use the full deterministic formatting path rather than the lazy viewer path.
+The interactive viewer may fall back from failed auto-detected formatting to
+plain-text viewing, but redirected stdout does not.
 
 Maintainers can measure viewer rendering and terminal draw changes with:
 

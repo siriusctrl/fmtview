@@ -13,8 +13,8 @@ use ratatui::backend::CrosstermBackend;
 
 use crate::{load::ViewFile, transform::FormatKind, tui::screen::ViewerTerminal};
 
-pub fn run(file: Box<dyn ViewFile>, mode: FormatKind) -> Result<()> {
-    run_terminal(|terminal| file::run_loop(terminal, file.as_ref(), mode))
+pub fn run(file: Box<dyn ViewFile>, mode: FormatKind, notice: Option<String>) -> Result<()> {
+    run_terminal(|terminal| file::run_loop(terminal, file.as_ref(), mode, notice))
 }
 
 pub(crate) fn run_diff(view: crate::diff::DiffView) -> Result<()> {

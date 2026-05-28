@@ -161,7 +161,9 @@ pub(in crate::viewer) fn handle_key_event_with_count(
         ),
         KeyCode::Enter => false,
         KeyCode::Esc if state.search_task.is_some() => cancel_search_task(state),
-        KeyCode::Esc if state.search_message.is_some() => clear_search_message(state),
+        KeyCode::Esc if state.search_message.is_some() || state.notice_message.is_some() => {
+            clear_search_message(state)
+        }
         KeyCode::Char('q') | KeyCode::Esc => {
             return EventAction {
                 dirty: false,

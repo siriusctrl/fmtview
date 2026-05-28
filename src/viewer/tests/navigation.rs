@@ -86,6 +86,23 @@ fn footer_shows_mouse_restore_hint_when_selection_mode_is_active() {
 }
 
 #[test]
+fn notice_message_appears_in_footer_and_can_be_cleared() {
+    let file = indexed_lines(&["plain text"]);
+    let mut state = ViewState {
+        notice_message: Some("showing plain text; use --type".to_owned()),
+        ..ViewState::default()
+    };
+
+    assert!(file_footer_text(&file, &state).contains("showing plain text"));
+
+    let action = handle_key_event(KeyCode::Esc, KeyModifiers::NONE, &mut state, 1, 10);
+
+    assert!(action.dirty);
+    assert!(!action.quit);
+    assert_eq!(state.notice_message, None);
+}
+
+#[test]
 fn wrap_position_appears_in_mode_and_footer() {
     let state = ViewState {
         top_row_offset: 12_480,

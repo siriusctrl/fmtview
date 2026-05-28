@@ -9,6 +9,6 @@ mod view_file;
 
 pub use indexed::IndexedTempFile;
 pub use lazy_records::LazyTransformedRecordsFile;
-pub use open::open_view_file;
+pub use open::{open_view_file, open_view_file_with_fallback};
 pub use plan::LoadPlan;
 pub use view_file::ViewFile;

@@ -33,7 +33,11 @@ pub(in crate::viewer) fn file_footer_text(file: &dyn ViewFile, state: &ViewState
             state.jump_buffer,
             line_count_text(file)
         )
-    } else if let Some(message) = &state.search_message {
+    } else if let Some(message) = state
+        .search_message
+        .as_ref()
+        .or(state.notice_message.as_ref())
+    {
         format!(
             " {message}{} | / search | n/N | Esc clear ",
             search_count_suffix(state)
