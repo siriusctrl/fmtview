@@ -210,7 +210,7 @@ fn perf_lazy_record_diff_view_open() {
     let model = view.model();
 
     eprintln!(
-        "lazy record diff view open: {elapsed:?}, rows={} changes={} bytes={bytes}",
+        "record stream diff view open: {elapsed:?}, rows={} changes={} bytes={bytes}",
         model.row_count(DiffLayout::Unified),
         model.changed_rows(DiffLayout::Unified).len(),
     );

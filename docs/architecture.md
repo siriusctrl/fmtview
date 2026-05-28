@@ -280,7 +280,7 @@ Consumers stay separate:
   load::lazy_records
     formatted record bytes -> LazyBatch -> LazyFile spool/index -> ViewFile
 
-  diff::lazy_records
+  diff::record_stream
     left/right formatted record lines -> resync/context rules -> DiffModel
 ```
 

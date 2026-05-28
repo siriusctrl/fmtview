@@ -12,19 +12,12 @@ use crate::{
     transform::FormatOptions,
 };
 
-use super::{DiffModel, UnifiedDiffRow};
-
-mod rows;
-
-use rows::{
-    FormattedContextRecord, append_context_record, append_context_records, append_omitted_context,
-    find_sync_record, full_line_change, scanning_message, scanning_model,
-};
+use super::{DiffChange, DiffModel, UnifiedDiffRow};
 
 const CONTEXT_RECORDS: usize = 3;
 const RESYNC_LOOKAHEAD_RECORDS: usize = 32;
 
-pub(crate) struct LazyRecordDiff {
+pub(crate) struct RecordStreamDiff {
     left_label: String,
     right_label: String,
     left: FormattedRecordReader,
@@ -40,7 +33,7 @@ pub(crate) struct LazyRecordDiff {
     complete: bool,
 }
 
-impl LazyRecordDiff {
+impl RecordStreamDiff {
     pub(crate) fn new(
         left: &InputSource,
         right: &InputSource,
@@ -262,4 +255,85 @@ impl LazyRecordDiff {
             DiffModel::from_rows(self.left_label.clone(), self.right_label.clone(), rows)
         };
     }
+}
+
+#[derive(Clone)]
+struct FormattedContextRecord {
+    left_start: usize,
+    right_start: usize,
+    lines: Vec<String>,
+}
+
+fn append_context_record(rows: &mut Vec<UnifiedDiffRow>, record: FormattedContextRecord) {
+    for (offset, line) in record.lines.into_iter().enumerate() {
+        rows.push(UnifiedDiffRow::Context {
+            left: record.left_start + offset,
+            right: record.right_start + offset,
+            content: Arc::from(line),
+        });
+    }
+}
+
+fn append_context_records(
+    rows: &mut Vec<UnifiedDiffRow>,
+    records: impl IntoIterator<Item = FormattedContextRecord>,
+) {
+    for record in records {
+        append_context_record(rows, record);
+    }
+}
+
+fn append_omitted_context(rows: &mut Vec<UnifiedDiffRow>, count: usize) {
+    if count == 0 {
+        return;
+    }
+
+    rows.push(UnifiedDiffRow::Message {
+        text: format!("... {count} unchanged records omitted ..."),
+    });
+}
+
+fn scanning_model(left_label: &str, right_label: &str, records_read: usize) -> DiffModel {
+    DiffModel::from_rows(
+        left_label.to_owned(),
+        right_label.to_owned(),
+        vec![UnifiedDiffRow::Message {
+            text: scanning_message(records_read),
+        }],
+    )
+}
+
+fn scanning_message(records_read: usize) -> String {
+    if records_read == 0 {
+        "Scanning record diff...".to_owned()
+    } else {
+        format!("Scanning record diff... {records_read} records")
+    }
+}
+
+fn find_sync_record(left: &[FormattedRecord], right: &[FormattedRecord]) -> Option<(usize, usize)> {
+    let mut best = None;
+    for (left_index, left_record) in left.iter().enumerate() {
+        for (right_index, right_record) in right.iter().enumerate() {
+            if left_index == 0 && right_index == 0 {
+                continue;
+            }
+            if left_record != right_record {
+                continue;
+            }
+            let distance = left_index + right_index;
+            let replace = best
+                .map(|(best_left, best_right)| distance < best_left + best_right)
+                .unwrap_or(true);
+            if replace {
+                best = Some((left_index, right_index));
+            }
+        }
+    }
+    best
+}
+
+fn full_line_change<'a>(lines: impl Iterator<Item = &'a str>) -> DiffChange {
+    let end = lines.map(|line| line.chars().count()).max().unwrap_or(0);
+    DiffChange::full_line(end)
 }

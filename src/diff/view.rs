@@ -3,13 +3,13 @@ use anyhow::Result;
 use crate::{input::InputSource, load::LoadPlan, profile::TypeProfile, transform::FormatOptions};
 
 use super::{
-    DiffModel, LazyRecordDiff,
+    DiffModel, RecordStreamDiff,
     external::{format_diff_inputs, run_external_diff_view_model},
 };
 
 pub(crate) enum DiffView {
     Eager(DiffModel),
-    Lazy(Box<LazyRecordDiff>),
+    Lazy(Box<RecordStreamDiff>),
 }
 
 impl DiffView {
@@ -45,7 +45,7 @@ pub(crate) fn diff_view(
     options: &FormatOptions,
 ) -> Result<DiffView> {
     if should_use_lazy_record_diff(left, right, options)? {
-        return Ok(DiffView::Lazy(Box::new(LazyRecordDiff::new(
+        return Ok(DiffView::Lazy(Box::new(RecordStreamDiff::new(
             left, right, *options,
         )?)));
     }

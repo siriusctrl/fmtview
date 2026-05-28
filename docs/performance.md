@@ -190,7 +190,7 @@ Diff metrics:
 - `diff model build` measures parsing unified patch text into the structured
   row model used by the TTY diff viewer, including shared row storage,
   side-by-side indexes, changed-row indexes, and eager inline-diff budgeting.
-- `lazy record diff view open` measures the TTY diff open path for two
+- `record stream diff view open` measures the TTY diff open path for two
   different large record-stream inputs, including the first bounded lazy scan.
 - `interactive diff view render` measures repeated visible-window rendering for
   both single-column and side-by-side diff layouts without terminal write noise.

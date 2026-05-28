@@ -60,7 +60,7 @@ Code orientation:
   - `external.rs` formats both sides and shells out to the platform diff tool.
   - `stdout.rs` keeps redirected diff output on the unified patch path.
   - `view.rs` selects the eager or lazy TTY diff model.
-  - `lazy_records/` incrementally formats record streams for large TTY diffs.
+  - `record_stream.rs` incrementally formats record streams for large TTY diffs.
     It consumes `load::record_stream` readers and owns only two-sided
     comparison, resynchronization, context omission, and diff row generation.
   - `model/` parses unified patch rows, annotates inline changes, and builds
