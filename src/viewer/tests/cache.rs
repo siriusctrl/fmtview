@@ -9,7 +9,7 @@ fn rendered_line_cache_reuses_until_context_changes() {
             x: 0,
             width: 3,
             wrap: false,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: 8,
     };
@@ -48,7 +48,7 @@ fn wrapped_render_cache_reuses_adjacent_rows_from_chunk() {
             x: 0,
             width: 4,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: 8,
     };
@@ -72,7 +72,7 @@ fn wrapped_render_cache_records_deep_checkpoints() {
             x: 0,
             width: 16,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: 8,
     };
@@ -108,7 +108,7 @@ fn wrapped_deep_window_keeps_embedded_xml_pair_colors() {
             x: 0,
             width: 12,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: 8,
     };
@@ -146,7 +146,7 @@ fn wrapped_deep_window_keeps_prefix_xml_state_for_visible_close_tag() {
             x: 0,
             width: 12,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: 8,
     };

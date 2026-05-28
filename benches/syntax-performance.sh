@@ -7,10 +7,10 @@ usage() {
   cat <<'USAGE'
 Usage: benches/syntax-performance.sh [--samples N]
 
-Runs fmtview syntax-layer performance smoke tests in release mode and prints
+Runs fmtview format-highlight performance smoke tests in release mode and prints
 per-sample timings plus median/min/max summaries.
 
-Use this before and after highlighter, syntax checkpoint, or visible-window
+Use this before and after highlighter, format checkpoint, or visible-window
 span generation changes.
 USAGE
 }
@@ -47,13 +47,13 @@ run_test() {
   local output line
 
   output="$(
-    cargo test --release perf_syntax_highlight_window -- \
+    cargo test --release perf_format_highlight_window -- \
       --ignored --nocapture --test-threads=1 2>&1
   )"
-  line="$(printf '%s\n' "$output" | grep -E "syntax highlight window" | tail -n 1 || true)"
+  line="$(printf '%s\n' "$output" | grep -E "format highlight window" | tail -n 1 || true)"
   if [[ -z "$line" ]]; then
     printf '%s\n' "$output" >&2
-    echo "failed to parse benchmark output for perf_syntax_highlight_window" >&2
+    echo "failed to parse benchmark output for perf_format_highlight_window" >&2
     exit 1
   fi
   printf '%s\n' "$line"
@@ -97,12 +97,12 @@ summarize() {
   ' "$sorted"
 }
 
-result_file="$tmpdir/syntax.tsv"
+result_file="$tmpdir/format-highlight.tsv"
 
-echo "fmtview syntax performance smoke"
+echo "fmtview format-highlight performance smoke"
 echo "samples: $samples"
 echo
-echo "== syntax highlight window =="
+echo "== format highlight window =="
 for sample in $(seq 1 "$samples"); do
   line="$(run_test)"
   ms="$(printf '%s\n' "$line" | duration_ms)"

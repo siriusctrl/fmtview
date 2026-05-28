@@ -6,105 +6,19 @@ use std::{
 use anyhow::{Context, Result};
 
 use crate::{
+    formats::{self, ContentShape, FORMAT_SPECS, FormatSpec},
     input::InputSource,
-    load::LoadPlan,
-    syntax::SyntaxKind,
     transform::{self, FormatKind, FormatOptions, TransformStrategy},
 };
 
 const SNIFF_BYTES: usize = 1024 * 1024;
 const SNIFF_LINES: usize = 16;
-const JSON_EXTENSIONS: &[&str] = &["json"];
-const JSONL_EXTENSIONS: &[&str] = &["jsonl", "ndjson"];
-const XML_EXTENSIONS: &[&str] = &["xml", "html", "htm", "xhtml"];
-const TOML_EXTENSIONS: &[&str] = &["toml"];
-const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown", "mdown", "mkd"];
-const PLAIN_EXTENSIONS: &[&str] = &["txt", "text", "log"];
-const JINJA_EXTENSIONS: &[&str] = &["j2", "jinja", "jinja2"];
-
-const FORMAT_SPECS: &[FormatSpec] = &[
-    FormatSpec {
-        kind: FormatKind::Json,
-        extensions: JSON_EXTENSIONS,
-        shape: ContentShape::WholeDocument,
-        load: LoadPlan::EagerTransformedDocument,
-        transform: TransformStrategy::PrettyPrint,
-        syntax: SyntaxKind::Structured,
-    },
-    FormatSpec {
-        kind: FormatKind::Jsonl,
-        extensions: JSONL_EXTENSIONS,
-        shape: ContentShape::RecordStream,
-        load: LoadPlan::LazyTransformedRecords,
-        transform: TransformStrategy::RecordPrettyPrint,
-        syntax: SyntaxKind::Structured,
-    },
-    FormatSpec {
-        kind: FormatKind::Xml,
-        extensions: XML_EXTENSIONS,
-        shape: ContentShape::WholeDocument,
-        load: LoadPlan::EagerTransformedDocument,
-        transform: TransformStrategy::PrettyPrint,
-        syntax: SyntaxKind::Structured,
-    },
-    FormatSpec {
-        kind: FormatKind::Toml,
-        extensions: TOML_EXTENSIONS,
-        shape: ContentShape::LineIndexed,
-        load: LoadPlan::EagerIndexedSource,
-        transform: TransformStrategy::Passthrough,
-        syntax: SyntaxKind::Toml,
-    },
-    FormatSpec {
-        kind: FormatKind::Markdown,
-        extensions: MARKDOWN_EXTENSIONS,
-        shape: ContentShape::LineIndexed,
-        load: LoadPlan::EagerIndexedSource,
-        transform: TransformStrategy::Passthrough,
-        syntax: SyntaxKind::Markdown,
-    },
-    FormatSpec {
-        kind: FormatKind::Plain,
-        extensions: PLAIN_EXTENSIONS,
-        shape: ContentShape::LineIndexed,
-        load: LoadPlan::EagerIndexedSource,
-        transform: TransformStrategy::Passthrough,
-        syntax: SyntaxKind::Plain,
-    },
-    FormatSpec {
-        kind: FormatKind::Jinja,
-        extensions: JINJA_EXTENSIONS,
-        shape: ContentShape::LineIndexed,
-        load: LoadPlan::EagerIndexedSource,
-        transform: TransformStrategy::Passthrough,
-        syntax: SyntaxKind::Jinja,
-    },
-];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TypeProfile {
     pub(crate) content: FormatKind,
     pub(crate) shape: ContentShape,
-    pub(crate) load: LoadPlan,
+    pub(crate) load: crate::load::LoadPlan,
     pub(crate) transform: TransformStrategy,
-    pub(crate) syntax: SyntaxKind,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ContentShape {
-    LineIndexed,
-    RecordStream,
-    WholeDocument,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct FormatSpec {
-    kind: FormatKind,
-    extensions: &'static [&'static str],
-    shape: ContentShape,
-    load: LoadPlan,
-    transform: TransformStrategy,
-    syntax: SyntaxKind,
 }
 
 impl FormatSpec {
@@ -114,7 +28,6 @@ impl FormatSpec {
             shape: self.shape,
             load: self.load,
             transform: self.transform,
-            syntax: self.syntax,
         }
     }
 }
@@ -164,10 +77,7 @@ fn extension_kind(source: &InputSource) -> Option<FormatKind> {
         .extension()
         .and_then(OsStr::to_str)
         .map(str::to_ascii_lowercase)?;
-    FORMAT_SPECS
-        .iter()
-        .find(|spec| spec.extensions.contains(&extension.as_str()))
-        .map(|spec| spec.kind)
+    formats::kind_for_extension(&extension)
 }
 
 #[derive(Default)]
@@ -261,6 +171,7 @@ fn trim_ascii_ws(mut bytes: &[u8]) -> &[u8] {
 mod tests {
     use std::io::Write;
 
+    use crate::load::LoadPlan;
     use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 
     use super::*;
@@ -297,7 +208,6 @@ mod tests {
         assert_eq!(profile.shape, ContentShape::LineIndexed);
         assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
         assert_eq!(profile.transform, TransformStrategy::Passthrough);
-        assert_eq!(profile.syntax, SyntaxKind::Plain);
     }
 
     #[test]
@@ -316,7 +226,6 @@ mod tests {
         assert_eq!(profile.shape, ContentShape::LineIndexed);
         assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
         assert_eq!(profile.transform, TransformStrategy::Passthrough);
-        assert_eq!(profile.syntax, SyntaxKind::Jinja);
     }
 
     #[test]
@@ -335,7 +244,6 @@ mod tests {
         assert_eq!(profile.shape, ContentShape::LineIndexed);
         assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
         assert_eq!(profile.transform, TransformStrategy::Passthrough);
-        assert_eq!(profile.syntax, SyntaxKind::Toml);
     }
 
     #[test]
@@ -354,7 +262,6 @@ mod tests {
         assert_eq!(profile.shape, ContentShape::LineIndexed);
         assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
         assert_eq!(profile.transform, TransformStrategy::Passthrough);
-        assert_eq!(profile.syntax, SyntaxKind::Markdown);
     }
 
     #[test]
@@ -373,7 +280,6 @@ mod tests {
         assert_eq!(profile.shape, ContentShape::LineIndexed);
         assert_eq!(profile.load, LoadPlan::EagerIndexedSource);
         assert_eq!(profile.transform, TransformStrategy::Passthrough);
-        assert_eq!(profile.syntax, SyntaxKind::Plain);
     }
 
     #[test]
@@ -392,7 +298,6 @@ mod tests {
         assert_eq!(profile.shape, ContentShape::RecordStream);
         assert_eq!(profile.load, LoadPlan::LazyTransformedRecords);
         assert_eq!(profile.transform, TransformStrategy::RecordPrettyPrint);
-        assert_eq!(profile.syntax, SyntaxKind::Structured);
     }
 
     #[test]
@@ -405,53 +310,46 @@ mod tests {
                 ContentShape::RecordStream,
                 LoadPlan::LazyTransformedRecords,
                 TransformStrategy::RecordPrettyPrint,
-                SyntaxKind::Structured,
             ),
             (
                 FormatKind::Json,
                 ContentShape::WholeDocument,
                 LoadPlan::EagerTransformedDocument,
                 TransformStrategy::PrettyPrint,
-                SyntaxKind::Structured,
             ),
             (
                 FormatKind::Xml,
                 ContentShape::WholeDocument,
                 LoadPlan::EagerTransformedDocument,
                 TransformStrategy::PrettyPrint,
-                SyntaxKind::Structured,
             ),
             (
                 FormatKind::Toml,
                 ContentShape::LineIndexed,
                 LoadPlan::EagerIndexedSource,
                 TransformStrategy::Passthrough,
-                SyntaxKind::Toml,
             ),
             (
                 FormatKind::Markdown,
                 ContentShape::LineIndexed,
                 LoadPlan::EagerIndexedSource,
                 TransformStrategy::Passthrough,
-                SyntaxKind::Markdown,
             ),
             (
                 FormatKind::Plain,
                 ContentShape::LineIndexed,
                 LoadPlan::EagerIndexedSource,
                 TransformStrategy::Passthrough,
-                SyntaxKind::Plain,
             ),
             (
                 FormatKind::Jinja,
                 ContentShape::LineIndexed,
                 LoadPlan::EagerIndexedSource,
                 TransformStrategy::Passthrough,
-                SyntaxKind::Jinja,
             ),
         ];
 
-        for (kind, shape, load, transform, syntax) in cases {
+        for (kind, shape, load, transform) in cases {
             let profile =
                 TypeProfile::resolve(&source, &FormatOptions { kind, indent: 2 }).unwrap();
 
@@ -459,7 +357,6 @@ mod tests {
             assert_eq!(profile.shape, shape);
             assert_eq!(profile.load, load);
             assert_eq!(profile.transform, transform);
-            assert_eq!(profile.syntax, syntax);
         }
     }
 

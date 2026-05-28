@@ -2,9 +2,9 @@ use std::ops::Range;
 
 use ratatui::text::Span;
 
-use super::{
-    checkpoints::HighlightCheckpointIndex,
-    util::{
+use crate::formats::{
+    HighlightCheckpointIndex,
+    shared::{
         escaped_quoted_end, highlight_string_segment_window, push_span_window, quoted_end,
         take_while,
     },

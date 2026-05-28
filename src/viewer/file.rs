@@ -9,7 +9,7 @@ use crossterm::{
 use ratatui::backend::CrosstermBackend;
 
 use crate::load::ViewFile;
-use crate::syntax::SyntaxKind;
+use crate::transform::FormatKind;
 
 mod cache;
 mod footer;
@@ -49,7 +49,7 @@ use crate::tui::screen::{ScrollHint, TerminalFrame, ViewerTerminal};
 pub(super) fn run_loop(
     terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,
     file: &dyn ViewFile,
-    mode: SyntaxKind,
+    mode: FormatKind,
 ) -> Result<()> {
     let mut state = ViewState::default();
     let mut dirty = true;
@@ -123,7 +123,7 @@ fn apply_mouse_capture(
 fn draw_view(
     terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,
     file: &dyn ViewFile,
-    mode: SyntaxKind,
+    mode: FormatKind,
     state: &mut ViewState,
     caches: &mut ViewerCaches,
 ) -> Result<()> {

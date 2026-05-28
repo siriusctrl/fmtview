@@ -4,7 +4,7 @@ Fast CLI viewing, highlighting, search, and diffing for JSON, JSONL,
 XML-compatible markup, Markdown, TOML, plain text, and Jinja templates.
 
 `fmtview` is built for the workflow where you want to inspect data quickly in a
-terminal: open large files without waiting for a full render, keep syntax
+terminal: open large files without waiting for a full render, keep format
 highlighting useful, search the visible text, and diff formatted or passthrough
 inputs without leaving the CLI.
 
@@ -62,8 +62,8 @@ embedded markup, wrapped records, or formatted diffs.
   reading the visible window.
 
 The design is viewer-first rather than extension-first. Each input resolves to
-a profile that chooses the load, transform, syntax, and diff behavior needed for
-the current use case:
+a profile that chooses the shared runtime strategy and the format package needed
+for the current use case:
 
 ```text
   Use case + input type
@@ -75,7 +75,7 @@ the current use case:
   | - input shape    |
   | - load strategy  |
   | - transform plan |
-  | - syntax engine  |
+  | - format package |
   +---------+--------+
             |
             v
@@ -146,8 +146,8 @@ curl -s https://example.com/payload.json | fmtview --type json
 ## Type Detection
 
 `fmtview` resolves every input to a type profile: content kind, input shape,
-load strategy, transform strategy, and syntax highlighter. File extensions are
-only one signal. When the extension is unknown, `fmtview` sniffs a bounded
+load strategy, transform strategy, and format package. File extensions are only
+one signal. When the extension is unknown, `fmtview` sniffs a bounded
 prefix of the content: JSON-looking documents use the JSON formatter, record
 streams use the lazy JSONL path, markup-looking documents use the XML-compatible
 formatter, and otherwise the input falls back to plain-text passthrough.
@@ -211,7 +211,7 @@ pretty-printed with structural indentation. Deeply nested records expand across
 multiple output lines.
 Markdown, TOML, plain text, and Jinja inputs are passthrough types: redirected
 stdout preserves the input content instead of formatting it, while the TTY
-viewer still provides scrolling, wrapping, search, and syntax highlighting where
+viewer still provides scrolling, wrapping, search, and format highlighting where
 available.
 
 Diff after applying each input's profile:
@@ -357,7 +357,7 @@ To search, press `/`, type a substring, and press Enter. Search is
 case-sensitive and runs over the visible text you are viewing. `fmtview` jumps
 to the next matching line, then `n` and `N` repeat the search forward and
 backward with wrap-around. Matches visible in the current viewport are
-highlighted with a warm background without replacing JSON or markup syntax
+highlighted with a warm background without replacing JSON or markup colors
 colors. The footer shows the current match ordinal and total from the session
 search index, such as `2/8 matches`. A `+` suffix means the count is still
 growing as lazy line indexing or background match counting advances. If a match

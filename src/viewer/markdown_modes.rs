@@ -1,33 +1,32 @@
 use anyhow::Result;
 
 use crate::{
-    load::ViewFile,
-    syntax::{MarkdownFenceState, SyntaxKind},
+    formats::markdown::highlight::MarkdownFenceState, load::ViewFile, transform::FormatKind,
 };
 
-const MARKDOWN_SYNTAX_CHECKPOINT_INTERVAL_LINES: usize = 512;
-const MARKDOWN_SYNTAX_SCAN_CHUNK_LINES: usize = 512;
+const MARKDOWN_MODE_CHECKPOINT_INTERVAL_LINES: usize = 512;
+const MARKDOWN_MODE_SCAN_CHUNK_LINES: usize = 512;
 
 #[derive(Debug, Default)]
-pub(in crate::viewer) struct MarkdownSyntaxCache {
-    checkpoints: Vec<MarkdownSyntaxCheckpoint>,
+pub(in crate::viewer) struct MarkdownModeCache {
+    checkpoints: Vec<MarkdownModeCheckpoint>,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct MarkdownSyntaxCheckpoint {
+struct MarkdownModeCheckpoint {
     line: usize,
     state: MarkdownFenceState,
 }
 
-impl MarkdownSyntaxCache {
+impl MarkdownModeCache {
     pub(in crate::viewer) fn line_modes(
         &mut self,
         file: &dyn ViewFile,
         start: usize,
         lines: &[String],
-        mode: SyntaxKind,
-    ) -> Result<Option<Vec<SyntaxKind>>> {
-        if mode != SyntaxKind::Markdown || lines.is_empty() {
+        mode: FormatKind,
+    ) -> Result<Option<Vec<FormatKind>>> {
+        if mode != FormatKind::Markdown || lines.is_empty() {
             return Ok(None);
         }
 
@@ -35,7 +34,7 @@ impl MarkdownSyntaxCache {
         let modes = lines
             .iter()
             .map(|line| {
-                let line_mode = state.line_syntax(line);
+                let line_mode = state.line_format(line);
                 state.advance(line);
                 line_mode
             })
@@ -54,7 +53,7 @@ impl MarkdownSyntaxCache {
         while line < target {
             let count = target
                 .saturating_sub(line)
-                .min(MARKDOWN_SYNTAX_SCAN_CHUNK_LINES);
+                .min(MARKDOWN_MODE_SCAN_CHUNK_LINES);
             let lines = file.read_window(line, count)?;
             if lines.is_empty() {
                 break;
@@ -78,7 +77,7 @@ impl MarkdownSyntaxCache {
         Ok(state)
     }
 
-    fn checkpoint_before(&self, target: usize) -> Option<MarkdownSyntaxCheckpoint> {
+    fn checkpoint_before(&self, target: usize) -> Option<MarkdownModeCheckpoint> {
         self.checkpoints
             .iter()
             .rev()
@@ -87,7 +86,7 @@ impl MarkdownSyntaxCache {
     }
 
     fn remember_interval_checkpoint(&mut self, line: usize, state: MarkdownFenceState) {
-        if line % MARKDOWN_SYNTAX_CHECKPOINT_INTERVAL_LINES != 0 {
+        if line % MARKDOWN_MODE_CHECKPOINT_INTERVAL_LINES != 0 {
             return;
         }
 
@@ -98,7 +97,7 @@ impl MarkdownSyntaxCache {
             Ok(position) => self.checkpoints[position].state = state,
             Err(position) => self
                 .checkpoints
-                .insert(position, MarkdownSyntaxCheckpoint { line, state }),
+                .insert(position, MarkdownModeCheckpoint { line, state }),
         }
     }
 

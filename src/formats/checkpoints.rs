@@ -1,4 +1,4 @@
-use super::xml::XmlPairState;
+use super::xml::highlight::XmlPairState;
 
 const HIGHLIGHT_CHECKPOINT_INTERVAL_BYTES: usize = 32 * 1024;
 

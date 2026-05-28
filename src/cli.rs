@@ -94,7 +94,7 @@ fn run_format(command: FormatCommand) -> Result<()> {
     if should_view() {
         viewer::run(
             open_view_file(&input, &resolved_options, profile)?,
-            profile.syntax,
+            profile.content,
         )
     } else {
         let formatted =

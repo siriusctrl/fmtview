@@ -1,6 +1,6 @@
 use ratatui::text::Line;
 
-use crate::{syntax::SyntaxKind, tui::screen::ScrollPosition};
+use crate::{transform::FormatKind, tui::screen::ScrollPosition};
 
 pub(in crate::viewer) type ViewPosition = ScrollPosition;
 
@@ -16,7 +16,7 @@ pub(in crate::viewer) struct RenderContext {
     pub(in crate::viewer) x: usize,
     pub(in crate::viewer) width: usize,
     pub(in crate::viewer) wrap: bool,
-    pub(in crate::viewer) mode: SyntaxKind,
+    pub(in crate::viewer) mode: FormatKind,
 }
 
 #[derive(Debug)]

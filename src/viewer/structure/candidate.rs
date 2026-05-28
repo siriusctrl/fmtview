@@ -1,39 +1,8 @@
-use crate::syntax::SyntaxKind;
-
-use crate::viewer::input::SearchTarget;
-
-const JSON_VISIBLE_COMPOSITE_LANDMARK_LINES: usize = 5;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum StructureCandidateKind {
-    JsonRecordStart,
-    JsonArrayItemStart,
-    JsonCompositeField,
-    JsonRootStart,
-    XmlStartTag,
-    MarkdownHeading,
-    TomlTable,
-    JinjaBlock,
-    PlainParagraph,
-}
-
-impl StructureCandidateKind {
-    pub(super) fn is_landmark_when_visible(self, line_span: Option<usize>) -> bool {
-        match self {
-            StructureCandidateKind::JsonRecordStart
-            | StructureCandidateKind::JsonArrayItemStart
-            | StructureCandidateKind::JsonRootStart
-            | StructureCandidateKind::MarkdownHeading
-            | StructureCandidateKind::TomlTable
-            | StructureCandidateKind::JinjaBlock
-            | StructureCandidateKind::PlainParagraph => true,
-            StructureCandidateKind::XmlStartTag => line_span.is_none_or(|span| span > 1),
-            StructureCandidateKind::JsonCompositeField => {
-                line_span.is_some_and(|span| span >= JSON_VISIBLE_COMPOSITE_LANDMARK_LINES)
-            }
-        }
-    }
-}
+use crate::{
+    formats::{StructureAnchor, StructureCandidateKind},
+    transform::FormatKind,
+    viewer::input::SearchTarget,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct StructureCandidate {
@@ -52,33 +21,26 @@ impl StructureCandidate {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct StructureAnchor {
-    pub(super) line: usize,
-    pub(super) kind: Option<StructureCandidateKind>,
-    pub(super) indent: usize,
-}
-
 pub(super) fn select_structure_candidate(
     candidates: &[StructureCandidate],
-    syntax: SyntaxKind,
+    format: FormatKind,
     anchor: Option<StructureAnchor>,
 ) -> Option<StructureCandidate> {
     candidates
         .iter()
         .copied()
-        .min_by_key(|candidate| structure_candidate_rank(*candidate, syntax, anchor))
+        .min_by_key(|candidate| structure_candidate_rank(*candidate, format, anchor))
 }
 
 fn structure_candidate_rank(
     candidate: StructureCandidate,
-    syntax: SyntaxKind,
+    format: FormatKind,
     anchor: Option<StructureAnchor>,
 ) -> (usize, usize, usize) {
     let distance = anchor
         .map(|anchor| anchor.line.abs_diff(candidate.line))
         .unwrap_or(candidate.line);
-    if syntax != SyntaxKind::Structured {
+    if !matches!(format, FormatKind::Json | FormatKind::Jsonl) {
         return (0, distance, 0);
     }
 

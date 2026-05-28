@@ -23,7 +23,7 @@ fn structure_navigation_lands_on_visible_markdown_headings() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Markdown).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Markdown).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -56,7 +56,7 @@ fn structure_navigation_lands_on_visible_jinja_blocks() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Jinja).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Jinja).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -80,7 +80,7 @@ fn structure_navigation_finds_previous_block() {
         file.line_count_exact(),
         StructureDirection::Backward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Markdown).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Markdown).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -101,6 +101,6 @@ fn structure_navigation_reports_missing_block() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Markdown).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Markdown).unwrap());
     assert_eq!(state.search_message.as_deref(), Some("no next structure"));
 }

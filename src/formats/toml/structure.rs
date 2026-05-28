@@ -1,6 +1,6 @@
-use super::{following_lines, max_boundary_offset};
+use crate::formats::shared::{following_lines, max_boundary_offset};
 
-pub(super) fn block_end(
+pub(crate) fn block_end(
     lines: &[String],
     read_start: usize,
     start_offset: usize,
@@ -8,13 +8,14 @@ pub(super) fn block_end(
 ) -> Option<usize> {
     let max_offset = max_boundary_offset(lines, read_start, viewport_bottom)?;
     for (offset, line) in following_lines(lines, start_offset, max_offset) {
-        if line.trim().is_empty() {
+        if is_table(line) {
             return Some(read_start + offset.saturating_sub(1));
         }
     }
     None
 }
 
-pub(super) fn is_paragraph_start(line: &str, previous_line: Option<&str>) -> bool {
-    !line.trim().is_empty() && previous_line.is_none_or(|previous| previous.trim().is_empty())
+pub(crate) fn is_table(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('[') && trimmed.contains(']') && !trimmed.starts_with("[]")
 }

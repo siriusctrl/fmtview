@@ -20,15 +20,16 @@ use super::render::*;
 use super::structure::*;
 use super::*;
 use crate::{
+    formats::{highlight_json_like, highlight_xml_line},
     input::InputSource,
     load::LazyTransformedRecordsFile,
-    syntax::{SyntaxKind, highlight_json_like, highlight_xml_line},
     transform::{FormatKind, FormatOptions},
 };
 
 // Correctness tests run by default and should avoid wall-clock assertions.
 
 mod cache;
+mod format_highlight;
 mod input;
 mod navigation;
 mod perf;
@@ -36,7 +37,6 @@ mod render;
 mod screen;
 mod search;
 mod structure;
-mod syntax;
 mod viewport;
 
 fn span_text(spans: &[Span<'static>]) -> String {

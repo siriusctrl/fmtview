@@ -9,7 +9,7 @@ fn viewport_can_start_inside_wrapped_logical_line() {
             x: 0,
             width: 4,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: 8,
     };
@@ -51,7 +51,7 @@ fn viewport_reports_actual_last_logical_line() {
             x: 0,
             width: 4,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: 8,
     };
@@ -79,18 +79,14 @@ fn markdown_viewport_reuses_inner_code_highlighter() {
         r#"{"ok": true}"#.to_owned(),
         "```".to_owned(),
     ];
-    let line_modes = vec![
-        SyntaxKind::Markdown,
-        SyntaxKind::Structured,
-        SyntaxKind::Markdown,
-    ];
+    let line_modes = vec![FormatKind::Markdown, FormatKind::Json, FormatKind::Markdown];
     let request = RenderRequest {
         context: RenderContext {
             gutter_digits: 1,
             x: 0,
             width: 80,
             wrap: false,
-            mode: SyntaxKind::Markdown,
+            mode: FormatKind::Markdown,
         },
         row_limit: 8,
     };
@@ -121,7 +117,7 @@ fn markdown_viewport_reuses_inner_code_highlighter() {
 }
 
 #[test]
-fn markdown_syntax_cache_resolves_fence_state_before_window() {
+fn markdown_mode_cache_resolves_fence_state_before_window() {
     let mut temp = NamedTempFile::new().unwrap();
     writeln!(temp, "# notes").unwrap();
     writeln!(temp, "```toml").unwrap();
@@ -130,18 +126,18 @@ fn markdown_syntax_cache_resolves_fence_state_before_window() {
     writeln!(temp, "```").unwrap();
     let file = IndexedTempFile::new("notes".to_owned(), temp).unwrap();
     let lines = file.read_window(2, 1).unwrap();
-    let mut cache = MarkdownSyntaxCache::default();
+    let mut cache = MarkdownModeCache::default();
 
     let modes = cache
-        .line_modes(&file, 2, &lines, SyntaxKind::Markdown)
+        .line_modes(&file, 2, &lines, FormatKind::Markdown)
         .unwrap()
         .unwrap();
 
-    assert_eq!(modes, vec![SyntaxKind::Toml]);
+    assert_eq!(modes, vec![FormatKind::Toml]);
 }
 
 #[test]
-fn markdown_syntax_cache_keeps_interval_checkpoints_only() {
+fn markdown_mode_cache_keeps_interval_checkpoints_only() {
     let mut temp = NamedTempFile::new().unwrap();
     for index in 0..1_600 {
         if index == 10 {
@@ -153,12 +149,12 @@ fn markdown_syntax_cache_keeps_interval_checkpoints_only() {
         }
     }
     let file = IndexedTempFile::new("notes".to_owned(), temp).unwrap();
-    let mut cache = MarkdownSyntaxCache::default();
+    let mut cache = MarkdownModeCache::default();
 
     for start in 0..1_500 {
         let lines = file.read_window(start, 1).unwrap();
         cache
-            .line_modes(&file, start, &lines, SyntaxKind::Markdown)
+            .line_modes(&file, start, &lines, FormatKind::Markdown)
             .unwrap();
     }
 
@@ -176,7 +172,7 @@ fn wrapped_progress_advances_by_visible_bytes() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
 
     assert_eq!(
@@ -239,7 +235,7 @@ fn wrapped_tail_position_can_start_inside_last_line() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
 
     let tail = compute_tail_position(&file, 2, context).unwrap();
@@ -265,7 +261,7 @@ fn wrapped_tail_view_renders_last_full_page() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
     let request = RenderRequest {
         context,
@@ -318,7 +314,7 @@ fn eof_wrap_offset_clamps_to_last_full_page() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
     let request = RenderRequest {
         context,

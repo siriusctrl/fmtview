@@ -1,8 +1,11 @@
 use unicode_width::UnicodeWidthStr;
 
-use crate::syntax::SyntaxKind;
+use crate::{
+    formats::{StructureCandidateKind, structure_block_end},
+    transform::FormatKind,
+};
 
-use super::{StructureViewport, candidate::StructureCandidateKind, syntax::structure_block_end};
+use super::StructureViewport;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct CandidateVisibility {
@@ -47,7 +50,7 @@ pub(super) fn should_skip_candidate(
 }
 
 pub(super) fn candidate_visibility(
-    syntax: SyntaxKind,
+    format: FormatKind,
     lines: &[String],
     read_start: usize,
     candidate_offset: usize,
@@ -67,7 +70,7 @@ pub(super) fn candidate_visibility(
     }
 
     let Some(end_line) = structure_block_end(
-        syntax,
+        format,
         lines,
         read_start,
         candidate_offset,

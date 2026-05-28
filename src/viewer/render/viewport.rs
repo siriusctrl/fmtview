@@ -4,11 +4,11 @@ use super::{
     search::apply_search_highlight,
     types::{RenderContext, RenderRequest, RenderedViewport, ViewPosition, ViewportBottom},
 };
-use crate::syntax::SyntaxKind;
+use crate::transform::FormatKind;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(in crate::viewer) struct ViewportRenderOptions<'a> {
-    pub(in crate::viewer) line_modes: Option<&'a [SyntaxKind]>,
+    pub(in crate::viewer) line_modes: Option<&'a [FormatKind]>,
     pub(in crate::viewer) search_query: Option<&'a str>,
 }
 
@@ -127,7 +127,7 @@ pub(in crate::viewer) fn render_viewport(
     }
 }
 
-fn line_request(request: RenderRequest, mode: Option<SyntaxKind>) -> RenderRequest {
+fn line_request(request: RenderRequest, mode: Option<FormatKind>) -> RenderRequest {
     let Some(mode) = mode else {
         return request;
     };

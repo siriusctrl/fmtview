@@ -28,7 +28,7 @@ fn manual_scroll_resets_structure_repeat_anchor() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(state.structure_cursor, Some(1));
 
     handle_key_event(
@@ -46,7 +46,7 @@ fn manual_scroll_resets_structure_repeat_anchor() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {

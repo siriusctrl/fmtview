@@ -25,7 +25,7 @@ fn ranked_structure_navigation_skips_fully_visible_json_detail_blocks() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -61,7 +61,7 @@ fn structure_navigation_lands_on_visible_json_array_items() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -79,7 +79,7 @@ fn structure_navigation_lands_on_visible_json_array_items() {
             x: 0,
             width: 80,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         }
     ));
     state.structure_viewport = Some(structure_viewport(1, 10));
@@ -90,7 +90,7 @@ fn structure_navigation_lands_on_visible_json_array_items() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -128,7 +128,7 @@ fn structure_navigation_prefers_sibling_array_item_over_nested_payload() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -148,7 +148,7 @@ fn structure_navigation_prefers_sibling_array_item_over_nested_payload() {
         file.line_count_exact(),
         StructureDirection::Backward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -184,7 +184,7 @@ fn structure_navigation_lands_on_large_visible_json_composite_fields() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {

@@ -3,7 +3,7 @@ use std::io::{BufRead, Write};
 use anyhow::{Context, Result, anyhow};
 use quick_xml::{Reader as XmlReader, Writer as XmlWriter, events::Event};
 
-pub(super) fn format_xml_reader<R: BufRead, W: Write>(
+pub(crate) fn format_xml_reader<R: BufRead, W: Write>(
     input: R,
     output: &mut W,
     indent: usize,

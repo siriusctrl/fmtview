@@ -1,10 +1,10 @@
 mod breadcrumb;
 mod file;
 mod input;
+mod markdown_modes;
 mod position;
 mod render;
 mod structure;
-mod syntax_state;
 
 use std::io::{self, Write};
 
@@ -16,7 +16,7 @@ use crossterm::{
 };
 use ratatui::backend::CrosstermBackend;
 
-use crate::{load::ViewFile, syntax::SyntaxKind, tui::screen::ViewerTerminal};
+use crate::{load::ViewFile, transform::FormatKind, tui::screen::ViewerTerminal};
 
 const EVENT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
 const EVENT_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
@@ -40,7 +40,7 @@ const JUMP_BUFFER_MAX_DIGITS: usize = 20;
 const SEARCH_CHUNK_LINES: usize = 4096;
 const TAIL_ROW_OFFSET: usize = usize::MAX;
 
-pub fn run(file: Box<dyn ViewFile>, mode: SyntaxKind) -> Result<()> {
+pub fn run(file: Box<dyn ViewFile>, mode: FormatKind) -> Result<()> {
     run_terminal(|terminal| file::run_loop(terminal, file.as_ref(), mode))
 }
 
@@ -119,6 +119,8 @@ use file::{
     test_visible_height_for_sticky as visible_height_for_sticky,
 };
 #[cfg(test)]
+use markdown_modes::MarkdownModeCache;
+#[cfg(test)]
 use position::{adjust_state_for_visible_height, resolve_targets_from_view};
 #[cfg(test)]
 use position::{
@@ -127,8 +129,6 @@ use position::{
 };
 #[cfg(test)]
 use structure::*;
-#[cfg(test)]
-use syntax_state::MarkdownSyntaxCache;
 
 #[cfg(test)]
 mod tests;

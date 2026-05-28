@@ -4,7 +4,7 @@ use ratatui::{
     text::Line,
 };
 
-use crate::{load::ViewFile, syntax::SyntaxKind};
+use crate::{load::ViewFile, transform::FormatKind};
 
 use super::super::{
     breadcrumb::JsonBreadcrumbCache,
@@ -34,7 +34,7 @@ pub(in crate::viewer) fn draw_layout(
     size: Size,
     file: &dyn ViewFile,
     state: &ViewState,
-    mode: SyntaxKind,
+    mode: FormatKind,
 ) -> DrawLayout {
     let selection_mode = !state.mouse_capture;
     let area = Rect::new(0, 0, size.width, size.height);
@@ -74,7 +74,7 @@ pub(in crate::viewer) fn draw_layout(
 
 pub(in crate::viewer) fn sync_sticky_layout(
     file: &dyn ViewFile,
-    mode: SyntaxKind,
+    mode: FormatKind,
     state: &mut ViewState,
     breadcrumb: &mut JsonBreadcrumbCache,
     tail_cache: &mut TailPositionCache,
@@ -130,7 +130,7 @@ pub(in crate::viewer) fn sync_sticky_layout(
 
 pub(in crate::viewer) fn refresh_sticky_after_position_change(
     file: &dyn ViewFile,
-    mode: SyntaxKind,
+    mode: FormatKind,
     state: &mut ViewState,
     breadcrumb: &mut JsonBreadcrumbCache,
     tail_cache: &mut TailPositionCache,
@@ -213,7 +213,7 @@ fn keep_preserved_tail_position(state: &mut ViewState, position: Option<ViewPosi
 }
 
 fn sticky_lines(
-    mode: SyntaxKind,
+    mode: FormatKind,
     breadcrumb: &mut JsonBreadcrumbCache,
     file: &dyn ViewFile,
     top: usize,
@@ -221,7 +221,7 @@ fn sticky_lines(
     gutter_width: usize,
     base_visible_height: usize,
 ) -> Vec<Line<'static>> {
-    if mode == SyntaxKind::Structured {
+    if matches!(mode, FormatKind::Json | FormatKind::Jsonl) {
         breadcrumb.render(file, top, width, gutter_width, base_visible_height)
     } else {
         Vec::new()

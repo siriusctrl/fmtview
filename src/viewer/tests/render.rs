@@ -17,7 +17,7 @@ fn styled_line_keeps_a_gutter() {
             x: 0,
             width: 80,
             wrap: false,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
     )
     .remove(0);
@@ -35,7 +35,7 @@ fn zero_width_gutter_renders_selectable_text_only() {
             x: 0,
             width: 80,
             wrap: false,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
     )
     .remove(0);
@@ -54,7 +54,7 @@ fn wrap_uses_continuation_gutter_and_indent() {
             x: 0,
             width: 18,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
     );
 
@@ -76,7 +76,7 @@ fn markdown_wrap_respects_wide_character_display_width() {
             x: 0,
             width: content_width,
             wrap: true,
-            mode: SyntaxKind::Markdown,
+            mode: FormatKind::Markdown,
         },
     );
 
@@ -108,7 +108,7 @@ fn nowrap_applies_horizontal_offset() {
             x: 2,
             width: 3,
             wrap: false,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
     );
 

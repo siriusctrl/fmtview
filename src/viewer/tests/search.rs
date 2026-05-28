@@ -259,7 +259,7 @@ fn search_jump_places_later_logical_line_with_context() {
             x: 0,
             width: 40,
             wrap: false,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
     ));
 
@@ -276,7 +276,7 @@ fn search_jump_places_later_logical_line_with_context() {
             x: 0,
             width: 40,
             wrap: false,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
     ));
     assert_eq!(state.top, 7);
@@ -311,7 +311,7 @@ fn wrapped_search_jumps_to_visual_row_containing_match() {
         x: 0,
         width: 20,
         wrap: true,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
     let lines = file.read_window(state.top, 1).unwrap();
     let target_row = visual_row_for_byte(&line, line.find("needle").unwrap(), context);
@@ -355,7 +355,7 @@ fn wrapped_search_keeps_visible_match_position() {
         x: 0,
         width: 20,
         wrap: true,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
     let target_row = visual_row_for_byte(&line, line.find("needle").unwrap(), context);
     let mut state = ViewState {
@@ -515,7 +515,7 @@ fn search_highlight_adds_background_without_replacing_foreground() {
             x: 0,
             width: 80,
             wrap: false,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
     )
     .remove(0);
@@ -545,7 +545,7 @@ fn non_search_viewport_render_does_not_paint_background_cells() {
             x: 0,
             width: 80,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: 16,
     };
@@ -575,7 +575,7 @@ fn search_background_is_scoped_to_match_spans_only() {
             x: 0,
             width: 80,
             wrap: false,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
     )
     .remove(0);

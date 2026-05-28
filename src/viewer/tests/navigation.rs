@@ -22,7 +22,7 @@ fn top_line_tail_offset_points_to_last_full_view() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
     let request = RenderRequest {
         context,
@@ -42,7 +42,7 @@ fn unknown_wrapped_tail_keeps_scrolling_inside_current_line() {
         x: 0,
         width: 4,
         wrap: true,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
     let request = RenderRequest {
         context,
@@ -125,7 +125,7 @@ fn no_next_block_redraw_preserves_wrapped_tail_with_sticky_rows() {
         ratatui::layout::Size::new(48, 8),
         &file,
         &state,
-        SyntaxKind::Structured,
+        FormatKind::Json,
     );
     let sticky_visible_height = visible_height_for_sticky(layout.base_visible_height, 1);
     let base_tail = compute_tail_position(&file, layout.base_visible_height, layout.context)
@@ -146,7 +146,7 @@ fn no_next_block_redraw_preserves_wrapped_tail_with_sticky_rows() {
 
     let sticky = sync_sticky_layout(
         &file,
-        SyntaxKind::Structured,
+        FormatKind::Json,
         &mut state,
         &mut breadcrumb,
         &mut tail_cache,
@@ -242,7 +242,7 @@ fn incomplete_lazy_file_does_not_clamp_optimistic_jump_before_reading() {
         x: 0,
         width: 80,
         wrap: false,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
 
     adjust_state_for_visible_height(&file, &mut state, 10, context, &mut caches.tail).unwrap();

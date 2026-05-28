@@ -2,6 +2,39 @@ use ratatui::{style::Style, text::Span};
 
 use crate::tui::palette::{escape_style, plain_style, string_style};
 
+const JSON_VISIBLE_COMPOSITE_LANDMARK_LINES: usize = 5;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StructureCandidateKind {
+    JsonRecordStart,
+    JsonArrayItemStart,
+    JsonCompositeField,
+    JsonRootStart,
+    XmlStartTag,
+    MarkdownHeading,
+    TomlTable,
+    JinjaBlock,
+    PlainParagraph,
+}
+
+impl StructureCandidateKind {
+    pub(crate) fn is_landmark_when_visible(self, line_span: Option<usize>) -> bool {
+        match self {
+            StructureCandidateKind::JsonRecordStart
+            | StructureCandidateKind::JsonArrayItemStart
+            | StructureCandidateKind::JsonRootStart
+            | StructureCandidateKind::MarkdownHeading
+            | StructureCandidateKind::TomlTable
+            | StructureCandidateKind::JinjaBlock
+            | StructureCandidateKind::PlainParagraph => true,
+            StructureCandidateKind::XmlStartTag => line_span.is_none_or(|span| span > 1),
+            StructureCandidateKind::JsonCompositeField => {
+                line_span.is_some_and(|span| span >= JSON_VISIBLE_COMPOSITE_LANDMARK_LINES)
+            }
+        }
+    }
+}
+
 pub(crate) fn highlight_string_segment_window(
     source: &str,
     start: usize,
@@ -136,6 +169,93 @@ pub(crate) fn push_span_window(
         let style = normalize_span_style(style);
         push_text_span(spans, source[overlap_start..overlap_end].to_owned(), style);
     }
+}
+
+pub(crate) fn leading_indent(line: &str) -> usize {
+    line.chars().take_while(|ch| ch.is_whitespace()).count()
+}
+
+pub(crate) fn first_non_ws_byte(line: &str) -> usize {
+    line.char_indices()
+        .find_map(|(index, ch)| (!ch.is_whitespace()).then_some(index))
+        .unwrap_or(0)
+}
+
+pub(crate) fn max_observed_offset(
+    lines: &[String],
+    read_start: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    if lines.is_empty() || viewport_bottom < read_start {
+        return None;
+    }
+    Some((viewport_bottom - read_start).min(lines.len() - 1))
+}
+
+pub(crate) fn max_boundary_offset(
+    lines: &[String],
+    read_start: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    max_observed_offset(lines, read_start, viewport_bottom.saturating_add(1))
+}
+
+pub(crate) fn following_lines(
+    lines: &[String],
+    start_offset: usize,
+    max_offset: usize,
+) -> impl Iterator<Item = (usize, &String)> {
+    lines
+        .iter()
+        .enumerate()
+        .take(max_offset + 1)
+        .skip(start_offset + 1)
+}
+
+pub(crate) fn eof_block_end(
+    lines: &[String],
+    read_start: usize,
+    viewport_bottom: usize,
+    line_count: usize,
+    line_count_exact: bool,
+) -> Option<usize> {
+    if !line_count_exact || line_count == 0 {
+        return None;
+    }
+    let eof_line = line_count - 1;
+    let read_end = read_start.saturating_add(lines.len());
+    (eof_line <= viewport_bottom && eof_line < read_end).then_some(eof_line)
+}
+
+pub(crate) fn indent_block_end(
+    lines: &[String],
+    read_start: usize,
+    start_offset: usize,
+    viewport_bottom: usize,
+) -> Option<usize> {
+    let max_offset = max_boundary_offset(lines, read_start, viewport_bottom)?;
+    let start_indent = leading_indent(lines.get(start_offset)?);
+    for (offset, line) in following_lines(lines, start_offset, max_offset) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if leading_indent(line) <= start_indent {
+            if is_same_indent_closing_line(line) {
+                return Some(read_start + offset);
+            }
+            return Some(read_start + offset.saturating_sub(1));
+        }
+    }
+    None
+}
+
+fn is_same_indent_closing_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('}')
+        || trimmed.starts_with(']')
+        || trimmed.starts_with("</")
+        || crate::formats::jinja::structure::keyword(trimmed)
+            .is_some_and(|keyword| keyword.starts_with("end"))
 }
 
 pub(crate) fn floor_char_boundary(text: &str, index: usize) -> usize {

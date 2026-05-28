@@ -22,7 +22,7 @@ fn ranked_structure_navigation_keeps_partially_visible_json_blocks() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -61,7 +61,7 @@ fn structure_navigation_lands_on_visible_previous_json_landmarks() {
         file.line_count_exact(),
         StructureDirection::Backward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -97,7 +97,7 @@ fn ranked_structure_navigation_treats_clipped_nowrap_blocks_as_unseen() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -132,7 +132,7 @@ fn ranked_structure_navigation_keeps_blocks_cut_off_by_wrapping() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {

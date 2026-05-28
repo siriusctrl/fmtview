@@ -12,7 +12,7 @@ fn perf_huge_wrapped_line_paths() {
         x: 0,
         width: 94,
         wrap: true,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
 
     let started = Instant::now();
@@ -104,7 +104,7 @@ fn perf_repeated_viewport_scroll_render() {
             x: 0,
             width: 96,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: render_row_limit(27),
     };
@@ -157,7 +157,7 @@ fn perf_terminal_scroll_draw_bytes() {
             x: 0,
             width: 111,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: render_row_limit(32),
     };
@@ -234,7 +234,7 @@ fn perf_terminal_visual_row_scroll_bytes() {
             x: 0,
             width: 111,
             wrap: true,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         },
         row_limit: render_row_limit(32),
     };

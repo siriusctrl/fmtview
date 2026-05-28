@@ -1,6 +1,6 @@
 # Performance Checks
 
-Use this when changing viewer rendering, syntax highlighting, wrapping,
+Use this when changing viewer rendering, format highlighting, wrapping,
 terminal drawing, parsing, formatting, JSONL record handling, or lazy loading
 behavior.
 
@@ -21,7 +21,8 @@ spooling:
 benches/load-performance.sh
 ```
 
-Run the syntax benchmark smoke suite for visible-window highlighter work:
+Run the syntax benchmark smoke suite for visible-window highlighter work. The
+script name is historical; the code now lives under `src/formats/`:
 
 ```sh
 benches/syntax-performance.sh
@@ -70,7 +71,7 @@ The load and format scripts run a dedicated Rust performance harness in
 `src/perf/`. The shell wrappers are compatibility entry points only: Rust owns
 fixture generation, samples, case filtering, shape/layer labels, and timing
 summaries. `runner.rs` owns timing output, `load.rs` and `format.rs` own case
-definitions, and `fixtures.rs` owns generated input data. Viewer, syntax, and
+definitions, and `fixtures.rs` owns generated input data. Viewer, highlighter, and
 diff scripts still run ignored release-mode tests close to their private
 modules; keep migrating those into the Rust performance harness when their
 benchmark logic grows beyond a narrow smoke check. Scripts that measure
@@ -152,9 +153,9 @@ Transform metrics:
   pretty-printing without the following viewer index pass. Shape:
   `whole-document`.
 
-Syntax metrics:
+Highlight metrics:
 
-- `syntax highlight window` measures visible-window span generation across a
+- `format highlight window` measures visible-window span generation across a
   huge logical line with checkpoint reuse. It excludes file IO, formatting,
   terminal drawing, and wrap computation.
 
@@ -175,7 +176,7 @@ Algorithm comparison:
 Viewer metrics:
 
 - `viewport render CPU` measures repeated wrapped viewport rendering before the
-  terminal backend writes anything. It includes wrapping and syntax span use,
+  terminal backend writes anything. It includes wrapping and format span use,
   but excludes terminal IO.
 - `terminal draw bytes` measures repeated viewer drawing into a counting
   terminal writer, including terminal bytes and background-cell count.

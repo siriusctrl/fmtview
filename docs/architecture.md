@@ -15,7 +15,7 @@ The core boundary is:
   | RedirectedOutput |      | xml/html      |      | load strategy     |
   | DiffInput        |      | md/toml/text  |      | transform plan    |
   +------------------+      +---------------+      | input shape       |
-                                                   | syntax highlighter|
+                                                   | format behavior   |
                                                    +---------+---------+
                                                              |
                                                              v
@@ -27,15 +27,19 @@ The core boundary is:
                   +-------------+  +---------------+  +---------------+  +-----------+
 ```
 
-`TypeProfile` is the single source of truth for type-specific behavior. It
-answers five questions:
+`TypeProfile` selects the format package and shared runtime behavior for the
+current input. It answers four questions:
 
 - What is the content kind?
 - What input shape does this type expose to the viewer pipeline?
 - Should the viewer index source text, an eager transformed document, or lazily
   produced transformed lines?
 - Which transform should redirected stdout and diff input use?
-- Which syntax engine should render visible windows?
+
+Format-specific behavior lives under `src/formats/<format>/`. The viewer,
+loader, transformer, and diff code remain runtime layers: they ask the active
+format package how to highlight visible text, format records/documents, resolve
+Markdown fenced-code line modes, or classify structure-jump candidates.
 
 ## Input Shapes
 
@@ -64,19 +68,19 @@ unit of work that shared runtimes can rely on:
 Optimizations should say which shape they target. Record-stream work such as
 lazy preload and ordered record parallelism should not leak into whole-document
 code paths. Whole-document work should focus on streaming parser/formatter
-behavior, temp-file indexing, syntax checkpoints, and viewer readback.
+behavior, temp-file indexing, highlight checkpoints, and viewer readback.
 
 ## Current Profiles
 
-| Type | Shape | Interactive view | Redirected output | Diff input | Syntax |
+| Type | Shape | Interactive view | Redirected output | Diff input | Format package |
 | --- | --- | --- | --- | --- | --- |
-| JSON | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed JSON | Pretty-printed JSON | Structured JSON/XML-style |
-| JSONL/NDJSON | RecordStream | Lazy transformed records spooled and indexed on demand | Pretty-printed records | Pretty-printed records; TTY diff can open lazily | Structured JSON/XML-style |
-| XML/HTML/XHTML | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed XML-compatible markup | Pretty-printed XML-compatible markup | Structured JSON/XML-style |
-| Markdown | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | Markdown, with known fenced code blocks routed to existing highlighters |
-| TOML | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | TOML |
-| Plain text | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | Plain |
-| Jinja | LineIndexed | Raw source indexed without rendering or rewriting content | Passthrough | Passthrough | Jinja template spans |
+| JSON | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed JSON | Pretty-printed JSON | `formats/json` |
+| JSONL/NDJSON | RecordStream | Lazy transformed records spooled and indexed on demand | Pretty-printed records | Pretty-printed records; TTY diff can open lazily | `formats/jsonl` profile plus JSON record behavior |
+| XML/HTML/XHTML | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed XML-compatible markup | Pretty-printed XML-compatible markup | `formats/xml` |
+| Markdown | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | `formats/markdown`, with known fenced code blocks routed to format highlighters |
+| TOML | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | `formats/toml` |
+| Plain text | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | `formats/plain` |
+| Jinja | LineIndexed | Raw source indexed without rendering or rewriting content | Passthrough | Passthrough | `formats/jinja` |
 
 Unknown extensions are sniffed with a bounded prefix. Unknown content that does
 not look like JSON, JSONL, or XML-compatible markup falls back to plain-text
@@ -101,7 +105,7 @@ as the whole rule.
     - detail: JSON object/array field, XML/HTML start tag
           |
           v
-  infer block extent for the active syntax
+  infer block extent for the active format
           |
           v
   combine kind + viewport visibility
@@ -113,7 +117,7 @@ as the whole rule.
   publish a viewer target
 ```
 
-The block extent rule is syntax-specific. JSON uses string-aware bracket
+The block extent rule is format-specific. JSON uses string-aware bracket
 pairing, Markdown uses heading levels, TOML uses the next table header, Jinja
 uses matching block/end tags, XML/HTML uses start and end tags where possible,
 and plain text uses paragraph boundaries. The shared visibility rule records
@@ -136,16 +140,19 @@ The implementation mirrors that split:
     bounded lazy chunk reads and forward/backward scan progress
 
   viewer/structure/candidate.rs
-    candidate kind, anchor context, and ranking policy
+    viewer-side candidate ranking policy
 
   viewer/structure/visibility.rs
     viewport observation rules shared by all formats
 
-  viewer/structure/syntax.rs
-    syntax dispatcher plus shared block helpers
-
-  viewer/structure/syntax/*.rs
+  formats/<format>/structure.rs
     JSON, XML/HTML, Markdown, TOML, Jinja, and plain-text structure rules
+
+  formats/<format>/highlight.rs
+    visible-window highlighting for each format
+
+  formats/<format>/transform.rs
+    formatter implementations for formats that rewrite output
 ```
 
 ## TTY Module Boundaries
@@ -163,7 +170,7 @@ that happens to draw terminal text:
 
   viewer/
     normal file viewer: file loop, input/search, structure navigation, sticky
-    breadcrumbs, render caches, viewport positioning, and syntax state
+    breadcrumbs, render caches, viewport positioning, and Markdown line modes
 
   diff/viewer/
     interactive diff viewer: diff-specific input, change-block navigation,
@@ -299,7 +306,7 @@ The same design applies outside loading:
       +-- ContentShape      -> optimization and capability boundary
       +-- LoadPlan          -> shared load runtimes
       +-- TransformStrategy -> shared transform engine
-      +-- SyntaxKind        -> shared visible-window highlighter
+      +-- Format package    -> highlight, structure, and formatter behavior
       +-- Diff mode         -> shared eager/lazy diff runtimes
 ```
 
@@ -315,7 +322,7 @@ benchmark-backed. The current priority order is:
 1. Preserve scriptable stdout and fast first draw.
 2. Keep lazy record loading and deep-window viewing measurable with
    `benches/load-performance.sh`.
-3. Keep syntax checkpoint behavior measurable with `benches/syntax-performance.sh`.
+3. Keep highlight checkpoint behavior measurable with `benches/syntax-performance.sh`.
 4. Explore inline parallelism only after the single-record and checkpointed
    scan baselines are clear.
 

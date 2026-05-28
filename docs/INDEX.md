@@ -23,7 +23,7 @@ Read these when the task matches:
 - `docs/architecture.md`
   - viewer-first product model
   - type profile boundaries
-  - load, transform, syntax, and diff strategy boundaries
+  - format packages plus load, transform, viewer, and diff runtime boundaries
   - lazy runtime and producer design
   - benchmark-first direction for future inline parallel work
 
@@ -35,7 +35,17 @@ Code orientation:
   viewer paths.
 - `src/input.rs` owns input materialization from files, stdin, and literals.
 - `src/profile.rs` resolves `--type` and auto-detection into a concrete content
-  kind, input shape, load strategy, transform strategy, and syntax highlighter.
+  kind, input shape, load strategy, and transform strategy.
+- `src/formats.rs` owns the format-capability entry point. Each folder under
+  `src/formats/` groups one format's behavior:
+  - `json/` owns JSON formatting, highlighting, and structure-jump rules.
+  - `jsonl/` owns the JSONL profile while reusing JSON record behavior.
+  - `xml/` owns XML-compatible formatting, highlighting, and structure rules.
+  - `markdown/` owns Markdown highlighting, fenced-code line modes, and
+    heading structure rules.
+  - `toml/`, `jinja/`, and `plain/` own their respective highlighting and
+    structure rules.
+  - `shared.rs` keeps small helpers reused by multiple format packages.
 - `src/load.rs` owns the load-module entry point, `ViewFile`, and eager
   temp-file line indexing.
 - `src/load/` owns lazy-load runtimes and load planning helpers:
@@ -48,12 +58,7 @@ Code orientation:
 - `src/transform/` owns content transforms that can produce scriptable output:
   - `engine.rs` orchestrates whole-source and record formatting.
   - `detect.rs` handles formatter candidates after profile resolution.
-  - `json.rs` keeps token-preserving JSON/JSONL formatting.
-  - `xml.rs` wraps XML-compatible formatting.
-- `src/syntax.rs` owns the syntax-module entry point and visible-window
-  highlighter dispatch.
-- `src/syntax/` owns syntax highlighters and checkpoint state. It must not read
-  input files or transform content.
+  - Format-specific formatter implementations live under `src/formats/<type>/`.
 - `src/diff.rs` owns the diff-module entry point.
 - `src/diff/` owns unified patch generation plus the structured diff model used
   by the interactive diff viewer:
@@ -71,7 +76,7 @@ Code orientation:
   normal file viewer:
   - `screen.rs` handles terminal buffer rendering, ANSI writes, scroll regions,
     and buffer-delta repainting.
-  - `palette.rs` owns terminal colors used by syntax, viewer, and diff output.
+  - `palette.rs` owns terminal colors used by format highlighting, viewer, and diff output.
   - `text.rs` and `wrap.rs` own shared character-counting, gutter text,
     display-width wrapping, and wrap checkpoint helpers.
 - `src/viewer.rs` owns the shared TTY lifecycle: raw mode, alternate screen,
@@ -85,23 +90,21 @@ Code orientation:
   - `input/` handles key/mouse state, scrolling, jumps, and search.
   - `structure.rs` and `structure/` own the `]`/`[` smart structure jump:
     task state, lazy scans, candidate ranking, viewport visibility, and
-    per-format structure rules.
+    structure scans, candidate ranking, and viewport visibility. Format-specific
+    structure rules live under `src/formats/<type>/structure.rs`.
     - `structure/scan.rs` reads bounded chunks and drives forward/backward lazy
       scans.
-    - `structure/candidate.rs` owns structure candidate kinds, anchors, and
-      ranking.
+    - `structure/candidate.rs` owns viewer-side candidate ranking.
     - `structure/visibility.rs` decides whether a candidate has already been
       fully observed in the current viewport.
-    - `structure/syntax.rs` routes structure detection and block extent logic
-      to per-format modules under `structure/syntax/`.
-  - `syntax_state.rs` owns viewer-time syntax state that depends on file
-    windows, such as Markdown fenced-code line modes.
+  - `markdown_modes.rs` owns viewer-time Markdown fenced-code checkpointing.
+    The per-line mode rules live with Markdown under `src/formats/markdown/`.
   - `render/` handles normal-viewer line windows, visual rows, caches,
     progress, prewarming, and the search highlight overlay. Shared text
     wrapping lives in `src/tui/`.
   - `tests/` keeps white-box viewer regression and performance smoke coverage
     close to private TUI internals, split by input, navigation, search, render,
-    screen, cache, syntax, and viewport responsibility. These tests stay under
+    screen, cache, highlighting, and viewport responsibility. These tests stay under
     `src/` because they intentionally exercise private render caches,
     terminal-buffer reuse, viewer state, and jump helpers without widening the
     public API. Structure-navigation tests live under `tests/structure/` and
@@ -116,7 +119,7 @@ Code orientation:
   - `fixtures.rs` owns generated benchmark input data.
 - `benches/` contains local performance entry points:
   - load and format wrappers call the Rust harness in `src/perf/`.
-  - syntax, viewer, diff, and algorithm checks still use focused shell-driven
+  - highlighter, viewer, diff, and algorithm checks still use focused shell-driven
     smoke harnesses because they exercise private TUI internals, terminal
     writers, release binaries, or alternate external formatter paths.
 

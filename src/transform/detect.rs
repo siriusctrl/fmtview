@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use crate::input::InputSource;
+use crate::{formats, input::InputSource};
 
 use super::types::{FormatKind, FormatOptions};
 
@@ -40,21 +40,15 @@ fn push_unique(kinds: &mut Vec<FormatKind>, kind: FormatKind) {
 }
 
 fn detect_kind(source: &InputSource) -> Result<FormatKind> {
-    match source
+    if let Some(kind) = source
         .path()
         .extension()
         .and_then(OsStr::to_str)
         .map(str::to_ascii_lowercase)
         .as_deref()
+        .and_then(formats::kind_for_extension)
     {
-        Some("json") => return Ok(FormatKind::Json),
-        Some("jsonl" | "ndjson") => return Ok(FormatKind::Jsonl),
-        Some("xml" | "html" | "htm" | "xhtml") => return Ok(FormatKind::Xml),
-        Some("toml") => return Ok(FormatKind::Toml),
-        Some("md" | "markdown" | "mdown" | "mkd") => return Ok(FormatKind::Markdown),
-        Some("txt" | "text" | "log") => return Ok(FormatKind::Plain),
-        Some("j2" | "jinja" | "jinja2") => return Ok(FormatKind::Jinja),
-        _ => {}
+        return Ok(kind);
     }
 
     let mut reader = BufReader::new(source.open()?);

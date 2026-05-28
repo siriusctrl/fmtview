@@ -2,12 +2,15 @@ use std::time::Duration;
 
 use anyhow::Result;
 
-use crate::{load::ViewFile, syntax::SyntaxKind};
+use crate::{
+    formats::{first_non_ws_byte, leading_indent, structure_anchor, structure_candidate_kind},
+    load::ViewFile,
+    transform::FormatKind,
+};
 
 use super::{
     StructureDirection, StructureTask, StructureViewport,
     candidate::{StructureCandidate, select_structure_candidate},
-    syntax::{first_non_ws_byte, leading_indent, structure_anchor, structure_candidate_kind},
     visibility::{candidate_visibility, should_skip_candidate},
 };
 use crate::viewer::input::SearchTarget;
@@ -26,14 +29,14 @@ pub(super) struct StructureStep {
 pub(super) fn scan_structure_chunk(
     file: &dyn ViewFile,
     task: &StructureTask,
-    syntax: SyntaxKind,
+    format: FormatKind,
 ) -> Result<StructureStep> {
     match task.direction {
         StructureDirection::Forward => {
-            scan_structure_forward(file, task.next_line, syntax, task.viewport)
+            scan_structure_forward(file, task.next_line, format, task.viewport)
         }
         StructureDirection::Backward => {
-            scan_structure_backward(file, task.next_line, syntax, task.viewport)
+            scan_structure_backward(file, task.next_line, format, task.viewport)
         }
     }
 }
@@ -41,7 +44,7 @@ pub(super) fn scan_structure_chunk(
 fn scan_structure_forward(
     file: &dyn ViewFile,
     mut next_line: usize,
-    syntax: SyntaxKind,
+    format: FormatKind,
     viewport: Option<StructureViewport>,
 ) -> Result<StructureStep> {
     if next_line >= file.line_count() && !file.line_count_exact() {
@@ -75,18 +78,18 @@ fn scan_structure_forward(
         });
     }
 
-    let anchor = structure_anchor(&lines, read_start, next_line.saturating_sub(1), syntax);
+    let anchor = structure_anchor(&lines, read_start, next_line.saturating_sub(1), format);
     let mut candidates = Vec::new();
     let mut scanned = 0_usize;
     for offset in next_line - read_start..lines.len() {
         let line_number = read_start + offset;
         if let Some(kind) = structure_candidate_kind(
-            syntax,
+            format,
             lines.get(offset).map(String::as_str).unwrap_or_default(),
             lines.get(offset.saturating_sub(1)).map(String::as_str),
         ) {
             let visibility = candidate_visibility(
-                syntax,
+                format,
                 &lines,
                 read_start,
                 offset,
@@ -108,7 +111,7 @@ fn scan_structure_forward(
         scanned = scanned.saturating_add(1);
     }
 
-    if let Some(candidate) = select_structure_candidate(&candidates, syntax, anchor) {
+    if let Some(candidate) = select_structure_candidate(&candidates, format, anchor) {
         return Ok(StructureStep {
             found: Some(candidate.target()),
             next_line: candidate.line,
@@ -127,7 +130,7 @@ fn scan_structure_forward(
 fn scan_structure_backward(
     file: &dyn ViewFile,
     next_line: usize,
-    syntax: SyntaxKind,
+    format: FormatKind,
     viewport: Option<StructureViewport>,
 ) -> Result<StructureStep> {
     let line_count = file.line_count();
@@ -160,18 +163,18 @@ fn scan_structure_backward(
         });
     }
 
-    let anchor = structure_anchor(&lines, read_start, anchor_line, syntax);
+    let anchor = structure_anchor(&lines, read_start, anchor_line, format);
     let scan_end_offset = next_line.saturating_sub(read_start).min(lines.len() - 1);
     let mut candidates = Vec::new();
     for offset in (start - read_start..=scan_end_offset).rev() {
         let line_number = read_start + offset;
         if let Some(kind) = structure_candidate_kind(
-            syntax,
+            format,
             lines.get(offset).map(String::as_str).unwrap_or_default(),
             lines.get(offset.saturating_sub(1)).map(String::as_str),
         ) {
             let visibility = candidate_visibility(
-                syntax,
+                format,
                 &lines,
                 read_start,
                 offset,
@@ -191,7 +194,7 @@ fn scan_structure_backward(
         }
     }
 
-    if let Some(candidate) = select_structure_candidate(&candidates, syntax, anchor) {
+    if let Some(candidate) = select_structure_candidate(&candidates, format, anchor) {
         return Ok(StructureStep {
             found: Some(candidate.target()),
             next_line: candidate.line,

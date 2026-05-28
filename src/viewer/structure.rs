@@ -1,12 +1,11 @@
 use anyhow::Result;
 
-use crate::{load::ViewFile, syntax::SyntaxKind};
+use crate::{load::ViewFile, transform::FormatKind};
 
 use super::input::ViewState;
 
 mod candidate;
 mod scan;
-mod syntax;
 mod visibility;
 
 use scan::scan_structure_chunk;
@@ -81,13 +80,13 @@ pub(in crate::viewer) fn start_structure_navigation(
 pub(in crate::viewer) fn process_structure_step(
     file: &dyn ViewFile,
     state: &mut ViewState,
-    syntax: SyntaxKind,
+    format: FormatKind,
 ) -> Result<bool> {
     let Some(mut task) = state.structure_task.take() else {
         return Ok(false);
     };
 
-    let step = scan_structure_chunk(file, &task, syntax)?;
+    let step = scan_structure_chunk(file, &task, format)?;
     if let Some(target) = step.found {
         state.structure_target = Some(target);
         state.structure_cursor = Some(target.line);
@@ -149,9 +148,9 @@ fn set_no_block_message(state: &mut ViewState, direction: StructureDirection) {
 
 #[cfg(test)]
 pub(in crate::viewer) fn is_structure_point(
-    syntax: SyntaxKind,
+    format: FormatKind,
     line: &str,
     previous_line: Option<&str>,
 ) -> bool {
-    syntax::structure_candidate_kind(syntax, line, previous_line).is_some()
+    crate::formats::structure_candidate_kind(format, line, previous_line).is_some()
 }

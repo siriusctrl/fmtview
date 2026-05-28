@@ -5,7 +5,7 @@ use crate::load::ViewFile;
 use super::super::{
     PREWARM_BUDGET, PREWARM_MAX_LINE_BYTES, PREWARM_MAX_LINES, PREWARM_PAGES,
     RENDER_CACHE_MAX_ROWS_PER_LINE, WRAP_PREWARM_LOGICAL_LINES, WRAP_RENDER_CHUNK_ROWS,
-    syntax_state::MarkdownSyntaxCache,
+    markdown_modes::MarkdownModeCache,
 };
 use super::{
     cache::{LineWindowCache, RenderedLineCache},
@@ -16,7 +16,7 @@ pub(in crate::viewer) fn prewarm_render_cache(
     file: &dyn ViewFile,
     line_cache: &mut LineWindowCache,
     render_cache: &mut RenderedLineCache,
-    markdown_cache: &mut MarkdownSyntaxCache,
+    markdown_cache: &mut MarkdownModeCache,
     position: ViewPosition,
     visible_height: usize,
     request: RenderRequest,
@@ -77,7 +77,7 @@ pub(in crate::viewer) fn prewarm_wrapped_render_cache(
     file: &dyn ViewFile,
     line_cache: &mut LineWindowCache,
     render_cache: &mut RenderedLineCache,
-    markdown_cache: &mut MarkdownSyntaxCache,
+    markdown_cache: &mut MarkdownModeCache,
     position: ViewPosition,
     visible_height: usize,
     request: RenderRequest,
@@ -169,7 +169,10 @@ pub(in crate::viewer) fn render_row_limit(visible_height: usize) -> usize {
         .clamp(32, RENDER_CACHE_MAX_ROWS_PER_LINE)
 }
 
-fn line_request(request: RenderRequest, mode: Option<crate::syntax::SyntaxKind>) -> RenderRequest {
+fn line_request(
+    request: RenderRequest,
+    mode: Option<crate::transform::FormatKind>,
+) -> RenderRequest {
     let Some(mode) = mode else {
         return request;
     };

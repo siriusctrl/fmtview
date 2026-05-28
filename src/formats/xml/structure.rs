@@ -1,6 +1,6 @@
-use super::{following_lines, max_observed_offset};
+use crate::formats::shared::{following_lines, max_observed_offset};
 
-pub(super) fn block_end(
+pub(crate) fn block_end(
     lines: &[String],
     read_start: usize,
     start_offset: usize,
@@ -26,7 +26,7 @@ pub(super) fn block_end(
     None
 }
 
-pub(super) fn is_start_tag(trimmed: &str) -> bool {
+pub(crate) fn is_start_tag(trimmed: &str) -> bool {
     if trimmed.starts_with("</")
         || trimmed.starts_with("<!")
         || trimmed.starts_with("<?")

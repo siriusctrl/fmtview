@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn syntax_palette_uses_muted_indexed_colors() {
+fn highlight_palette_uses_muted_indexed_colors() {
     assert_eq!(plain_style().fg, Some(PALETTE_TEXT));
     assert_eq!(plain_style().bg, None);
     assert_eq!(gutter_style().fg, Some(PALETTE_MUTED));

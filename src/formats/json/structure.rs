@@ -1,6 +1,9 @@
-use super::{StructureCandidateKind, leading_indent, max_observed_offset};
+use crate::formats::{
+    StructureCandidateKind,
+    shared::{leading_indent, max_observed_offset},
+};
 
-pub(super) fn candidate_kind(line: &str) -> Option<StructureCandidateKind> {
+pub(crate) fn candidate_kind(line: &str) -> Option<StructureCandidateKind> {
     let indent = leading_indent(line);
     let trimmed = line.trim_start();
     let first = trimmed.as_bytes().first().copied()?;
@@ -21,7 +24,7 @@ pub(super) fn candidate_kind(line: &str) -> Option<StructureCandidateKind> {
     }
 }
 
-pub(super) fn block_end(
+pub(crate) fn block_end(
     lines: &[String],
     read_start: usize,
     start_offset: usize,

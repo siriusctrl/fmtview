@@ -1,6 +1,6 @@
-use super::{following_lines, max_observed_offset};
+use crate::formats::shared::{following_lines, max_observed_offset};
 
-pub(super) fn block_end(
+pub(crate) fn block_end(
     lines: &[String],
     read_start: usize,
     start_offset: usize,
@@ -29,7 +29,7 @@ pub(super) fn block_end(
     None
 }
 
-pub(super) fn is_block(line: &str) -> bool {
+pub(crate) fn is_block(line: &str) -> bool {
     keyword(line).is_some_and(|keyword| {
         matches!(
             keyword,
@@ -57,7 +57,7 @@ pub(super) fn is_block(line: &str) -> bool {
     })
 }
 
-pub(super) fn keyword(line: &str) -> Option<&str> {
+pub(crate) fn keyword(line: &str) -> Option<&str> {
     let trimmed = line.trim_start();
     let rest = trimmed.strip_prefix("{%")?;
     rest.split_whitespace().next()

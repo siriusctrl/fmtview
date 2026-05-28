@@ -1,13 +1,11 @@
 mod detect;
 mod engine;
-mod json;
 mod types;
-mod xml;
 
 #[cfg(test)]
 mod tests;
 
-const IO_BUFFER_BYTES: usize = 256 * 1024;
+pub(crate) const IO_BUFFER_BYTES: usize = 256 * 1024;
 
 #[cfg(test)]
 pub(crate) use engine::format_record_to_string;

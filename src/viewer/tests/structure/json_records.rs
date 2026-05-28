@@ -28,7 +28,7 @@ fn structure_navigation_jumps_inside_jsonl_record_before_next_record() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {
@@ -46,7 +46,7 @@ fn structure_navigation_jumps_inside_jsonl_record_before_next_record() {
             x: 0,
             width: 80,
             wrap: false,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         }
     ));
     assert_eq!(state.top, 2);
@@ -58,7 +58,7 @@ fn structure_navigation_jumps_inside_jsonl_record_before_next_record() {
         file.line_count_exact(),
         StructureDirection::Forward,
     );
-    assert!(process_structure_step(&file, &mut state, SyntaxKind::Structured).unwrap());
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
     assert_eq!(
         state.structure_target,
         Some(SearchTarget {

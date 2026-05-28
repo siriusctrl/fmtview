@@ -3,15 +3,17 @@ use std::io::{BufReader, BufWriter, Cursor, Write};
 use anyhow::{Context, Result, bail};
 use tempfile::NamedTempFile;
 
+use crate::formats::{
+    json::transform::{format_json, format_json_value, format_jsonl, trim_line_end},
+    xml::transform::format_xml_reader,
+};
 use crate::input::InputSource;
 
 use super::IO_BUFFER_BYTES;
 use super::{
     TransformStrategy,
     detect::candidate_kinds,
-    json::{format_json, format_json_value, format_jsonl, trim_line_end},
     types::{FormatKind, FormatOptions},
-    xml::format_xml_reader,
 };
 
 pub fn transform_source_to_temp(

@@ -1,6 +1,6 @@
-use super::{following_lines, max_boundary_offset};
+use crate::formats::shared::{following_lines, max_boundary_offset};
 
-pub(super) fn block_end(
+pub(crate) fn block_end(
     lines: &[String],
     read_start: usize,
     start_offset: usize,
@@ -16,7 +16,7 @@ pub(super) fn block_end(
     None
 }
 
-pub(super) fn is_heading(line: &str) -> bool {
+pub(crate) fn is_heading(line: &str) -> bool {
     heading_level(line).is_some()
 }
 

@@ -4,7 +4,7 @@ use ratatui::{
 };
 
 use super::styles::{DiffCellStyle, push_diff_span_segments, slice_char_range};
-use crate::syntax::{SyntaxKind, highlight_content_window};
+use crate::formats::highlight_structured_window;
 use crate::tui::{
     palette::{gutter_style, plain_style},
     text::{byte_index_for_char, char_count},
@@ -133,7 +133,7 @@ pub(super) fn push_structured_content(
 
     let start = byte_index_for_char(content, x);
     let end = byte_index_for_char(content, x.saturating_add(width));
-    let highlighted = highlight_content_window(content, SyntaxKind::Structured, start, end);
+    let highlighted = highlight_structured_window(content, start, end, None);
     let mut cursor = x;
     let mut written = 0_usize;
     for span in highlighted {
@@ -159,8 +159,7 @@ pub(super) fn push_structured_content_range(
         return 0;
     }
 
-    let highlighted =
-        highlight_content_window(content, SyntaxKind::Structured, start_byte, end_byte);
+    let highlighted = highlight_structured_window(content, start_byte, end_byte, None);
     let mut cursor = start_char;
     let mut written = 0_usize;
     for span in highlighted {

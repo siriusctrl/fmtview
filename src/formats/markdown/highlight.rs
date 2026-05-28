@@ -1,9 +1,10 @@
 use ratatui::text::Span;
 
-use super::{
-    checkpoints::HighlightCheckpointIndex,
-    util::{push_span_window, take_while},
+use crate::formats::{
+    HighlightCheckpointIndex,
+    shared::{push_span_window, take_while},
 };
+use crate::transform::FormatKind;
 use crate::tui::palette::{key_style, plain_style, punctuation_style, string_style};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -15,17 +16,15 @@ pub(crate) struct MarkdownFenceState {
 struct MarkdownFence {
     marker: char,
     marker_len: usize,
-    syntax: super::SyntaxKind,
+    format: FormatKind,
 }
 
 impl MarkdownFenceState {
-    pub(crate) fn line_syntax(self, line: &str) -> super::SyntaxKind {
+    pub(crate) fn line_format(self, line: &str) -> FormatKind {
         match (self.fence, fence_line(line)) {
-            (Some(fence), Some(line_fence)) if line_fence.closes(fence) => {
-                super::SyntaxKind::Markdown
-            }
-            (Some(fence), _) => fence.syntax,
-            (None, _) => super::SyntaxKind::Markdown,
+            (Some(fence), Some(line_fence)) if line_fence.closes(fence) => FormatKind::Markdown,
+            (Some(fence), _) => fence.format,
+            (None, _) => FormatKind::Markdown,
         }
     }
 
@@ -41,7 +40,7 @@ impl MarkdownFenceState {
                 self.fence = Some(MarkdownFence {
                     marker: line_fence.marker,
                     marker_len: line_fence.marker_len,
-                    syntax: syntax_for_fence_info(&line[line_fence.marker_end..]),
+                    format: format_for_fence_info(&line[line_fence.marker_end..]),
                 });
             }
         }
@@ -49,16 +48,16 @@ impl MarkdownFenceState {
 }
 
 #[cfg(test)]
-pub(crate) fn markdown_line_syntaxes(
+pub(crate) fn markdown_line_formats(
     lines: &[String],
     mut state: MarkdownFenceState,
-) -> Vec<super::SyntaxKind> {
+) -> Vec<FormatKind> {
     lines
         .iter()
         .map(|line| {
-            let syntax = state.line_syntax(line);
+            let format = state.line_format(line);
             state.advance(line);
-            syntax
+            format
         })
         .collect()
 }
@@ -461,16 +460,15 @@ fn fence_line_from_start(line: &str, start: usize) -> Option<MarkdownFenceLine> 
     })
 }
 
-fn syntax_for_fence_info(info: &str) -> super::SyntaxKind {
+fn format_for_fence_info(info: &str) -> FormatKind {
     let language = normalized_fence_language(info);
     match language.as_deref() {
-        Some("json" | "jsonc" | "jsonl" | "ndjson" | "xml" | "html" | "xhtml" | "svg") => {
-            super::SyntaxKind::Structured
-        }
-        Some("toml") => super::SyntaxKind::Toml,
-        Some("jinja" | "jinja2" | "j2" | "html+jinja") => super::SyntaxKind::Jinja,
-        Some("md" | "markdown") => super::SyntaxKind::Markdown,
-        _ => super::SyntaxKind::Plain,
+        Some("json" | "jsonc" | "jsonl" | "ndjson") => FormatKind::Json,
+        Some("xml" | "html" | "xhtml" | "svg") => FormatKind::Xml,
+        Some("toml") => FormatKind::Toml,
+        Some("jinja" | "jinja2" | "j2" | "html+jinja") => FormatKind::Jinja,
+        Some("md" | "markdown") => FormatKind::Markdown,
+        _ => FormatKind::Plain,
     }
 }
 

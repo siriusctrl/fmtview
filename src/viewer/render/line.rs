@@ -1,6 +1,5 @@
 use ratatui::text::{Line, Span};
 
-use crate::syntax::{SyntaxKind, highlight_content, highlight_content_window_indexed};
 use crate::tui::palette::plain_style;
 use crate::tui::{
     text::{
@@ -10,6 +9,10 @@ use crate::tui::{
     wrap::{
         continuation_indent, wrap_ranges_window_indexed, wrapped_row_count as tui_wrapped_row_count,
     },
+};
+use crate::{
+    formats::{highlight_content, highlight_content_window_indexed},
+    transform::FormatKind,
 };
 
 use super::{
@@ -189,7 +192,7 @@ pub(in crate::viewer) fn styled_segment(
     line: &str,
     start: usize,
     end: usize,
-    mode: SyntaxKind,
+    mode: FormatKind,
 ) -> Line<'static> {
     let mut spans = Vec::new();
     spans.push(gutter);

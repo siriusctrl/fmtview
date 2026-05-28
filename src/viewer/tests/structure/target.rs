@@ -25,7 +25,7 @@ fn structure_target_moves_even_when_already_visible() {
             x: 0,
             width: 80,
             wrap: false,
-            mode: SyntaxKind::Structured,
+            mode: FormatKind::Json,
         }
     ));
     assert_eq!(state.top, 4);
@@ -58,7 +58,7 @@ fn structure_target_near_eof_clamps_to_last_full_page() {
         x: 0,
         width: 80,
         wrap: false,
-        mode: SyntaxKind::Structured,
+        mode: FormatKind::Json,
     };
 
     let tail = resolve_targets_from_view(

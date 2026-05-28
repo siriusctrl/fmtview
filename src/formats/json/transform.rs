@@ -2,11 +2,12 @@ use std::io::{BufRead, BufReader, Cursor, Write};
 
 use anyhow::{Context, Result, anyhow, bail};
 
-use crate::input::InputSource;
+use crate::{
+    input::InputSource,
+    transform::{FormatOptions, IO_BUFFER_BYTES},
+};
 
-use super::{IO_BUFFER_BYTES, types::FormatOptions};
-
-pub(super) fn format_json<W: Write>(
+pub(crate) fn format_json<W: Write>(
     source: &InputSource,
     output: &mut W,
     options: &FormatOptions,
@@ -21,7 +22,7 @@ pub(super) fn format_json<W: Write>(
     Ok(())
 }
 
-pub(super) fn format_jsonl<W: Write>(
+pub(crate) fn format_jsonl<W: Write>(
     source: &InputSource,
     output: &mut W,
     options: &FormatOptions,
@@ -62,7 +63,7 @@ enum JsonSeparator {
 
 // Token-based formatting keeps JSON numbers exact without materializing the
 // whole document or coercing through native numeric types.
-pub(super) fn format_json_value<R: BufRead, W: Write>(
+pub(crate) fn format_json_value<R: BufRead, W: Write>(
     input: R,
     output: &mut W,
     indent: usize,
@@ -427,7 +428,7 @@ fn describe_byte(byte: u8) -> String {
     }
 }
 
-pub(super) fn trim_line_end(mut line: &[u8]) -> &[u8] {
+pub(crate) fn trim_line_end(mut line: &[u8]) -> &[u8] {
     if line.ends_with(b"\n") {
         line = &line[..line.len() - 1];
     }
