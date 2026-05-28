@@ -84,7 +84,7 @@ where
                     && self.previous_sticky_rows == sticky_rows
                     && self.previous_selection_mode == Some(frame.selection_mode) =>
             {
-                draw_diff(
+                draw_buffer_delta(
                     &mut self.backend,
                     &previous,
                     &current,
@@ -136,7 +136,7 @@ where
     }
 }
 
-fn draw_diff<B>(
+fn draw_buffer_delta<B>(
     backend: &mut B,
     previous: &Buffer,
     current: &Buffer,

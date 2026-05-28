@@ -9,7 +9,7 @@ use crate::diff::{DiffLayout, DiffView};
 use super::{
     EVENT_POLL_INTERVAL,
     render::{ViewPosition, format_count, progress_percent},
-    terminal::{TerminalFrame, ViewerTerminal},
+    screen::{TerminalFrame, ViewerTerminal},
 };
 
 mod input;

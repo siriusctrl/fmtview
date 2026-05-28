@@ -33,10 +33,10 @@ mod input;
 mod navigation;
 mod perf;
 mod render;
+mod screen;
 mod search;
 mod structure;
 mod syntax;
-mod terminal;
 mod viewport;
 
 fn span_text(spans: &[Span<'static>]) -> String {

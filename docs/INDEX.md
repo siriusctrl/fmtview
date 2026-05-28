@@ -60,13 +60,17 @@ Code orientation:
   - `lazy_records/` incrementally formats record streams for large TTY diffs.
   - `model/` parses unified patch rows, annotates inline changes, and builds
     the side-by-side row model.
-- `src/viewer.rs` owns the interactive TUI entry point, terminal loop, and
-  frame composition.
+- `src/viewer.rs` owns the shared TTY lifecycle: raw mode, alternate screen,
+  mouse capture setup, cleanup, and dispatch to file or diff viewer loops.
 - `src/viewer/` owns viewer submodules:
+  - `file.rs` runs the normal file viewer loop and frame composition for
+    indexed/lazy file windows.
   - `breadcrumb.rs` builds compact sticky JSON key breadcrumbs for the viewer.
-  - `diff_view/` handles the interactive single-column and side-by-side diff
-    viewer, with input handling and rendering split by responsibility.
-  - `terminal.rs` handles terminal diffing, ANSI writes, and scroll regions.
+  - `diff.rs` handles the interactive diff viewer loop; `diff/` contains its
+    input handling and single-column/side-by-side rendering.
+  - `screen.rs` handles terminal buffer rendering, ANSI writes, and scroll
+    regions. Its buffer-delta drawing is screen repaint logic, not file diff
+    generation.
   - `input/` handles key/mouse state, scrolling, jumps, and search.
     - `input/structure.rs` owns the `]`/`[` structure-navigation task state and
       public viewer entry points.
@@ -83,13 +87,16 @@ Code orientation:
   - `render/` handles line windows, wrapping, visual rows, caches, progress,
     prewarming, and the search highlight overlay.
   - `palette.rs` owns viewer colors.
-  - `tests/` keeps viewer regression and performance smoke coverage close to
-    the private TUI internals, split by input, navigation, search, render,
-    terminal, cache, syntax, and viewport responsibility. Structure-navigation
-    tests live under `tests/structure/` and mirror the implementation split:
-    detection, format behavior, interaction state, JSON ranking/visibility, and
-    target clamping.
-- `tests/cli.rs` covers CLI-level behavior.
+  - `tests/` keeps white-box viewer regression and performance smoke coverage
+    close to private TUI internals, split by input, navigation, search, render,
+    screen, cache, syntax, and viewport responsibility. These tests stay under
+    `src/` because they intentionally exercise private render caches,
+    terminal-buffer reuse, viewer state, and jump helpers without widening the
+    public API. Structure-navigation tests live under `tests/structure/` and
+    mirror the implementation split: detection, format behavior, interaction
+    state, JSON ranking/visibility, and target clamping.
+- `tests/cli.rs` covers black-box CLI behavior through the compiled binary and
+  should be the home for public command/output contracts.
 - `src/perf/` owns the Rust load/format performance harness used by the shell
   wrappers:
   - `runner.rs` owns sample counts, filtering, timing summaries, and output.
