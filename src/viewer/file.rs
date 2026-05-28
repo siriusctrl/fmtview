@@ -75,6 +75,7 @@ pub(super) fn run_loop(
     let mut caches = ViewerCaches::default();
 
     loop {
+        dirty |= absorb_file_notice(file, &mut state, Instant::now());
         dirty |= state.expire_notice(Instant::now());
         if state.search_task.is_some() {
             dirty |= process_search_step(file, &mut state)?;
@@ -318,6 +319,7 @@ fn draw_view(
             .is_none_or(|bottom| bottom.line_end);
     let progress = viewer_progress_percent(file, layout.context, bottom, viewport.bottom);
     let styled = viewport.lines;
+    absorb_file_notice(file, state, Instant::now());
     let title = file_title_text(file, state, current, bottom, progress);
     let footer_text = file_footer_text(file, state);
     let footer_style = file_footer_style(state);
@@ -347,6 +349,15 @@ fn draw_view(
     );
 
     Ok(())
+}
+
+fn absorb_file_notice(file: &dyn ViewFile, state: &mut ViewState, now: Instant) -> bool {
+    if let Some(message) = file.take_notice() {
+        state.set_notice(message, now, NOTICE_DURATION);
+        true
+    } else {
+        false
+    }
 }
 
 fn active_search_query(state: &ViewState) -> Option<&str> {

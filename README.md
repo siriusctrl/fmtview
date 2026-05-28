@@ -181,6 +181,8 @@ Use `--type` when stdin or an unusual extension needs an explicit profile.
   number tokens and string values.
 - JSONL and NDJSON inputs are processed record by record. Each record is
   formatted as JSON, and large record streams can open lazily in the TTY viewer.
+  In the interactive viewer, malformed records are shown as raw text with a
+  temporary red notice while later records continue formatting normally.
 - XML-compatible markup, including HTML-like documents, is formatted with
   structural indentation.
 
@@ -338,7 +340,9 @@ For record-like inputs such as JSONL logs, the terminal viewer formats records
 on demand instead of formatting and indexing the whole file before the first
 screen. While the lazy index is still growing, the title may show a `+` after
 the line count; the viewer continues extending that session index during idle
-time. Redirected output still performs the full deterministic formatting pass.
+time. If a JSONL record is malformed, the TTY viewer keeps that record as raw
+text, shows a temporary red notice, and continues with following records.
+Redirected output still performs the full deterministic formatting pass.
 
 To jump to a specific line, type the line number directly and press Enter. While
 a line jump is pending, the footer shows the target line; Backspace edits it and

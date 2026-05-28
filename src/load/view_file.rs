@@ -14,4 +14,7 @@ pub trait ViewFile {
     fn preload(&self, _max_lines: usize, _max_records: usize, _budget: Duration) -> Result<bool> {
         Ok(false)
     }
+    fn take_notice(&self) -> Option<String> {
+        None
+    }
 }

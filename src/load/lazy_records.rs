@@ -1,4 +1,4 @@
-use std::{fs::File, time::Duration};
+use std::{cell::RefCell, fs::File, rc::Rc, time::Duration};
 
 use anyhow::{Context, Result};
 
@@ -7,19 +7,21 @@ use crate::{
     load::{
         ViewFile,
         lazy::{LazyBatch, LazyFile, LazyProducer},
-        record_stream::FormattedRecordReader,
+        record_stream::{RecordRecoveryDiagnostic, RecoveringFormattedRecordReader},
     },
     transform::FormatOptions,
 };
 
 pub struct LazyTransformedRecordsFile {
     inner: LazyFile<RecordTransformProducer>,
+    notices: Rc<RefCell<RecordRecoveryNotices>>,
 }
 
 impl LazyTransformedRecordsFile {
     pub fn new(source: &InputSource, options: FormatOptions) -> Result<Self> {
         let file = source.open()?;
         let label = source.label().to_owned();
+        let notices = Rc::new(RefCell::new(RecordRecoveryNotices::default()));
         let len = file
             .metadata()
             .with_context(|| format!("failed to stat {}", source.label()))?
@@ -28,8 +30,9 @@ impl LazyTransformedRecordsFile {
             inner: LazyFile::new(
                 label.clone(),
                 len,
-                RecordTransformProducer::new(label, file, options),
+                RecordTransformProducer::new(label, file, options, Rc::clone(&notices)),
             )?,
+            notices,
         })
     }
 
@@ -72,16 +75,27 @@ impl ViewFile for LazyTransformedRecordsFile {
     fn preload(&self, max_lines: usize, max_records: usize, budget: Duration) -> Result<bool> {
         self.inner.preload(max_lines, max_records, budget)
     }
+
+    fn take_notice(&self) -> Option<String> {
+        self.notices.borrow_mut().take_notice()
+    }
 }
 
 struct RecordTransformProducer {
-    reader: FormattedRecordReader,
+    reader: RecoveringFormattedRecordReader,
+    notices: Rc<RefCell<RecordRecoveryNotices>>,
 }
 
 impl RecordTransformProducer {
-    fn new(label: String, file: File, options: FormatOptions) -> Self {
+    fn new(
+        label: String,
+        file: File,
+        options: FormatOptions,
+        notices: Rc<RefCell<RecordRecoveryNotices>>,
+    ) -> Self {
         Self {
-            reader: FormattedRecordReader::from_file(label, file, options),
+            reader: RecoveringFormattedRecordReader::from_file(label, file, options),
+            notices,
         }
     }
 }
@@ -91,11 +105,44 @@ impl LazyProducer for RecordTransformProducer {
         let Some(record) = self.reader.read_record_bytes()? else {
             return Ok(LazyBatch::Complete);
         };
+        if let Some(diagnostic) = record.diagnostic {
+            self.notices.borrow_mut().push(diagnostic);
+        }
         Ok(LazyBatch::Bytes {
             source_bytes: record.source_bytes,
             source_offset: record.source_offset,
             bytes: record.bytes,
         })
+    }
+}
+
+#[derive(Default)]
+struct RecordRecoveryNotices {
+    failures: usize,
+    first_record_number: Option<usize>,
+}
+
+impl RecordRecoveryNotices {
+    fn push(&mut self, diagnostic: RecordRecoveryDiagnostic) {
+        self.failures = self.failures.saturating_add(1);
+        self.first_record_number = self.first_record_number.or(Some(diagnostic.record_number));
+    }
+
+    fn take_notice(&mut self) -> Option<String> {
+        let failures = std::mem::take(&mut self.failures);
+        let first_record_number = self.first_record_number.take();
+        match (failures, first_record_number) {
+            (0, _) => None,
+            (1, Some(record_number)) => Some(format!(
+                "record {record_number} failed JSON parse; showing raw record"
+            )),
+            (failures, Some(record_number)) => Some(format!(
+                "{failures} JSONL records failed to parse starting at record {record_number}; showing raw records"
+            )),
+            (failures, None) => Some(format!(
+                "{failures} JSONL records failed to parse; showing raw records"
+            )),
+        }
     }
 }
 
@@ -168,17 +215,37 @@ mod tests {
     }
 
     #[test]
-    fn explicit_jsonl_errors_on_malformed_record() {
-        let (_temp, source) = temp_source(b"{\"ok\":true}\n{\"broken\":\n");
+    fn malformed_jsonl_record_is_spooled_raw_and_later_records_continue() {
+        let (_temp, source) = temp_source(b"{\"ok\":true}\n{\"broken\":\n{\"next\":true}\n");
         let options = FormatOptions {
             kind: FormatKind::Jsonl,
             indent: 2,
         };
         let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
 
-        let error = file.read_window(0, 20).unwrap_err();
+        let lines = file.read_window(0, 20).unwrap();
+        let notice = file.take_notice().unwrap();
 
-        assert!(error.to_string().contains("failed to parse JSON record"));
+        assert!(lines.iter().any(|line| line == "{\"broken\":"));
+        assert!(lines.iter().any(|line| line.contains("\"next\"")));
+        assert!(notice.contains("record 2 failed JSON parse"));
+        assert!(file.take_notice().is_none());
+    }
+
+    #[test]
+    fn malformed_jsonl_record_notices_are_aggregated() {
+        let (_temp, source) = temp_source(b"{\"broken\":\n{\"also_broken\":\n{\"ok\":true}\n");
+        let options = FormatOptions {
+            kind: FormatKind::Jsonl,
+            indent: 2,
+        };
+        let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
+
+        file.preload(20, 3, Duration::from_secs(1)).unwrap();
+        let notice = file.take_notice().unwrap();
+
+        assert!(notice.contains("2 JSONL records failed"));
+        assert!(notice.contains("record 1"));
     }
 
     #[test]

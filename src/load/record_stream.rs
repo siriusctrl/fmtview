@@ -12,6 +12,7 @@ use crate::{
 };
 
 pub(crate) struct RawRecord<'a> {
+    pub(crate) record_number: usize,
     pub(crate) source_offset: u64,
     pub(crate) source_bytes: u64,
     pub(crate) bytes: &'a [u8],
@@ -22,6 +23,7 @@ pub(crate) struct RawRecordReader {
     reader: BufReader<File>,
     line: Vec<u8>,
     source_offset: u64,
+    records_read: usize,
 }
 
 impl RawRecordReader {
@@ -35,6 +37,7 @@ impl RawRecordReader {
             reader: BufReader::new(file),
             line: Vec::with_capacity(8192),
             source_offset: 0,
+            records_read: 0,
         }
     }
 
@@ -50,7 +53,9 @@ impl RawRecordReader {
 
         let source_offset = self.source_offset;
         self.source_offset = self.source_offset.saturating_add(read as u64);
+        self.records_read = self.records_read.saturating_add(1);
         Ok(Some(RawRecord {
+            record_number: self.records_read,
             source_offset,
             source_bytes: read as u64,
             bytes: &self.line,
@@ -71,25 +76,6 @@ impl FormattedRecordReader {
             options,
             pending: VecDeque::new(),
         })
-    }
-
-    pub(crate) fn from_file(label: String, file: File, options: FormatOptions) -> Self {
-        Self {
-            raw: RawRecordReader::from_file(label, file),
-            options,
-            pending: VecDeque::new(),
-        }
-    }
-
-    pub(crate) fn read_record_bytes(&mut self) -> Result<Option<FormattedRecordBytes>> {
-        let Some(raw) = self.raw.read_record()? else {
-            return Ok(None);
-        };
-        Ok(Some(FormattedRecordBytes {
-            source_offset: raw.source_offset,
-            source_bytes: raw.source_bytes,
-            bytes: transform::format_record_bytes(raw.bytes, self.options)?,
-        }))
     }
 
     pub(crate) fn read_record(&mut self) -> Result<Option<FormattedRecord>> {
@@ -126,15 +112,67 @@ impl FormattedRecordReader {
     }
 }
 
-pub(crate) struct FormattedRecordBytes {
+pub(crate) struct RecoveringFormattedRecordReader {
+    raw: RawRecordReader,
+    options: FormatOptions,
+}
+
+impl RecoveringFormattedRecordReader {
+    pub(crate) fn from_file(label: String, file: File, options: FormatOptions) -> Self {
+        Self {
+            raw: RawRecordReader::from_file(label, file),
+            options,
+        }
+    }
+
+    pub(crate) fn read_record_bytes(&mut self) -> Result<Option<RecoveringFormattedRecordBytes>> {
+        let Some(raw) = self.raw.read_record()? else {
+            return Ok(None);
+        };
+
+        let bytes = match transform::format_record_bytes(raw.bytes, self.options) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return Ok(Some(RecoveringFormattedRecordBytes {
+                    source_offset: raw.source_offset,
+                    source_bytes: raw.source_bytes,
+                    bytes: raw_record_display_bytes(raw.bytes),
+                    diagnostic: Some(RecordRecoveryDiagnostic {
+                        record_number: raw.record_number,
+                    }),
+                }));
+            }
+        };
+
+        Ok(Some(RecoveringFormattedRecordBytes {
+            source_offset: raw.source_offset,
+            source_bytes: raw.source_bytes,
+            bytes,
+            diagnostic: None,
+        }))
+    }
+}
+
+pub(crate) struct RecoveringFormattedRecordBytes {
     pub(crate) source_offset: u64,
     pub(crate) source_bytes: u64,
     pub(crate) bytes: Vec<u8>,
+    pub(crate) diagnostic: Option<RecordRecoveryDiagnostic>,
+}
+
+pub(crate) struct RecordRecoveryDiagnostic {
+    pub(crate) record_number: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FormattedRecord {
     pub(crate) lines: Vec<String>,
+}
+
+fn raw_record_display_bytes(bytes: &[u8]) -> Vec<u8> {
+    String::from_utf8_lossy(transform::trim_record_line_end(bytes))
+        .into_owned()
+        .into_bytes()
 }
 
 #[cfg(test)]
@@ -160,11 +198,13 @@ mod tests {
         let mut reader = RawRecordReader::new(&source).unwrap();
 
         let first = reader.read_record().unwrap().unwrap();
+        assert_eq!(first.record_number, 1);
         assert_eq!(first.source_offset, 0);
         assert_eq!(first.source_bytes, 8);
         assert_eq!(first.bytes, b"{\"a\":1}\n");
 
         let second = reader.read_record().unwrap().unwrap();
+        assert_eq!(second.record_number, 2);
         assert_eq!(second.source_offset, 8);
         assert_eq!(second.source_bytes, 8);
         assert_eq!(second.bytes, b"{\"b\":2}\n");
@@ -194,13 +234,15 @@ mod tests {
     }
 
     #[test]
-    fn formatted_record_bytes_preserve_source_position() {
+    fn recovering_record_bytes_preserve_source_position() {
         let (_temp, source) = temp_source(b"{\"a\":1}\n\n");
         let options = FormatOptions {
             kind: FormatKind::Auto,
             indent: 2,
         };
-        let mut reader = FormattedRecordReader::new(&source, options).unwrap();
+        let file = source.open().unwrap();
+        let mut reader =
+            RecoveringFormattedRecordReader::from_file(source.label().to_owned(), file, options);
 
         let first = reader.read_record_bytes().unwrap().unwrap();
         assert_eq!(first.source_offset, 0);
@@ -211,5 +253,47 @@ mod tests {
         assert_eq!(second.source_offset, 8);
         assert_eq!(second.source_bytes, 1);
         assert!(second.bytes.is_empty());
+    }
+
+    #[test]
+    fn strict_record_reader_errors_on_malformed_jsonl_record() {
+        let (_temp, source) = temp_source(b"{\"ok\":true}\n{\"broken\":\n{\"next\":true}\n");
+        let options = FormatOptions {
+            kind: FormatKind::Jsonl,
+            indent: 2,
+        };
+        let mut reader = FormattedRecordReader::new(&source, options).unwrap();
+
+        assert!(reader.read_record().unwrap().is_some());
+        let error = match reader.read_record() {
+            Ok(_) => panic!("malformed JSONL record should fail in the strict reader"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("failed to parse JSON record"));
+    }
+
+    #[test]
+    fn recovering_record_bytes_keep_raw_malformed_record_and_continue() {
+        let (_temp, source) = temp_source(b"{\"ok\":true}\n{\"broken\":\n{\"next\":true}\n");
+        let options = FormatOptions {
+            kind: FormatKind::Jsonl,
+            indent: 2,
+        };
+        let file = source.open().unwrap();
+        let mut reader =
+            RecoveringFormattedRecordReader::from_file(source.label().to_owned(), file, options);
+
+        let first = reader.read_record_bytes().unwrap().unwrap();
+        assert!(first.diagnostic.is_none());
+        assert!(first.bytes.starts_with(b"{\n"));
+
+        let second = reader.read_record_bytes().unwrap().unwrap();
+        assert_eq!(second.bytes, b"{\"broken\":");
+        assert_eq!(second.diagnostic.unwrap().record_number, 2);
+
+        let third = reader.read_record_bytes().unwrap().unwrap();
+        assert!(third.diagnostic.is_none());
+        assert!(third.bytes.windows(6).any(|window| window == b"\"next\""));
     }
 }

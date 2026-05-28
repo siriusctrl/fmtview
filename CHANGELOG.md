@@ -8,6 +8,12 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Recover malformed JSONL/NDJSON records in the interactive lazy viewer by
+  showing the bad record as raw text, continuing to format later records, and
+  surfacing a temporary red footer notice. Redirected output remains strict.
+
 ## [0.4.0] - 2026-05-28
 
 ### Added

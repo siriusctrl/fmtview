@@ -41,6 +41,16 @@ fn pretty_prints_each_jsonl_record() {
 }
 
 #[test]
+fn redirected_jsonl_stays_strict_on_malformed_record() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["--type", "jsonl"])
+        .write_stdin("{\"ok\":true}\n{\"broken\":\n{\"next\":true}\n")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("failed to parse JSONL line 2"));
+}
+
+#[test]
 fn auto_detects_jsonl_file_and_pretty_prints_record() {
     let mut input = TempFileBuilder::new().suffix(".jsonl").tempfile().unwrap();
     write!(
