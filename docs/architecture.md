@@ -239,6 +239,29 @@ string.
 
 ## Shared Lazy Runtime
 
+The load module is intentionally about one input at a time. Its public surface
+is the `ViewFile` contract plus `open_view_file`, which turns the active profile
+into either an eagerly indexed temp file or a lazy view file:
+
+```text
+  load/open.rs
+    InputSource + TypeProfile + FormatOptions
+             |
+             v
+    LazyTransformedRecordsFile
+      or
+    IndexedTempFile
+             |
+             v
+    Box<dyn ViewFile>
+
+  load/indexed.rs
+    eager temp-file line offsets + read_window
+
+  load/lines.rs
+    shared line-offset and line-ending helpers
+```
+
 Lazy loading should share the file/index/spool/viewer runtime and isolate the
 type-specific producer. The intended shape is:
 

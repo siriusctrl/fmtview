@@ -9,7 +9,10 @@ use anyhow::{Context, Result, bail};
 use memchr::memchr_iter;
 use tempfile::NamedTempFile;
 
-use super::{ViewFile, strip_line_end};
+use super::{
+    ViewFile,
+    lines::{strip_byte_line_end, strip_line_end},
+};
 
 const DIRECT_READ_LINE_BYTES: u64 = 64 * 1024;
 
@@ -242,15 +245,6 @@ impl<P: LazyProducer> LazyState<P> {
             .copied()
             .unwrap_or(self.spool_len);
         line_end.saturating_sub(line_start)
-    }
-}
-
-fn strip_byte_line_end(line: &mut Vec<u8>) {
-    if line.ends_with(b"\n") {
-        line.pop();
-        if line.ends_with(b"\r") {
-            line.pop();
-        }
     }
 }
 

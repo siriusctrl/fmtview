@@ -6,7 +6,7 @@ use clap::{Args, Parser, Subcommand};
 use crate::{
     diff,
     input::InputSource,
-    load::{self, ViewFile},
+    load,
     profile::TypeProfile,
     transform::{self, FormatKind, FormatOptions},
     viewer,
@@ -93,7 +93,7 @@ fn run_format(command: FormatCommand) -> Result<()> {
 
     if should_view() {
         viewer::run(
-            open_view_file(&input, &resolved_options, profile)?,
+            load::open_view_file(&input, &resolved_options, profile)?,
             profile.content,
         )
     } else {
@@ -125,25 +125,6 @@ fn run_diff(command: DiffCommand) -> Result<()> {
 
 fn should_view() -> bool {
     io::stdout().is_terminal()
-}
-
-fn open_view_file(
-    input: &InputSource,
-    options: &FormatOptions,
-    profile: TypeProfile,
-) -> Result<Box<dyn ViewFile>> {
-    match profile.load {
-        load::LoadPlan::LazyTransformedRecords => Ok(Box::new(
-            load::LazyTransformedRecordsFile::new(input, *options)?,
-        )),
-        load::LoadPlan::EagerTransformedDocument | load::LoadPlan::EagerIndexedSource => {
-            let formatted = transform::transform_source_to_temp(input, options, profile.transform)?;
-            Ok(Box::new(load::IndexedTempFile::new(
-                input.label().to_owned(),
-                formatted,
-            )?))
-        }
-    }
 }
 
 fn copy_temp_to_stdout(temp: &tempfile::NamedTempFile) -> Result<()> {

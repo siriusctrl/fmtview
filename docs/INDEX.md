@@ -46,9 +46,14 @@ Code orientation:
   - `toml/`, `jinja/`, and `plain/` own their respective highlighting and
     structure rules.
   - `shared.rs` keeps small helpers reused by multiple format packages.
-- `src/load.rs` owns the load-module entry point, `ViewFile`, and eager
-  temp-file line indexing.
-- `src/load/` owns lazy-load runtimes and load planning helpers:
+- `src/load.rs` owns the load-module entry point and exports the load-facing
+  API.
+- `src/load/` owns single-input view-file construction, indexing, lazy-load
+  runtimes, and load planning helpers:
+  - `view_file.rs` defines the `ViewFile` contract consumed by viewer code.
+  - `open.rs` converts a resolved `TypeProfile` into the right `ViewFile`.
+  - `indexed.rs` owns eager temp-file line indexing and read-window access.
+  - `lines.rs` owns shared line-offset and line-ending helpers.
   - lazy loaders share spool/index/view-window mechanics and keep
     format-specific record or document reading behind producer boundaries.
   - `record_stream.rs` owns newline-delimited record access shared by lazy
