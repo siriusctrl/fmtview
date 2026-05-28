@@ -6,14 +6,16 @@ use std::{
 
 use anyhow::Result;
 
-use crate::{input::InputSource, transform::FormatOptions};
+use crate::{
+    input::InputSource,
+    load::record_stream::{FormattedRecord, FormattedRecordReader},
+    transform::FormatOptions,
+};
 
 use super::{DiffModel, UnifiedDiffRow};
 
-mod reader;
 mod rows;
 
-use reader::{FormattedRecord, LazyRecordReader};
 use rows::{
     FormattedContextRecord, append_context_record, append_context_records, append_omitted_context,
     find_sync_record, full_line_change, scanning_message, scanning_model,
@@ -25,8 +27,8 @@ const RESYNC_LOOKAHEAD_RECORDS: usize = 32;
 pub(crate) struct LazyRecordDiff {
     left_label: String,
     right_label: String,
-    left: LazyRecordReader,
-    right: LazyRecordReader,
+    left: FormattedRecordReader,
+    right: FormattedRecordReader,
     rows: Vec<UnifiedDiffRow>,
     pending_context: VecDeque<FormattedContextRecord>,
     model: DiffModel,
@@ -50,8 +52,8 @@ impl LazyRecordDiff {
         Ok(Self {
             left_label,
             right_label,
-            left: LazyRecordReader::new(left, options)?,
-            right: LazyRecordReader::new(right, options)?,
+            left: FormattedRecordReader::new(left, options)?,
+            right: FormattedRecordReader::new(right, options)?,
             rows: Vec::new(),
             pending_context: VecDeque::new(),
             model,

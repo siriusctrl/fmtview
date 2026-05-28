@@ -41,6 +41,9 @@ Code orientation:
 - `src/load/` owns lazy-load runtimes and load planning helpers:
   - lazy loaders share spool/index/view-window mechanics and keep
     format-specific record or document reading behind producer boundaries.
+  - `record_stream.rs` owns newline-delimited record access shared by lazy
+    viewing and lazy diffing: raw record reads, source offsets, per-record
+    formatting, lookahead windows, and unread buffers.
 - `src/transform.rs` owns the transform-module entry point.
 - `src/transform/` owns content transforms that can produce scriptable output:
   - `engine.rs` orchestrates whole-source and record formatting.
@@ -58,6 +61,8 @@ Code orientation:
   - `stdout.rs` keeps redirected diff output on the unified patch path.
   - `view.rs` selects the eager or lazy TTY diff model.
   - `lazy_records/` incrementally formats record streams for large TTY diffs.
+    It consumes `load::record_stream` readers and owns only two-sided
+    comparison, resynchronization, context omission, and diff row generation.
   - `model/` parses unified patch rows, annotates inline changes, and builds
     the side-by-side row model.
   - `viewer.rs` and `viewer/` own the interactive diff TTY surface: input,

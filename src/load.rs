@@ -11,6 +11,7 @@ use tempfile::NamedTempFile;
 mod lazy;
 mod lazy_records;
 mod plan;
+pub(crate) mod record_stream;
 
 pub use lazy_records::LazyTransformedRecordsFile;
 pub use plan::LoadPlan;

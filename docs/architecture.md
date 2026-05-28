@@ -256,6 +256,39 @@ This keeps future format support from becoming a set of unrelated lazy viewers.
 Adding a new lazy format should usually mean adding a producer, not another
 `ViewFile` implementation.
 
+## Record Stream Access And Diff
+
+Newline-delimited record access belongs to `load`, even when the consumer is a
+diff view. The shared layer is `load::record_stream`:
+
+```text
+  load::record_stream
+    RawRecordReader
+      - read one newline-delimited source record
+      - track source byte offsets and byte counts
+      - reuse the raw input buffer
+
+    FormattedRecordReader
+      - format one record with TransformStrategy-compatible options
+      - expose formatted bytes for lazy viewer spooling
+      - expose formatted lines plus lookahead/unread for lazy diffing
+```
+
+Consumers stay separate:
+
+```text
+  load::lazy_records
+    formatted record bytes -> LazyBatch -> LazyFile spool/index -> ViewFile
+
+  diff::lazy_records
+    left/right formatted record lines -> resync/context rules -> DiffModel
+```
+
+This avoids duplicate record readers while keeping diff comparison out of
+`load`. Future record-batch or ordered-parallel formatting should start at the
+shared record-stream access layer, then let each consumer decide how to use the
+formatted records.
+
 ## Strategy Plus Runtime
 
 The same design applies outside loading:

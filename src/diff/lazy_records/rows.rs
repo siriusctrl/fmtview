@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use super::reader::FormattedRecord;
 use crate::diff::{DiffChange, DiffModel, UnifiedDiffRow};
+use crate::load::record_stream::FormattedRecord;
 
 #[derive(Clone)]
 pub(super) struct FormattedContextRecord {

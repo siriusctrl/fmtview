@@ -1,8 +1,4 @@
-use std::{
-    fs::File,
-    io::{BufRead, BufReader},
-    time::Duration,
-};
+use std::{fs::File, time::Duration};
 
 use anyhow::{Context, Result};
 
@@ -11,8 +7,9 @@ use crate::{
     load::{
         ViewFile,
         lazy::{LazyBatch, LazyFile, LazyProducer},
+        record_stream::FormattedRecordReader,
     },
-    transform::{self, FormatOptions},
+    transform::FormatOptions,
 };
 
 pub struct LazyTransformedRecordsFile {
@@ -78,43 +75,26 @@ impl ViewFile for LazyTransformedRecordsFile {
 }
 
 struct RecordTransformProducer {
-    label: String,
-    reader: BufReader<File>,
-    raw_line: Vec<u8>,
-    options: FormatOptions,
+    reader: FormattedRecordReader,
 }
 
 impl RecordTransformProducer {
     fn new(label: String, file: File, options: FormatOptions) -> Self {
         Self {
-            label,
-            reader: BufReader::new(file),
-            raw_line: Vec::with_capacity(8192),
-            options,
+            reader: FormattedRecordReader::from_file(label, file, options),
         }
     }
 }
 
 impl LazyProducer for RecordTransformProducer {
-    fn produce(&mut self, source_offset: u64) -> Result<LazyBatch> {
-        let record_start = source_offset;
-        let mut raw_line = std::mem::take(&mut self.raw_line);
-        raw_line.clear();
-        let read = self
-            .reader
-            .read_until(b'\n', &mut raw_line)
-            .with_context(|| format!("failed to read {}", self.label))?;
-        if read == 0 {
-            self.raw_line = raw_line;
+    fn produce(&mut self, _source_offset: u64) -> Result<LazyBatch> {
+        let Some(record) = self.reader.read_record_bytes()? else {
             return Ok(LazyBatch::Complete);
-        }
-
-        let rendered = transform::format_record_bytes(&raw_line, self.options)?;
-        self.raw_line = raw_line;
+        };
         Ok(LazyBatch::Bytes {
-            source_bytes: read as u64,
-            source_offset: record_start,
-            bytes: rendered,
+            source_bytes: record.source_bytes,
+            source_offset: record.source_offset,
+            bytes: record.bytes,
         })
     }
 }
