@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-28
+
 ### Added
 
 - Recover malformed JSONL/NDJSON records in the interactive lazy viewer by
