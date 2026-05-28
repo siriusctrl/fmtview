@@ -36,17 +36,22 @@ Code orientation:
 - `src/input.rs` owns input materialization from files, stdin, and literals.
 - `src/profile.rs` resolves `--type` and auto-detection into a concrete content
   kind, input shape, load strategy, transform strategy, and syntax highlighter.
-- `src/load/` owns lazy-load runtimes and indexed line access:
-  - `mod.rs` defines `ViewFile` plus eager temp-file line indexing.
+- `src/load.rs` owns the load-module entry point, `ViewFile`, and eager
+  temp-file line indexing.
+- `src/load/` owns lazy-load runtimes and load planning helpers:
   - lazy loaders share spool/index/view-window mechanics and keep
     format-specific record or document reading behind producer boundaries.
+- `src/transform.rs` owns the transform-module entry point.
 - `src/transform/` owns content transforms that can produce scriptable output:
   - `engine.rs` orchestrates whole-source and record formatting.
   - `detect.rs` handles formatter candidates after profile resolution.
   - `json.rs` keeps token-preserving JSON/JSONL formatting.
   - `xml.rs` wraps XML-compatible formatting.
-- `src/syntax/` owns visible-window syntax highlighting and checkpoint state.
-  It must not read input files or transform content.
+- `src/syntax.rs` owns the syntax-module entry point and visible-window
+  highlighter dispatch.
+- `src/syntax/` owns syntax highlighters and checkpoint state. It must not read
+  input files or transform content.
+- `src/diff.rs` owns the diff-module entry point.
 - `src/diff/` owns unified patch generation plus the structured diff model used
   by the interactive diff viewer:
   - `external.rs` formats both sides and shells out to the platform diff tool.
@@ -55,8 +60,9 @@ Code orientation:
   - `lazy_records/` incrementally formats record streams for large TTY diffs.
   - `model/` parses unified patch rows, annotates inline changes, and builds
     the side-by-side row model.
-- `src/viewer/` owns the interactive TUI:
-  - `mod.rs` runs the terminal loop and frame composition.
+- `src/viewer.rs` owns the interactive TUI entry point, terminal loop, and
+  frame composition.
+- `src/viewer/` owns viewer submodules:
   - `breadcrumb.rs` builds compact sticky JSON key breadcrumbs for the viewer.
   - `diff_view/` handles the interactive single-column and side-by-side diff
     viewer, with input handling and rendering split by responsibility.
