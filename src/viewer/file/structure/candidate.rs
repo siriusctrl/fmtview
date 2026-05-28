@@ -1,7 +1,7 @@
 use crate::{
     formats::{StructureAnchor, StructureCandidateKind},
     transform::FormatKind,
-    viewer::input::SearchTarget,
+    viewer::file::input::SearchTarget,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

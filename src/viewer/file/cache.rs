@@ -1,4 +1,4 @@
-use super::super::{
+use super::{
     breadcrumb::JsonBreadcrumbCache,
     markdown_modes::MarkdownModeCache,
     render::{LineWindowCache, RenderedLineCache, TailPositionCache},

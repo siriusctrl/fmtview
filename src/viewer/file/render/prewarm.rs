@@ -2,11 +2,12 @@ use std::time::Instant;
 
 use crate::load::ViewFile;
 
-use super::super::{
+use crate::viewer::file::{
     PREWARM_BUDGET, PREWARM_MAX_LINE_BYTES, PREWARM_MAX_LINES, PREWARM_PAGES,
     RENDER_CACHE_MAX_ROWS_PER_LINE, WRAP_PREWARM_LOGICAL_LINES, WRAP_RENDER_CHUNK_ROWS,
-    markdown_modes::MarkdownModeCache,
 };
+
+use super::super::markdown_modes::MarkdownModeCache;
 use super::{
     cache::{LineWindowCache, RenderedLineCache},
     types::{RenderContext, RenderRequest, ViewPosition},

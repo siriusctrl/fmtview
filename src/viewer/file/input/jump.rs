@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use super::super::JUMP_BUFFER_MAX_DIGITS;
 use super::{keys::accepts_jump_digit, scroll::set_top, state::ViewState};
+use crate::viewer::file::JUMP_BUFFER_MAX_DIGITS;
 
 pub(in crate::viewer) fn handle_jump_input_key(
     code: KeyCode,

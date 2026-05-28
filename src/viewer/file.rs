@@ -11,27 +11,51 @@ use ratatui::backend::CrosstermBackend;
 use crate::load::ViewFile;
 use crate::transform::FormatKind;
 
+pub(in crate::viewer) const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+pub(in crate::viewer) const EVENT_DRAIN_BUDGET: Duration = Duration::from_millis(8);
+pub(in crate::viewer) const EVENT_DRAIN_LIMIT: usize = 512;
+pub(in crate::viewer) const MOUSE_SCROLL_LINES: usize = 1;
+pub(in crate::viewer) const MOUSE_HORIZONTAL_COLUMNS: usize = 4;
+pub(in crate::viewer) const RENDER_CACHE_MAX_LINES: usize = 512;
+pub(in crate::viewer) const RENDER_CACHE_MAX_ROWS_PER_LINE: usize = 256;
+pub(in crate::viewer) const WRAP_RENDER_CHUNK_ROWS: usize = 64;
+pub(in crate::viewer) const WRAP_RENDER_CHUNKS_PER_LINE: usize = 64;
+pub(in crate::viewer) const TERMINAL_SCROLL_HINT_MAX_ROWS: usize = 12;
+pub(in crate::viewer) const WRAP_PREWARM_LOGICAL_LINES: usize = 4;
+pub(in crate::viewer) const PREWARM_PAGES: usize = 2;
+pub(in crate::viewer) const PREWARM_MAX_LINES: usize = 192;
+pub(in crate::viewer) const PREWARM_MAX_LINE_BYTES: usize = 16 * 1024;
+pub(in crate::viewer) const PREWARM_BUDGET: Duration = Duration::from_millis(4);
+pub(in crate::viewer) const LAZY_PRELOAD_LINES: usize = 4096;
+pub(in crate::viewer) const LAZY_PRELOAD_RECORDS: usize = 64;
+pub(in crate::viewer) const LAZY_PRELOAD_BUDGET: Duration = Duration::from_millis(6);
+pub(in crate::viewer) const JUMP_BUFFER_MAX_DIGITS: usize = 20;
+pub(in crate::viewer) const SEARCH_CHUNK_LINES: usize = 4096;
+pub(in crate::viewer) const TAIL_ROW_OFFSET: usize = usize::MAX;
+
+pub(in crate::viewer) mod breadcrumb;
 mod cache;
+pub(in crate::viewer) mod input;
+pub(in crate::viewer) mod markdown_modes;
+pub(in crate::viewer) mod position;
+pub(in crate::viewer) mod render;
+pub(in crate::viewer) mod structure;
 
 use cache::ViewerCaches;
 
 #[cfg(test)]
 pub(super) use cache::ViewerCaches as TestViewerCaches;
 
-use super::{
-    EVENT_POLL_INTERVAL, LAZY_PRELOAD_BUDGET, LAZY_PRELOAD_LINES, LAZY_PRELOAD_RECORDS,
-    TAIL_ROW_OFFSET, TERMINAL_SCROLL_HINT_MAX_ROWS,
-    input::{ViewState, drain_events, process_search_index_step, process_search_step},
-    position::resolve_targets_from_view,
-    render::{
-        RenderRequest, RenderedLineCache, ViewPosition, ViewportRenderOptions, draw_layout,
-        effective_top_row_offset, exact_top_line_tail_offset, file_footer_text, file_title_text,
-        prewarm_render_cache, refresh_sticky_after_position_change, render_row_limit,
-        render_viewport, sync_sticky_layout, viewer_progress_percent,
-    },
-    structure::{StructureViewport, process_structure_step},
-};
 use crate::tui::screen::{ScrollHint, TerminalFrame, ViewerTerminal};
+use input::{ViewState, drain_events, process_search_index_step, process_search_step};
+use position::resolve_targets_from_view;
+use render::{
+    RenderRequest, RenderedLineCache, ViewPosition, ViewportRenderOptions, draw_layout,
+    effective_top_row_offset, exact_top_line_tail_offset, file_footer_text, file_title_text,
+    prewarm_render_cache, refresh_sticky_after_position_change, render_row_limit, render_viewport,
+    sync_sticky_layout, viewer_progress_percent,
+};
+use structure::{StructureViewport, process_structure_step};
 
 pub(super) fn run_loop(
     terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,

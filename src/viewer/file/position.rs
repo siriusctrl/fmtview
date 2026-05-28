@@ -10,7 +10,7 @@ use super::{
     },
 };
 
-pub(super) fn adjust_state_for_visible_height(
+pub(in crate::viewer) fn adjust_state_for_visible_height(
     file: &dyn ViewFile,
     state: &mut ViewState,
     visible_height: usize,
@@ -37,7 +37,7 @@ pub(super) fn adjust_state_for_visible_height(
     Ok(tail)
 }
 
-pub(super) fn resolve_targets_from_view(
+pub(in crate::viewer) fn resolve_targets_from_view(
     file: &dyn ViewFile,
     state: &mut ViewState,
     line_cache: &mut LineWindowCache,

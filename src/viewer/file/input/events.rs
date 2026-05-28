@@ -3,10 +3,11 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 
-use super::super::{
+use crate::viewer::file::{
     EVENT_DRAIN_BUDGET, EVENT_DRAIN_LIMIT, MOUSE_HORIZONTAL_COLUMNS, MOUSE_SCROLL_LINES,
-    structure::{StructureDirection, start_structure_navigation},
 };
+
+use super::super::structure::{StructureDirection, start_structure_navigation};
 use super::{
     jump::{handle_jump_input_key, push_jump_digit},
     keys::{accepts_jump_digit, plain_key},

@@ -15,9 +15,9 @@ use ratatui::{
 };
 use tempfile::NamedTempFile;
 
-use super::input::*;
-use super::render::*;
-use super::structure::*;
+use super::file::input::*;
+use super::file::render::*;
+use super::file::structure::*;
 use super::*;
 use crate::{
     formats::{highlight_json_like, highlight_xml_line},

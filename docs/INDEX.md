@@ -80,29 +80,30 @@ Code orientation:
 - `src/viewer.rs` owns the shared TTY lifecycle: raw mode, alternate screen,
   mouse capture setup, cleanup, and dispatch to file or diff viewer loops.
 - `src/viewer/` owns viewer submodules:
-  - `file.rs` runs the normal file viewer loop and frame composition for
-    indexed/lazy file windows.
-  - `file/` contains normal-viewer cache wiring.
-  - `breadcrumb.rs` builds compact sticky JSON key breadcrumbs for the viewer.
-  - `input/` handles key/mouse state, scrolling, jumps, and search.
-  - `structure.rs` and `structure/` own the `]`/`[` smart structure jump:
-    task state, lazy scans, candidate ranking, and viewport visibility.
-    Format-specific structure rules live under `src/formats/<type>/structure.rs`.
-    - `structure/scan.rs` reads bounded chunks and drives forward/backward lazy
-      scans.
-    - `structure/candidate.rs` owns viewer-side candidate ranking.
-    - `structure/visibility.rs` decides whether a candidate has already been
-      fully observed in the current viewport.
-  - `markdown_modes.rs` owns viewer-time Markdown fenced-code checkpointing.
-    The per-line mode rules live with Markdown under `src/formats/markdown/`.
-  - `render/` handles normal-viewer line windows, visual rows, layout/sticky
-    coordination, title/footer text, caches, progress, prewarming, and the
-    search highlight overlay. Shared text wrapping lives in `src/tui/`.
-  - `diff.rs` and `diff/` own the interactive diff viewer loop, input,
-    change-block navigation, and diff render composition. They consume
+  - `file.rs` and `file/` own the normal file viewer mode for indexed/lazy file
+    windows.
+    - `file/input.rs` and `file/input/` handle key/mouse state, scrolling, line
+      jumps, and search.
+    - `file/render.rs` and `file/render/` handle line windows, visual rows,
+      layout/sticky coordination, title/footer text, caches, progress,
+      prewarming, and the search highlight overlay. Shared text wrapping lives
+      in `src/tui/`.
+    - `file/structure.rs` and `file/structure/` own the `]`/`[` smart structure
+      jump: task state, lazy scans, candidate ranking, and viewport visibility.
+      Format-specific structure rules live under
+      `src/formats/<type>/structure.rs`.
+    - `file/breadcrumb.rs` builds compact sticky JSON key breadcrumbs.
+    - `file/markdown_modes.rs` owns viewer-time Markdown fenced-code
+      checkpointing. The per-line mode rules live with Markdown under
+      `src/formats/markdown/`.
+    - `file/position.rs` resolves search/structure targets to visible viewport
+      positions and clamps tail positions.
+  - `diff.rs` and `diff/` own the interactive diff viewer mode. They consume
     `src/diff/` models but keep terminal-facing behavior in the viewer layer.
-    `diff/render/` owns all diff TTY rows, title/footer text, unified and
-    side-by-side layout, and inline diff styling.
+    - `diff/input.rs` handles diff-viewer keys and mouse events.
+    - `diff/navigation.rs` handles change-block jumps and visual-row scrolling.
+    - `diff/render.rs` and `diff/render/` own all diff TTY rows, title/footer
+      text, unified and side-by-side layout, and inline diff styling.
   - `tests/` keeps white-box viewer regression and performance smoke coverage
     close to private TUI internals, split by input, navigation, search, render,
     screen, cache, highlighting, and viewport responsibility. These tests stay under

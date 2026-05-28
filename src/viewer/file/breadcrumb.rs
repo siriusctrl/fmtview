@@ -12,7 +12,7 @@ const MAX_BREADCRUMB_ROWS: usize = 2;
 const MIN_BREADCRUMB_WIDTH: usize = 16;
 
 #[derive(Debug, Default)]
-pub(super) struct JsonBreadcrumbCache {
+pub(in crate::viewer) struct JsonBreadcrumbCache {
     checkpoints: Vec<PathCheckpoint>,
 }
 
@@ -36,7 +36,7 @@ enum JsonLineKind {
 }
 
 impl JsonBreadcrumbCache {
-    pub(super) fn render(
+    pub(in crate::viewer) fn render(
         &mut self,
         file: &dyn ViewFile,
         line: usize,

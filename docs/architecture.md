@@ -133,16 +133,16 @@ clamping.
 The implementation mirrors that split:
 
 ```text
-  viewer/structure.rs
+  viewer/file/structure.rs
     task lifecycle, no-result messages, and ViewState handoff
 
-  viewer/structure/scan.rs
+  viewer/file/structure/scan.rs
     bounded lazy chunk reads and forward/backward scan progress
 
-  viewer/structure/candidate.rs
+  viewer/file/structure/candidate.rs
     viewer-side candidate ranking policy
 
-  viewer/structure/visibility.rs
+  viewer/file/structure/visibility.rs
     viewport observation rules shared by all formats
 
   formats/<format>/structure.rs
@@ -169,15 +169,19 @@ that happens to draw terminal text:
     display-width wrapping, and wrap checkpoints
 
   viewer/
-    interactive viewer experiences:
-    - normal file viewer loop, input/search, structure navigation, sticky
-      breadcrumbs, render caches, viewport positioning, and Markdown line modes
-    - diff viewer loop, diff-specific input, change-block navigation, and
-      unified/side-by-side render composition
+    terminal-facing viewer modes and their orchestration
 
-  viewer/render/
+  viewer/file/
+    normal file viewer mode: input/search, structure navigation, sticky
+    breadcrumbs, Markdown line modes, viewport positioning, and render caches
+
+  viewer/file/render/
     normal-file render output: line windows, visual rows, caches, progress,
     prewarming, and search highlight overlays
+
+  viewer/diff/
+    diff viewer mode: diff-specific input, visual-row scrolling,
+    change-block navigation, and render orchestration
 
   viewer/diff/render/
     diff render output: styled diff rows, title/footer text, unified and

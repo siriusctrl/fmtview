@@ -1,11 +1,5 @@
-mod breadcrumb;
 mod diff;
 mod file;
-mod input;
-mod markdown_modes;
-mod position;
-mod render;
-mod structure;
 
 use std::io::{self, Write};
 
@@ -18,28 +12,6 @@ use crossterm::{
 use ratatui::backend::CrosstermBackend;
 
 use crate::{load::ViewFile, transform::FormatKind, tui::screen::ViewerTerminal};
-
-const EVENT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
-const EVENT_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
-const EVENT_DRAIN_LIMIT: usize = 512;
-const MOUSE_SCROLL_LINES: usize = 1;
-const MOUSE_HORIZONTAL_COLUMNS: usize = 4;
-const RENDER_CACHE_MAX_LINES: usize = 512;
-const RENDER_CACHE_MAX_ROWS_PER_LINE: usize = 256;
-const WRAP_RENDER_CHUNK_ROWS: usize = 64;
-const WRAP_RENDER_CHUNKS_PER_LINE: usize = 64;
-const TERMINAL_SCROLL_HINT_MAX_ROWS: usize = 12;
-const WRAP_PREWARM_LOGICAL_LINES: usize = 4;
-const PREWARM_PAGES: usize = 2;
-const PREWARM_MAX_LINES: usize = 192;
-const PREWARM_MAX_LINE_BYTES: usize = 16 * 1024;
-const PREWARM_BUDGET: std::time::Duration = std::time::Duration::from_millis(4);
-const LAZY_PRELOAD_LINES: usize = 4096;
-const LAZY_PRELOAD_RECORDS: usize = 64;
-const LAZY_PRELOAD_BUDGET: std::time::Duration = std::time::Duration::from_millis(6);
-const JUMP_BUFFER_MAX_DIGITS: usize = 20;
-const SEARCH_CHUNK_LINES: usize = 4096;
-const TAIL_ROW_OFFSET: usize = usize::MAX;
 
 pub fn run(file: Box<dyn ViewFile>, mode: FormatKind) -> Result<()> {
     run_terminal(|terminal| file::run_loop(terminal, file.as_ref(), mode))
@@ -111,20 +83,22 @@ use crate::tui::{
     screen::{TerminalFrame, draw_cells},
 };
 #[cfg(test)]
-use breadcrumb::JsonBreadcrumbCache;
-#[cfg(test)]
 use file::TestViewerCaches as ViewerCaches;
 #[cfg(test)]
-use markdown_modes::MarkdownModeCache;
+use file::breadcrumb::JsonBreadcrumbCache;
 #[cfg(test)]
-use position::{adjust_state_for_visible_height, resolve_targets_from_view};
+use file::markdown_modes::MarkdownModeCache;
 #[cfg(test)]
-use position::{
+use file::position::{adjust_state_for_visible_height, resolve_targets_from_view};
+#[cfg(test)]
+use file::position::{
     resolve_search_target_position, resolve_structure_target_position, search_context_rows,
     visual_row_for_byte,
 };
 #[cfg(test)]
-use structure::*;
+use file::structure::*;
+#[cfg(test)]
+use file::{MOUSE_HORIZONTAL_COLUMNS, MOUSE_SCROLL_LINES, TAIL_ROW_OFFSET, WRAP_RENDER_CHUNK_ROWS};
 
 #[cfg(test)]
 mod tests;

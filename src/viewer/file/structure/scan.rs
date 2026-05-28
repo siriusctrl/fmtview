@@ -13,7 +13,7 @@ use super::{
     candidate::{StructureCandidate, select_structure_candidate},
     visibility::{candidate_visibility, should_skip_candidate},
 };
-use crate::viewer::input::SearchTarget;
+use crate::viewer::file::input::SearchTarget;
 
 const STRUCTURE_CHUNK_LINES: usize = 4096;
 const STRUCTURE_PRELOAD_RECORDS: usize = 64;
