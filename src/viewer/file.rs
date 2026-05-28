@@ -12,25 +12,11 @@ use crate::load::ViewFile;
 use crate::transform::FormatKind;
 
 mod cache;
-mod footer;
-mod layout;
 
 use cache::ViewerCaches;
-use footer::{display_mode_text, idle_footer_text, line_count_text, search_count_suffix};
-use layout::{draw_layout, refresh_sticky_after_position_change, sync_sticky_layout};
 
 #[cfg(test)]
 pub(super) use cache::ViewerCaches as TestViewerCaches;
-#[cfg(test)]
-pub(super) use footer::{
-    display_mode_text as test_display_mode_text, idle_footer_text as test_idle_footer_text,
-    search_count_text as test_search_count_text,
-};
-#[cfg(test)]
-pub(super) use layout::{
-    draw_layout as test_draw_layout, sync_sticky_layout as test_sync_sticky_layout,
-    visible_height_for_sticky as test_visible_height_for_sticky,
-};
 
 use super::{
     EVENT_POLL_INTERVAL, LAZY_PRELOAD_BUDGET, LAZY_PRELOAD_LINES, LAZY_PRELOAD_RECORDS,
@@ -38,9 +24,10 @@ use super::{
     input::{ViewState, drain_events, process_search_index_step, process_search_step},
     position::resolve_targets_from_view,
     render::{
-        RenderRequest, RenderedLineCache, ViewPosition, ViewportRenderOptions,
-        effective_top_row_offset, exact_top_line_tail_offset, prewarm_render_cache,
-        render_row_limit, render_viewport, viewer_progress_percent,
+        RenderRequest, RenderedLineCache, ViewPosition, ViewportRenderOptions, draw_layout,
+        effective_top_row_offset, exact_top_line_tail_offset, file_footer_text, file_title_text,
+        prewarm_render_cache, refresh_sticky_after_position_change, render_row_limit,
+        render_viewport, sync_sticky_layout, viewer_progress_percent,
     },
     structure::{StructureViewport, process_structure_step},
 };
@@ -298,35 +285,8 @@ fn draw_view(
             .is_none_or(|bottom| bottom.line_end);
     let progress = viewer_progress_percent(file, layout.context, bottom, viewport.bottom);
     let styled = viewport.lines;
-    let display_mode = display_mode_text(state);
-    let title = format!(
-        " {} | {} lines | {}-{} | {:>3}% | {} ",
-        file.label(),
-        line_count_text(file),
-        current,
-        bottom,
-        progress,
-        display_mode
-    );
-    let footer_text = if state.search_active {
-        format!(
-            " search: {} | Enter find | Backspace edit | Esc cancel ",
-            state.search_buffer
-        )
-    } else if !state.jump_buffer.is_empty() {
-        format!(
-            " go to line: {} / {} | Enter jump | Backspace edit | Esc cancel ",
-            state.jump_buffer,
-            line_count_text(file)
-        )
-    } else if let Some(message) = &state.search_message {
-        format!(
-            " {message}{} | / search | n/N | Esc clear ",
-            search_count_suffix(state)
-        )
-    } else {
-        idle_footer_text(state)
-    };
+    let title = file_title_text(file, state, current, bottom, progress);
+    let footer_text = file_footer_text(file, state);
 
     terminal
         .draw(TerminalFrame {

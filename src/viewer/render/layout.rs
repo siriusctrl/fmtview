@@ -7,12 +7,9 @@ use ratatui::{
 use crate::{load::ViewFile, transform::FormatKind};
 
 use super::super::{
-    breadcrumb::JsonBreadcrumbCache,
-    input::ViewState,
-    position::adjust_state_for_visible_height,
-    render::{RenderContext, TailPositionCache, ViewPosition},
+    breadcrumb::JsonBreadcrumbCache, input::ViewState, position::adjust_state_for_visible_height,
 };
-use super::footer::gutter_digits;
+use super::{RenderContext, TailPositionCache, ViewPosition, footer::gutter_digits};
 
 #[derive(Debug, Clone, Copy)]
 pub(in crate::viewer) struct DrawLayout {

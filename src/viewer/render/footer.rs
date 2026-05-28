@@ -1,9 +1,47 @@
 use crate::load::ViewFile;
 
-use super::super::{
-    input::ViewState,
-    render::{format_count, line_number_digits},
-};
+use super::super::input::ViewState;
+use super::{format_count, line_number_digits};
+
+pub(in crate::viewer) fn file_title_text(
+    file: &dyn ViewFile,
+    state: &ViewState,
+    current: usize,
+    bottom: usize,
+    progress: usize,
+) -> String {
+    format!(
+        " {} | {} lines | {}-{} | {:>3}% | {} ",
+        file.label(),
+        line_count_text(file),
+        current,
+        bottom,
+        progress,
+        display_mode_text(state)
+    )
+}
+
+pub(in crate::viewer) fn file_footer_text(file: &dyn ViewFile, state: &ViewState) -> String {
+    if state.search_active {
+        format!(
+            " search: {} | Enter find | Backspace edit | Esc cancel ",
+            state.search_buffer
+        )
+    } else if !state.jump_buffer.is_empty() {
+        format!(
+            " go to line: {} / {} | Enter jump | Backspace edit | Esc cancel ",
+            state.jump_buffer,
+            line_count_text(file)
+        )
+    } else if let Some(message) = &state.search_message {
+        format!(
+            " {message}{} | / search | n/N | Esc clear ",
+            search_count_suffix(state)
+        )
+    } else {
+        idle_footer_text(state)
+    }
+}
 
 pub(in crate::viewer) fn idle_footer_text(state: &ViewState) -> String {
     let wrap_hint = if state.wrap { "w unwrap" } else { "w wrap" };

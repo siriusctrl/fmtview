@@ -1,4 +1,5 @@
 mod breadcrumb;
+mod diff;
 mod file;
 mod input;
 mod markdown_modes;
@@ -45,7 +46,7 @@ pub fn run(file: Box<dyn ViewFile>, mode: FormatKind) -> Result<()> {
 }
 
 pub(crate) fn run_diff(view: crate::diff::DiffView) -> Result<()> {
-    run_terminal(|terminal| crate::diff::viewer::run_loop(terminal, view))
+    run_terminal(|terminal| diff::run_loop(terminal, view))
 }
 
 fn run_terminal<F>(run_loop: F) -> Result<()>
@@ -112,12 +113,7 @@ use crate::tui::{
 #[cfg(test)]
 use breadcrumb::JsonBreadcrumbCache;
 #[cfg(test)]
-use file::{
-    TestViewerCaches as ViewerCaches, test_display_mode_text as display_mode_text,
-    test_draw_layout as draw_layout, test_idle_footer_text as idle_footer_text,
-    test_search_count_text as search_count_text, test_sync_sticky_layout as sync_sticky_layout,
-    test_visible_height_for_sticky as visible_height_for_sticky,
-};
+use file::TestViewerCaches as ViewerCaches;
 #[cfg(test)]
 use markdown_modes::MarkdownModeCache;
 #[cfg(test)]

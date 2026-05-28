@@ -1,4 +1,6 @@
 mod cache;
+mod footer;
+mod layout;
 mod line;
 mod metrics;
 mod prewarm;
@@ -10,6 +12,8 @@ mod viewport;
 pub(super) use crate::tui::text::*;
 pub(super) use crate::tui::wrap::{continuation_indent, next_wrap_end};
 pub(super) use cache::*;
+pub(super) use footer::*;
+pub(super) use layout::*;
 pub(super) use line::rendered_row_count;
 pub(super) use metrics::*;
 pub(super) use prewarm::*;

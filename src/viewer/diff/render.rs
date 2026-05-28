@@ -1,6 +1,9 @@
 use ratatui::text::Line;
 
 use crate::diff::{DiffLayout, DiffModel};
+use crate::tui::{screen::ScrollPosition, text::format_count};
+
+use super::DiffViewState;
 
 mod cell;
 
@@ -16,6 +19,51 @@ use cell::{
 use side_by_side::{render_side_row_window, side_row_visual_count};
 use styles::DiffCellStyle;
 use unified::{render_unified_row_window, unified_row_visual_count};
+
+#[derive(Debug)]
+pub(super) struct DiffRenderFrame {
+    pub(super) rows: Vec<Line<'static>>,
+    pub(super) title: String,
+    pub(super) footer_text: String,
+    pub(super) position: ScrollPosition,
+}
+
+pub(super) fn render_frame(
+    model: &DiffModel,
+    complete: bool,
+    state: &DiffViewState,
+    message: Option<String>,
+    visible_height: usize,
+    width: usize,
+) -> DiffRenderFrame {
+    let rendered = render_rows_with_status(
+        model,
+        state.layout,
+        state.top,
+        state.top_row_offset,
+        visible_height,
+        width,
+        state.x,
+        state.wrap,
+    );
+    let row_count = model.row_count(state.layout);
+    let current = if row_count == 0 { 0 } else { state.top + 1 };
+    let bottom = rendered
+        .bottom_row
+        .saturating_add(1)
+        .min(row_count)
+        .max(current);
+
+    DiffRenderFrame {
+        rows: rendered.rows,
+        title: title_text(model, state.layout, complete, row_count, current, bottom),
+        footer_text: footer_text(message, state.wrap),
+        position: ScrollPosition {
+            top: state.top,
+            row_offset: state.top_row_offset,
+        },
+    }
+}
 
 #[cfg(test)]
 pub(super) fn render_rows(
@@ -89,6 +137,63 @@ pub(super) fn render_rows_with_status(
     }
 
     RenderedDiffWindow { rows, bottom_row }
+}
+
+fn title_text(
+    model: &DiffModel,
+    layout: DiffLayout,
+    complete: bool,
+    row_count: usize,
+    current: usize,
+    bottom: usize,
+) -> String {
+    let progress = if complete {
+        progress_percent(bottom, row_count)
+    } else {
+        0
+    };
+    format!(
+        " {} <-> {} | {} rows | {} | {}-{} | {:>3}% | diff {} ",
+        model.left_label(),
+        model.right_label(),
+        format_count(row_count),
+        change_text(model, layout, complete),
+        current,
+        bottom,
+        progress,
+        layout.label()
+    )
+}
+
+fn change_text(model: &DiffModel, layout: DiffLayout, complete: bool) -> String {
+    if !complete && model.has_changes() {
+        format!(
+            "{} changes, scanning",
+            format_count(model.changed_rows(layout).len())
+        )
+    } else if !complete {
+        "scanning".to_owned()
+    } else if model.has_changes() {
+        format!("{} changes", format_count(model.changed_rows(layout).len()))
+    } else {
+        "no changes".to_owned()
+    }
+}
+
+fn progress_percent(bottom: usize, row_count: usize) -> usize {
+    bottom
+        .saturating_mul(100)
+        .min(row_count.saturating_mul(100))
+        .checked_div(row_count)
+        .unwrap_or(100)
+}
+
+fn footer_text(message: Option<String>, wrap: bool) -> String {
+    message.unwrap_or_else(|| {
+        let wrap_hint = if wrap { "w unwrap" } else { "w wrap" };
+        let horizontal = if wrap { "" } else { " | h/l" };
+        format!(" s single/split | {wrap_hint} | ]/[ next/prev block | Space/b{horizontal} ")
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

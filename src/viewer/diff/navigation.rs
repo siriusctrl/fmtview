@@ -8,12 +8,12 @@ use super::{DIFF_SCROLL_HINT_MAX_ROWS, DiffViewState, render::diff_row_visual_co
 use crate::tui::screen::{ScrollHint, ScrollPosition, ViewerTerminal};
 
 #[derive(Debug, Clone, Copy)]
-pub(in crate::diff::viewer) enum DiffJump {
+pub(in crate::viewer::diff) enum DiffJump {
     Next,
     Previous,
 }
 
-pub(in crate::diff::viewer) fn jump_change(
+pub(in crate::viewer::diff) fn jump_change(
     model: &DiffModel,
     state: &mut DiffViewState,
     direction: DiffJump,
@@ -50,7 +50,7 @@ pub(in crate::diff::viewer) fn jump_change(
     )
 }
 
-pub(in crate::diff::viewer) fn change_block_starts(changes: &[usize]) -> Vec<usize> {
+pub(in crate::viewer::diff) fn change_block_starts(changes: &[usize]) -> Vec<usize> {
     changes
         .iter()
         .copied()
@@ -69,7 +69,7 @@ fn diff_context_rows(page: usize) -> usize {
     (page / 3).clamp(2, 8).min(page.saturating_sub(1))
 }
 
-pub(in crate::diff::viewer) fn scroll_by(
+pub(in crate::viewer::diff) fn scroll_by(
     state: &mut DiffViewState,
     model: &DiffModel,
     visible_height: usize,
@@ -165,7 +165,7 @@ pub(super) fn set_tail_top(
     old != (state.top, state.top_row_offset)
 }
 
-pub(in crate::diff::viewer) fn clamp_top(
+pub(in crate::viewer::diff) fn clamp_top(
     state: &mut DiffViewState,
     model: &DiffModel,
     width: usize,
@@ -217,7 +217,7 @@ pub(super) fn scroll_x_by(x: &mut usize, delta: isize) -> bool {
     *x != old
 }
 
-pub(in crate::diff::viewer) fn diff_scroll_hint(
+pub(in crate::viewer::diff) fn diff_scroll_hint(
     terminal: &ViewerTerminal<CrosstermBackend<io::Stdout>>,
     position: ScrollPosition,
 ) -> Option<ScrollHint> {

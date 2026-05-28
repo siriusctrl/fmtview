@@ -6,10 +6,7 @@ use ratatui::{backend::CrosstermBackend, layout::Rect};
 
 use crate::{
     diff::{DiffLayout, DiffView},
-    tui::{
-        screen::{ScrollPosition, TerminalFrame, ViewerTerminal},
-        text::format_count,
-    },
+    tui::screen::{TerminalFrame, ViewerTerminal},
 };
 
 mod input;
@@ -20,7 +17,7 @@ mod render;
 mod tests;
 
 use input::{clamp_top, diff_scroll_hint, drain_events};
-use render::render_rows_with_status;
+use render::render_frame;
 
 const SIDE_BY_SIDE_MIN_WIDTH: usize = 110;
 const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -108,14 +105,6 @@ pub(crate) fn run_loop(
     Ok(())
 }
 
-fn progress_percent(bottom: usize, row_count: usize) -> usize {
-    bottom
-        .saturating_mul(100)
-        .min(row_count.saturating_mul(100))
-        .checked_div(row_count)
-        .unwrap_or(100)
-}
-
 fn initial_layout(width: u16) -> DiffLayout {
     if usize::from(width) >= SIDE_BY_SIDE_MIN_WIDTH {
         DiffLayout::SideBySide
@@ -140,77 +129,25 @@ fn draw_view(
     let content_width = usize::from(size.width.saturating_sub(2));
     clamp_top(state, model, content_width);
 
-    let rendered = render_rows_with_status(
+    let message = state.message.take();
+    let rendered = render_frame(
         model,
-        state.layout,
-        state.top,
-        state.top_row_offset,
+        view.is_complete(),
+        state,
+        message,
         visible_height,
         content_width,
-        state.x,
-        state.wrap,
     );
-    let styled = rendered.rows;
-    let row_count = model.row_count(state.layout);
-    let current = if row_count == 0 { 0 } else { state.top + 1 };
-    let bottom = rendered
-        .bottom_row
-        .saturating_add(1)
-        .min(row_count)
-        .max(current);
-    let lazy_scanning = !view.is_complete();
-    let progress = if lazy_scanning {
-        0
-    } else {
-        progress_percent(bottom, row_count)
-    };
-    let change_text = if lazy_scanning && model.has_changes() {
-        format!(
-            "{} changes, scanning",
-            format_count(model.changed_rows(state.layout).len())
-        )
-    } else if lazy_scanning {
-        "scanning".to_owned()
-    } else if model.has_changes() {
-        format!(
-            "{} changes",
-            format_count(model.changed_rows(state.layout).len())
-        )
-    } else {
-        "no changes".to_owned()
-    };
-    let title = format!(
-        " {} <-> {} | {} rows | {} | {}-{} | {:>3}% | diff {} ",
-        model.left_label(),
-        model.right_label(),
-        format_count(row_count),
-        change_text,
-        current,
-        bottom,
-        progress,
-        state.layout.label()
-    );
-    let footer_text = state.message.take().unwrap_or_else(|| {
-        let wrap_hint = if state.wrap { "w unwrap" } else { "w wrap" };
-        let horizontal = if state.wrap { "" } else { " | h/l" };
-        format!(
-            " q/Esc quit | s single/split | {wrap_hint} | ]/[ next/prev block | j/k wheel | Space/b{horizontal} "
-        )
-    });
-    let position = ScrollPosition {
-        top: state.top,
-        row_offset: state.top_row_offset,
-    };
-    let scroll_hint = diff_scroll_hint(terminal, position);
+    let scroll_hint = diff_scroll_hint(terminal, rendered.position);
     terminal
         .draw(TerminalFrame {
             area,
-            styled,
+            styled: rendered.rows,
             sticky: Vec::new(),
             selection_mode: false,
-            title,
-            footer_text,
-            position,
+            title: rendered.title,
+            footer_text: rendered.footer_text,
+            position: rendered.position,
             scroll_hint,
         })
         .context("failed to draw terminal frame")?;

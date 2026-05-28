@@ -169,17 +169,33 @@ that happens to draw terminal text:
     display-width wrapping, and wrap checkpoints
 
   viewer/
-    normal file viewer: file loop, input/search, structure navigation, sticky
-    breadcrumbs, render caches, viewport positioning, and Markdown line modes
+    interactive viewer experiences:
+    - normal file viewer loop, input/search, structure navigation, sticky
+      breadcrumbs, render caches, viewport positioning, and Markdown line modes
+    - diff viewer loop, diff-specific input, change-block navigation, and
+      unified/side-by-side render composition
 
-  diff/viewer/
-    interactive diff viewer: diff-specific input, change-block navigation,
-    unified/side-by-side rendering, and lazy diff model preloading
+  viewer/render/
+    normal-file render output: line windows, visual rows, caches, progress,
+    prewarming, and search highlight overlays
+
+  viewer/diff/render/
+    diff render output: styled diff rows, title/footer text, unified and
+    side-by-side layout, wrapped diff cells, and inline diff styling
+
+  diff/
+    comparison and diff data: redirected unified patch output, eager/lazy TTY
+    diff model selection, record-stream comparison, inline change annotation,
+    and side-by-side row models
 ```
 
-This keeps the normal viewer from owning diff behavior, keeps diff rendering
-near the diff model, and prevents low-level terminal repaint or text wrapping
-from becoming file-viewer-specific code.
+This keeps all terminal-facing experiences under `viewer`, keeps comparison
+data under `diff`, and prevents low-level terminal repaint or text wrapping
+from becoming file-viewer-specific code. Normal viewing and diff viewing share
+small primitives where their models genuinely match: terminal frame repainting,
+display-width wrapping, palette/text helpers, and format highlighters. Their
+row models stay separate because normal files render indexed document lines,
+while diffs render unified or side-by-side comparison rows with change metadata.
 
 ## Load Plans
 

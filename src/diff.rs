@@ -3,7 +3,6 @@ mod model;
 mod record_stream;
 mod stdout;
 mod view;
-pub(crate) mod viewer;
 
 #[cfg(test)]
 mod tests;

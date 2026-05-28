@@ -61,7 +61,7 @@ Code orientation:
   - Format-specific formatter implementations live under `src/formats/<type>/`.
 - `src/diff.rs` owns the diff-module entry point.
 - `src/diff/` owns unified patch generation plus the structured diff model used
-  by the interactive diff viewer:
+  by redirected output and the interactive diff viewer:
   - `external.rs` formats both sides and shells out to the platform diff tool.
   - `stdout.rs` keeps redirected diff output on the unified patch path.
   - `view.rs` selects the eager or lazy TTY diff model.
@@ -70,10 +70,8 @@ Code orientation:
     comparison, resynchronization, context omission, and diff row generation.
   - `model/` parses unified patch rows, annotates inline changes, and builds
     the side-by-side row model.
-  - `viewer.rs` and `viewer/` own the interactive diff TTY surface: input,
-    wrapping, change-block navigation, and unified/side-by-side rendering.
 - `src/tui.rs` owns shared terminal UI primitives that are not specific to the
-  normal file viewer:
+  normal file viewer or diff viewer:
   - `screen.rs` handles terminal buffer rendering, ANSI writes, scroll regions,
     and buffer-delta repainting.
   - `palette.rs` owns terminal colors used by format highlighting, viewer, and diff output.
@@ -84,14 +82,12 @@ Code orientation:
 - `src/viewer/` owns viewer submodules:
   - `file.rs` runs the normal file viewer loop and frame composition for
     indexed/lazy file windows.
-  - `file/` contains normal-viewer cache wiring, footer/status text, and
-    layout/sticky-breadcrumb coordination.
+  - `file/` contains normal-viewer cache wiring.
   - `breadcrumb.rs` builds compact sticky JSON key breadcrumbs for the viewer.
   - `input/` handles key/mouse state, scrolling, jumps, and search.
   - `structure.rs` and `structure/` own the `]`/`[` smart structure jump:
-    task state, lazy scans, candidate ranking, viewport visibility, and
-    structure scans, candidate ranking, and viewport visibility. Format-specific
-    structure rules live under `src/formats/<type>/structure.rs`.
+    task state, lazy scans, candidate ranking, and viewport visibility.
+    Format-specific structure rules live under `src/formats/<type>/structure.rs`.
     - `structure/scan.rs` reads bounded chunks and drives forward/backward lazy
       scans.
     - `structure/candidate.rs` owns viewer-side candidate ranking.
@@ -99,9 +95,14 @@ Code orientation:
       fully observed in the current viewport.
   - `markdown_modes.rs` owns viewer-time Markdown fenced-code checkpointing.
     The per-line mode rules live with Markdown under `src/formats/markdown/`.
-  - `render/` handles normal-viewer line windows, visual rows, caches,
-    progress, prewarming, and the search highlight overlay. Shared text
-    wrapping lives in `src/tui/`.
+  - `render/` handles normal-viewer line windows, visual rows, layout/sticky
+    coordination, title/footer text, caches, progress, prewarming, and the
+    search highlight overlay. Shared text wrapping lives in `src/tui/`.
+  - `diff.rs` and `diff/` own the interactive diff viewer loop, input,
+    change-block navigation, and diff render composition. They consume
+    `src/diff/` models but keep terminal-facing behavior in the viewer layer.
+    `diff/render/` owns all diff TTY rows, title/footer text, unified and
+    side-by-side layout, and inline diff styling.
   - `tests/` keeps white-box viewer regression and performance smoke coverage
     close to private TUI internals, split by input, navigation, search, render,
     screen, cache, highlighting, and viewport responsibility. These tests stay under
