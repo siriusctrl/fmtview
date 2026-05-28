@@ -8,12 +8,20 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-28
+
 ### Added
 
 - Fall back to plain-text viewing when the interactive viewer auto-detects a
   structured file type but cannot format the input, with a temporary red footer
   notice that explains the fallback and points users to `--type` for an
   explicit override.
+
+### Changed
+
+- Reorganize format, load, diff, TUI, and viewer module boundaries so future
+  format support can share the same lazy loading, rendering, navigation, and
+  highlighting architecture more cleanly.
 
 ## [0.3.6] - 2026-05-27
 
