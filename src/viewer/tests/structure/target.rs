@@ -21,8 +21,7 @@ fn structure_target_moves_even_when_already_visible() {
         ],
         10,
         RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 80,
             wrap: false,
@@ -55,8 +54,7 @@ fn structure_target_near_eof_clamps_to_last_full_page() {
     let mut line_cache = LineWindowCache::default();
     let mut tail_cache = TailPositionCache::default();
     let context = RenderContext {
-        gutter_digits: 1,
-        chat_gutter: false,
+        gutter: GutterLayout::new(1, false),
         x: 0,
         width: 80,
         wrap: false,

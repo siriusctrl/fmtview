@@ -1,36 +1,6 @@
 use ratatui::{style::Style, text::Span};
 
-use super::palette::{gutter_style, plain_style};
-
-const WRAP_GUTTER_MINOR_TICK_ROWS: usize = 8;
-const WRAP_GUTTER_MAJOR_TICK_ROWS: usize = 64;
-
-pub(crate) fn line_number_gutter(line_number: usize, gutter_digits: usize) -> Span<'static> {
-    if gutter_digits == 0 {
-        return Span::raw("");
-    }
-
-    Span::styled(format!("{line_number:>gutter_digits$} │ "), gutter_style())
-}
-
-pub(crate) fn continuation_gutter(row_index: usize, gutter_digits: usize) -> Span<'static> {
-    if gutter_digits == 0 {
-        return Span::raw("");
-    }
-
-    let marker = continuation_gutter_marker(row_index);
-    Span::styled(format!("{:>gutter_digits$} {marker} ", ""), gutter_style())
-}
-
-pub(crate) fn continuation_gutter_marker(row_index: usize) -> char {
-    if row_index > 0 && row_index % WRAP_GUTTER_MAJOR_TICK_ROWS == 0 {
-        '┠'
-    } else if row_index > 0 && row_index % WRAP_GUTTER_MINOR_TICK_ROWS == 0 {
-        '┊'
-    } else {
-        '┆'
-    }
-}
+use super::palette::plain_style;
 
 pub(crate) fn format_count(value: usize) -> String {
     let raw = value.to_string();

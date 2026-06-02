@@ -75,8 +75,7 @@ fn structure_navigation_lands_on_visible_json_array_items() {
         &file.read_window(0, file.line_count()).unwrap(),
         10,
         RenderContext {
-            gutter_digits: 2,
-            chat_gutter: false,
+            gutter: GutterLayout::new(2, false),
             x: 0,
             width: 80,
             wrap: true,

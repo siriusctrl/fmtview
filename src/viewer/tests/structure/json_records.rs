@@ -42,8 +42,7 @@ fn structure_navigation_jumps_inside_jsonl_record_before_next_record() {
         &file.read_window(0, file.line_count()).unwrap(),
         8,
         RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 80,
             wrap: false,

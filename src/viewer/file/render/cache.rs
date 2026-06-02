@@ -78,8 +78,7 @@ pub(in crate::viewer) struct RenderedLineCache {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::viewer) struct RenderCacheKey {
-    gutter_digits: usize,
-    chat_gutter: bool,
+    gutter: super::GutterLayout,
     x: usize,
     width: usize,
     wrap: bool,
@@ -89,8 +88,7 @@ pub(in crate::viewer) struct RenderCacheKey {
 impl From<RenderRequest> for RenderCacheKey {
     fn from(request: RenderRequest) -> Self {
         Self {
-            gutter_digits: request.context.gutter_digits,
-            chat_gutter: request.context.chat_gutter,
+            gutter: request.context.gutter,
             x: request.context.x,
             width: request.context.width,
             wrap: request.context.wrap,

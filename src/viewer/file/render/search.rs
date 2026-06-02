@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use crate::tui::palette::search_match_bg;
 use crate::tui::text::{char_count, push_styled_span, slice_chars};
 
-use super::{CHAT_ROLE_GUTTER_WIDTH, RenderContext};
+use super::RenderContext;
 
 pub(in crate::viewer) fn apply_search_highlight(
     line: Line<'static>,
@@ -38,19 +38,7 @@ pub(in crate::viewer) fn apply_search_highlight(
 }
 
 fn search_start_char(context: RenderContext) -> usize {
-    if context.gutter_digits == 0 {
-        return 0;
-    }
-
-    let chat_gutter_width = if context.chat_gutter {
-        CHAT_ROLE_GUTTER_WIDTH
-    } else {
-        0
-    };
-    context
-        .gutter_digits
-        .saturating_add(3)
-        .saturating_add(chat_gutter_width)
+    context.gutter.content_start()
 }
 
 pub(in crate::viewer) fn search_match_ranges(

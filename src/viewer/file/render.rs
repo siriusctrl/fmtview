@@ -1,6 +1,6 @@
 mod cache;
-mod chat_gutter;
 mod footer;
+mod gutter;
 mod layout;
 mod line;
 mod metrics;
@@ -13,8 +13,8 @@ mod viewport;
 pub(in crate::viewer) use crate::tui::text::*;
 pub(in crate::viewer) use crate::tui::wrap::{continuation_indent, next_wrap_end};
 pub(in crate::viewer) use cache::*;
-pub(in crate::viewer) use chat_gutter::*;
 pub(in crate::viewer) use footer::*;
+pub(in crate::viewer) use gutter::*;
 pub(in crate::viewer) use layout::*;
 pub(in crate::viewer) use line::rendered_row_count;
 pub(in crate::viewer) use metrics::*;

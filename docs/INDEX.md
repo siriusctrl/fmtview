@@ -81,7 +81,7 @@ Code orientation:
   - `screen.rs` handles terminal buffer rendering, ANSI writes, scroll regions,
     and buffer-delta repainting.
   - `palette.rs` owns terminal colors used by format highlighting, viewer, and diff output.
-  - `text.rs` and `wrap.rs` own shared character-counting, gutter text,
+  - `text.rs` and `wrap.rs` own shared character-counting, styled text slicing,
     display-width wrapping, and wrap checkpoint helpers.
 - `src/viewer.rs` owns the shared TTY lifecycle: raw mode, alternate screen,
   mouse capture setup, cleanup, and dispatch to file or diff viewer loops.
@@ -91,9 +91,9 @@ Code orientation:
     - `file/input.rs` and `file/input/` handle key/mouse state, scrolling, line
       jumps, and search.
     - `file/render.rs` and `file/render/` handle line windows, visual rows,
-      layout/sticky coordination, title/footer text, caches, progress,
-      prewarming, and the search highlight overlay. Shared text wrapping lives
-      in `src/tui/`.
+      layout/sticky coordination, title/footer text, viewer gutter layout,
+      caches, progress, prewarming, and the search highlight overlay. Shared
+      text wrapping lives in `src/tui/`.
     - `file/structure.rs` and `file/structure/` own the `]`/`[` smart structure
       jump: task state, lazy scans, candidate ranking, and viewport visibility.
       Format-specific structure rules live under

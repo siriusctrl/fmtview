@@ -18,8 +18,7 @@ fn page_down_clamps_to_known_wrapped_tail() {
 fn top_line_tail_offset_points_to_last_full_view() {
     let lines = ["abcdefghijklmnop".to_owned()];
     let context = RenderContext {
-        gutter_digits: 1,
-        chat_gutter: false,
+        gutter: GutterLayout::new(1, false),
         x: 0,
         width: 4,
         wrap: true,
@@ -39,8 +38,7 @@ fn top_line_tail_offset_points_to_last_full_view() {
 fn unknown_wrapped_tail_keeps_scrolling_inside_current_line() {
     let line = "a".repeat((WRAP_RENDER_CHUNK_ROWS + 10) * 4);
     let context = RenderContext {
-        gutter_digits: 1,
-        chat_gutter: false,
+        gutter: GutterLayout::new(1, false),
         x: 0,
         width: 4,
         wrap: true,
@@ -276,8 +274,7 @@ fn incomplete_lazy_file_does_not_clamp_optimistic_jump_before_reading() {
     };
     let mut caches = ViewerCaches::default();
     let context = RenderContext {
-        gutter_digits: 4,
-        chat_gutter: false,
+        gutter: GutterLayout::new(4, false),
         x: 0,
         width: 80,
         wrap: false,

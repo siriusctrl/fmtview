@@ -255,8 +255,7 @@ fn search_jump_places_later_logical_line_with_context() {
         &lines,
         9,
         RenderContext {
-            gutter_digits: 2,
-            chat_gutter: false,
+            gutter: GutterLayout::new(2, false),
             x: 0,
             width: 40,
             wrap: false,
@@ -273,8 +272,7 @@ fn search_jump_places_later_logical_line_with_context() {
         &lines,
         9,
         RenderContext {
-            gutter_digits: 2,
-            chat_gutter: false,
+            gutter: GutterLayout::new(2, false),
             x: 0,
             width: 40,
             wrap: false,
@@ -309,8 +307,7 @@ fn wrapped_search_jumps_to_visual_row_containing_match() {
     );
 
     let context = RenderContext {
-        gutter_digits: 1,
-        chat_gutter: false,
+        gutter: GutterLayout::new(1, false),
         x: 0,
         width: 20,
         wrap: true,
@@ -354,8 +351,7 @@ fn wrapped_search_jumps_to_visual_row_containing_match() {
 fn wrapped_search_keeps_visible_match_position() {
     let line = format!("{}needle suffix", "a".repeat(140));
     let context = RenderContext {
-        gutter_digits: 1,
-        chat_gutter: false,
+        gutter: GutterLayout::new(1, false),
         x: 0,
         width: 20,
         wrap: true,
@@ -515,8 +511,7 @@ fn search_highlight_adds_background_without_replacing_foreground() {
         1,
         1,
         RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 80,
             wrap: false,
@@ -529,8 +524,7 @@ fn search_highlight_adds_background_without_replacing_foreground() {
         line,
         Some("needle"),
         RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 80,
             wrap: false,
@@ -557,8 +551,7 @@ fn non_search_viewport_render_does_not_paint_background_cells() {
     ];
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 80,
             wrap: true,
@@ -588,8 +581,7 @@ fn search_background_is_scoped_to_match_spans_only() {
         1,
         1,
         RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 80,
             wrap: false,
@@ -602,8 +594,7 @@ fn search_background_is_scoped_to_match_spans_only() {
         line,
         Some("needle"),
         RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 80,
             wrap: false,
@@ -628,7 +619,7 @@ fn search_background_is_scoped_to_match_spans_only() {
 fn search_highlight_ignores_chat_role_gutter() {
     let line = Line::from(vec![
         line_number_gutter(1, 1),
-        chat_role_gutter(Some(crate::formats::json::chat::ChatRole::User), true),
+        GutterLayout::new(1, true).chat_role(Some(crate::formats::json::chat::ChatRole::User)),
         Span::raw("  {"),
     ]);
 
@@ -636,8 +627,7 @@ fn search_highlight_ignores_chat_role_gutter() {
         line,
         Some("user"),
         RenderContext {
-            gutter_digits: 1,
-            chat_gutter: true,
+            gutter: GutterLayout::new(1, true),
             x: 0,
             width: 80,
             wrap: false,

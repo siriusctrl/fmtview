@@ -1,4 +1,3 @@
-use super::chat_role_gutter;
 use super::{
     cache::RenderedLineCache,
     line::rendered_row_count,
@@ -145,7 +144,7 @@ pub(in crate::viewer) fn render_viewport(
 }
 
 fn chat_role_for_line(lines: &[String], offset: usize, context: RenderContext) -> Option<ChatRole> {
-    if !context.chat_gutter {
+    if !context.gutter.chat_role_enabled() {
         return None;
     }
     formats::json::structure::chat_role_for_candidate(lines, offset)
@@ -157,11 +156,11 @@ fn apply_chat_role_gutter(
     role: Option<ChatRole>,
     context: RenderContext,
 ) -> ratatui::text::Line<'static> {
-    if !context.chat_gutter || row_index != 0 {
+    if !context.gutter.chat_role_enabled() || row_index != 0 {
         return line;
     }
     if let Some(span) = line.spans.get_mut(1) {
-        *span = chat_role_gutter(role, true);
+        *span = context.gutter.chat_role(role);
     }
     line
 }

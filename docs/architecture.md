@@ -177,8 +177,8 @@ that happens to draw terminal text:
     raw mode, alternate screen, mouse capture, and dispatch
 
   tui/
-    reusable terminal primitives: color palette, screen repainting, gutter text,
-    display-width wrapping, and wrap checkpoints
+    reusable terminal primitives: color palette, screen repainting,
+    display-width wrapping, styled text slicing, and wrap checkpoints
 
   viewer/
     terminal-facing viewer modes and their orchestration
@@ -188,8 +188,8 @@ that happens to draw terminal text:
     breadcrumbs, Markdown line modes, viewport positioning, and render caches
 
   viewer/file/render/
-    normal-file render output: line windows, visual rows, caches, progress,
-    prewarming, and search highlight overlays
+    normal-file render output: gutter layout, line windows, visual rows,
+    caches, progress, prewarming, and search highlight overlays
 
   viewer/diff/
     diff viewer mode: diff-specific input, visual-row scrolling,

@@ -5,8 +5,7 @@ fn viewport_can_start_inside_wrapped_logical_line() {
     let lines = vec!["abcdefghijkl".to_owned(), "next".to_owned()];
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 4,
             wrap: true,
@@ -48,8 +47,7 @@ fn viewport_reports_actual_last_logical_line() {
     let lines = vec!["abcdefghijkl".to_owned(), "next".to_owned()];
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 4,
             wrap: true,
@@ -84,8 +82,7 @@ fn markdown_viewport_reuses_inner_code_highlighter() {
     let line_modes = vec![FormatKind::Markdown, FormatKind::Json, FormatKind::Markdown];
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 80,
             wrap: false,
@@ -131,8 +128,7 @@ fn json_viewport_shows_chat_role_gutter_on_message_start() {
     ];
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: true,
+            gutter: GutterLayout::new(1, true),
             x: 0,
             width: 80,
             wrap: false,
@@ -170,8 +166,7 @@ fn markdown_json_code_does_not_enable_chat_role_gutter() {
     let line_modes = vec![FormatKind::Markdown, FormatKind::Json, FormatKind::Markdown];
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 80,
             wrap: false,
@@ -252,8 +247,7 @@ fn wrapped_progress_advances_by_visible_bytes() {
     writeln!(temp, "next").unwrap();
     let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
     let context = RenderContext {
-        gutter_digits: 1,
-        chat_gutter: false,
+        gutter: GutterLayout::new(1, false),
         x: 0,
         width: 4,
         wrap: true,
@@ -316,8 +310,7 @@ fn wrapped_tail_position_can_start_inside_last_line() {
     writeln!(temp, "abcdefghijkl").unwrap();
     let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
     let context = RenderContext {
-        gutter_digits: 1,
-        chat_gutter: false,
+        gutter: GutterLayout::new(1, false),
         x: 0,
         width: 4,
         wrap: true,
@@ -343,8 +336,7 @@ fn wrapped_tail_view_renders_last_full_page() {
     writeln!(temp, "}}").unwrap();
     let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
     let context = RenderContext {
-        gutter_digits: 1,
-        chat_gutter: false,
+        gutter: GutterLayout::new(1, false),
         x: 0,
         width: 4,
         wrap: true,
@@ -397,8 +389,7 @@ fn eof_wrap_offset_clamps_to_last_full_page() {
     writeln!(temp, "abcdefghijkl").unwrap();
     let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
     let context = RenderContext {
-        gutter_digits: 1,
-        chat_gutter: false,
+        gutter: GutterLayout::new(1, false),
         x: 0,
         width: 4,
         wrap: true,

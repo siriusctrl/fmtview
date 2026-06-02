@@ -5,8 +5,7 @@ fn rendered_line_cache_reuses_until_context_changes() {
     let mut cache = RenderedLineCache::default();
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 3,
             wrap: false,
@@ -45,8 +44,7 @@ fn wrapped_render_cache_reuses_adjacent_rows_from_chunk() {
     let mut cache = RenderedLineCache::default();
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 4,
             wrap: true,
@@ -70,8 +68,7 @@ fn wrapped_render_cache_records_deep_checkpoints() {
     let mut cache = RenderedLineCache::default();
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 16,
             wrap: true,
@@ -107,8 +104,7 @@ fn wrapped_deep_window_keeps_embedded_xml_pair_colors() {
     let mut cache = RenderedLineCache::default();
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 12,
             wrap: true,
@@ -146,8 +142,7 @@ fn wrapped_deep_window_keeps_prefix_xml_state_for_visible_close_tag() {
     let mut cache = RenderedLineCache::default();
     let request = RenderRequest {
         context: RenderContext {
-            gutter_digits: 1,
-            chat_gutter: false,
+            gutter: GutterLayout::new(1, false),
             x: 0,
             width: 12,
             wrap: true,

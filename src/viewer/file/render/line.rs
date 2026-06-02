@@ -3,10 +3,7 @@ use ratatui::text::{Line, Span};
 use crate::formats::{highlight_content, highlight_content_window_indexed};
 use crate::tui::palette::plain_style;
 use crate::tui::{
-    text::{
-        byte_index_for_char, char_count, continuation_gutter, line_number_gutter, push_styled_span,
-        slice_chars, slice_spans,
-    },
+    text::{byte_index_for_char, char_count, push_styled_span, slice_chars, slice_spans},
     wrap::{
         continuation_indent, wrap_ranges_window_indexed, wrapped_row_count as tui_wrapped_row_count,
     },
@@ -14,7 +11,6 @@ use crate::tui::{
 
 use super::{
     cache::{LineRenderIndex, RenderedVisualRow},
-    chat_role_gutter,
     types::RenderContext,
 };
 
@@ -94,7 +90,7 @@ pub(in crate::viewer) fn render_logical_line_window_with_status_indexed(
         return RenderedLineWindow {
             rows: vec![RenderedVisualRow {
                 line: styled_segment(
-                    line_number_gutter(line_number, context.gutter_digits),
+                    context.gutter.line_number(line_number),
                     line,
                     context.x,
                     context.x.saturating_add(context.width),
@@ -147,12 +143,12 @@ pub(in crate::viewer) fn render_logical_line_window_with_status_indexed(
         .map(|(index, range)| {
             let row_index = row_start + index;
             let gutter = if row_index == 0 {
-                line_number_gutter(line_number, context.gutter_digits)
+                context.gutter.line_number(line_number)
             } else {
-                continuation_gutter(row_index, context.gutter_digits)
+                context.gutter.continuation(row_index)
             };
             let mut line_spans = vec![gutter];
-            line_spans.push(chat_role_gutter(None, context.chat_gutter));
+            line_spans.push(context.gutter.chat_role(None));
             if range.continuation_indent > 0 {
                 push_styled_span(
                     &mut line_spans,
@@ -197,7 +193,7 @@ pub(in crate::viewer) fn styled_segment(
 ) -> Line<'static> {
     let mut spans = Vec::new();
     spans.push(gutter);
-    spans.push(chat_role_gutter(None, context.chat_gutter));
+    spans.push(context.gutter.chat_role(None));
     let highlight_prefix = slice_chars(line, 0, end);
     spans.extend(slice_spans(
         &highlight_content(&highlight_prefix, context.mode),
