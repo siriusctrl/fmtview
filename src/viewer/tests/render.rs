@@ -14,6 +14,7 @@ fn styled_line_keeps_a_gutter() {
         1,
         RenderContext {
             gutter_digits: 3,
+            chat_gutter: false,
             x: 0,
             width: 80,
             wrap: false,
@@ -32,6 +33,7 @@ fn zero_width_gutter_renders_selectable_text_only() {
         1,
         RenderContext {
             gutter_digits: 0,
+            chat_gutter: false,
             x: 0,
             width: 80,
             wrap: false,
@@ -51,6 +53,7 @@ fn wrap_uses_continuation_gutter_and_indent() {
         3,
         RenderContext {
             gutter_digits: 2,
+            chat_gutter: false,
             x: 0,
             width: 18,
             wrap: true,
@@ -73,6 +76,7 @@ fn markdown_wrap_respects_wide_character_display_width() {
         8,
         RenderContext {
             gutter_digits: 1,
+            chat_gutter: false,
             x: 0,
             width: content_width,
             wrap: true,
@@ -105,6 +109,7 @@ fn nowrap_applies_horizontal_offset() {
         1,
         RenderContext {
             gutter_digits: 1,
+            chat_gutter: false,
             x: 2,
             width: 3,
             wrap: false,

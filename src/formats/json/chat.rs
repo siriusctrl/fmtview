@@ -14,6 +14,14 @@ pub(crate) enum ChatRole {
 }
 
 impl ChatRole {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            ChatRole::System => "system",
+            ChatRole::User => "user",
+            ChatRole::Assistant => "assistant",
+        }
+    }
+
     pub(crate) fn style(self) -> Style {
         match self {
             ChatRole::System => style_fg(PALETTE_PURPLE),
@@ -66,13 +74,9 @@ pub(crate) fn line_declares_chat_role(line: &str) -> Option<ChatRole> {
         .next()
 }
 
-pub(crate) fn object_has_direct_chat_role(lines: &[String], start_offset: usize) -> bool {
-    let Some(start_line) = lines.get(start_offset) else {
-        return false;
-    };
-    let Some(start_byte) = first_object_open_byte(start_line) else {
-        return false;
-    };
+pub(crate) fn object_direct_chat_role(lines: &[String], start_offset: usize) -> Option<ChatRole> {
+    let start_line = lines.get(start_offset)?;
+    let start_byte = first_object_open_byte(start_line)?;
 
     let mut depth = 0_usize;
     let mut in_string = false;
@@ -84,8 +88,10 @@ pub(crate) fn object_has_direct_chat_role(lines: &[String], start_offset: usize)
         .skip(start_offset)
         .take(CHAT_ROLE_LOOKAHEAD_LINES)
     {
-        if (offset == start_offset || depth == 1) && line_declares_chat_role(line).is_some() {
-            return true;
+        if (offset == start_offset || depth == 1)
+            && let Some(role) = line_declares_chat_role(line)
+        {
+            return Some(role);
         }
 
         let scan_start = if offset == start_offset {
@@ -111,7 +117,7 @@ pub(crate) fn object_has_direct_chat_role(lines: &[String], start_offset: usize)
                 '}' | ']' if depth > 0 => {
                     depth = depth.saturating_sub(1);
                     if depth == 0 {
-                        return false;
+                        return None;
                     }
                 }
                 _ => {}
@@ -119,7 +125,7 @@ pub(crate) fn object_has_direct_chat_role(lines: &[String], start_offset: usize)
         }
     }
 
-    false
+    None
 }
 
 fn value_string_start(line: &str, key_end: usize) -> Option<usize> {
@@ -226,15 +232,18 @@ mod tests {
             "  ]".to_owned(),
             "}".to_owned(),
         ];
-        assert!(!object_has_direct_chat_role(&root, 0));
-        assert!(object_has_direct_chat_role(&root, 2));
+        assert_eq!(object_direct_chat_role(&root, 0), None);
+        assert_eq!(object_direct_chat_role(&root, 2), Some(ChatRole::User));
 
         let nested = vec![
             r#"  "message": {"#.to_owned(),
             r#"    "role": "assistant""#.to_owned(),
             "  }".to_owned(),
         ];
-        assert!(object_has_direct_chat_role(&nested, 0));
+        assert_eq!(
+            object_direct_chat_role(&nested, 0),
+            Some(ChatRole::Assistant)
+        );
     }
 
     #[test]
@@ -246,6 +255,6 @@ mod tests {
         lines.push(r#"  "role": "user""#.to_owned());
         lines.push("}".to_owned());
 
-        assert!(!object_has_direct_chat_role(&lines, 0));
+        assert_eq!(object_direct_chat_role(&lines, 0), None);
     }
 }

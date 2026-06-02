@@ -13,6 +13,7 @@ pub(in crate::viewer) struct RenderRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::viewer) struct RenderContext {
     pub(in crate::viewer) gutter_digits: usize,
+    pub(in crate::viewer) chat_gutter: bool,
     pub(in crate::viewer) x: usize,
     pub(in crate::viewer) width: usize,
     pub(in crate::viewer) wrap: bool,

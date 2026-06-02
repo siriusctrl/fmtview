@@ -76,6 +76,7 @@ fn structure_navigation_lands_on_visible_json_array_items() {
         10,
         RenderContext {
             gutter_digits: 2,
+            chat_gutter: false,
             x: 0,
             width: 80,
             wrap: true,

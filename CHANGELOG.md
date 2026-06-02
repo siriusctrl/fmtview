@@ -10,8 +10,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ### Added
 
-- Highlight `system`, `user`, and `assistant` role values in JSON/JSONL viewer
-  output and prefer those chat message objects for `]`/`[` structure jumps,
+- Show a JSON/JSONL chat role gutter for `system`, `user`, and `assistant`
+  message objects and prefer those objects for `]`/`[` structure jumps,
   including nested message objects with a direct `role` field.
 
 ## [0.4.1] - 2026-05-28

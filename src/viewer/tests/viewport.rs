@@ -6,6 +6,7 @@ fn viewport_can_start_inside_wrapped_logical_line() {
     let request = RenderRequest {
         context: RenderContext {
             gutter_digits: 1,
+            chat_gutter: false,
             x: 0,
             width: 4,
             wrap: true,
@@ -48,6 +49,7 @@ fn viewport_reports_actual_last_logical_line() {
     let request = RenderRequest {
         context: RenderContext {
             gutter_digits: 1,
+            chat_gutter: false,
             x: 0,
             width: 4,
             wrap: true,
@@ -83,6 +85,7 @@ fn markdown_viewport_reuses_inner_code_highlighter() {
     let request = RenderRequest {
         context: RenderContext {
             gutter_digits: 1,
+            chat_gutter: false,
             x: 0,
             width: 80,
             wrap: false,
@@ -113,6 +116,87 @@ fn markdown_viewport_reuses_inner_code_highlighter() {
     assert_eq!(
         styles_for_text(&viewport.lines[1].spans, "true"),
         vec![bool_style()]
+    );
+}
+
+#[test]
+fn json_viewport_shows_chat_role_gutter_on_message_start() {
+    let lines = vec![
+        "[".to_owned(),
+        "  {".to_owned(),
+        r#"    "role": "user","#.to_owned(),
+        r#"    "content": "hello""#.to_owned(),
+        "  }".to_owned(),
+        "]".to_owned(),
+    ];
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter_digits: 1,
+            chat_gutter: true,
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: FormatKind::Json,
+        },
+        row_limit: 8,
+    };
+    let mut cache = RenderedLineCache::default();
+
+    let viewport = render_viewport(
+        &lines,
+        1,
+        0,
+        6,
+        request,
+        &mut cache,
+        ViewportRenderOptions::default(),
+    );
+
+    assert_eq!(span_text(&viewport.lines[0].spans), "1 │           │ [");
+    assert_eq!(span_text(&viewport.lines[1].spans), "2 │ user      │   {");
+    assert_eq!(
+        span_text(&viewport.lines[2].spans),
+        r#"3 │           │     "role": "user","#
+    );
+}
+
+#[test]
+fn markdown_json_code_does_not_enable_chat_role_gutter() {
+    let lines = vec![
+        "```json".to_owned(),
+        r#"{"role":"assistant"}"#.to_owned(),
+        "```".to_owned(),
+    ];
+    let line_modes = vec![FormatKind::Markdown, FormatKind::Json, FormatKind::Markdown];
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter_digits: 1,
+            chat_gutter: false,
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: FormatKind::Markdown,
+        },
+        row_limit: 8,
+    };
+    let mut cache = RenderedLineCache::default();
+
+    let viewport = render_viewport(
+        &lines,
+        1,
+        0,
+        3,
+        request,
+        &mut cache,
+        ViewportRenderOptions {
+            line_modes: Some(&line_modes),
+            search_query: None,
+        },
+    );
+
+    assert_eq!(
+        span_text(&viewport.lines[1].spans),
+        r#"2 │ {"role":"assistant"}"#
     );
 }
 
@@ -169,6 +253,7 @@ fn wrapped_progress_advances_by_visible_bytes() {
     let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
     let context = RenderContext {
         gutter_digits: 1,
+        chat_gutter: false,
         x: 0,
         width: 4,
         wrap: true,
@@ -232,6 +317,7 @@ fn wrapped_tail_position_can_start_inside_last_line() {
     let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
     let context = RenderContext {
         gutter_digits: 1,
+        chat_gutter: false,
         x: 0,
         width: 4,
         wrap: true,
@@ -258,6 +344,7 @@ fn wrapped_tail_view_renders_last_full_page() {
     let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
     let context = RenderContext {
         gutter_digits: 1,
+        chat_gutter: false,
         x: 0,
         width: 4,
         wrap: true,
@@ -311,6 +398,7 @@ fn eof_wrap_offset_clamps_to_last_full_page() {
     let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
     let context = RenderContext {
         gutter_digits: 1,
+        chat_gutter: false,
         x: 0,
         width: 4,
         wrap: true,

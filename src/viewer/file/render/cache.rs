@@ -79,6 +79,7 @@ pub(in crate::viewer) struct RenderedLineCache {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::viewer) struct RenderCacheKey {
     gutter_digits: usize,
+    chat_gutter: bool,
     x: usize,
     width: usize,
     wrap: bool,
@@ -89,6 +90,7 @@ impl From<RenderRequest> for RenderCacheKey {
     fn from(request: RenderRequest) -> Self {
         Self {
             gutter_digits: request.context.gutter_digits,
+            chat_gutter: request.context.chat_gutter,
             x: request.context.x,
             width: request.context.width,
             wrap: request.context.wrap,
@@ -100,6 +102,7 @@ impl From<RenderRequest> for RenderCacheKey {
 #[derive(Debug, Clone)]
 pub(in crate::viewer) struct RenderedVisualRow {
     pub(in crate::viewer) line: Line<'static>,
+    pub(in crate::viewer) row_index: usize,
     pub(in crate::viewer) end_byte: usize,
     pub(in crate::viewer) line_end: bool,
 }

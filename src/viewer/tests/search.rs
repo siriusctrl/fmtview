@@ -256,6 +256,7 @@ fn search_jump_places_later_logical_line_with_context() {
         9,
         RenderContext {
             gutter_digits: 2,
+            chat_gutter: false,
             x: 0,
             width: 40,
             wrap: false,
@@ -273,6 +274,7 @@ fn search_jump_places_later_logical_line_with_context() {
         9,
         RenderContext {
             gutter_digits: 2,
+            chat_gutter: false,
             x: 0,
             width: 40,
             wrap: false,
@@ -308,6 +310,7 @@ fn wrapped_search_jumps_to_visual_row_containing_match() {
 
     let context = RenderContext {
         gutter_digits: 1,
+        chat_gutter: false,
         x: 0,
         width: 20,
         wrap: true,
@@ -352,6 +355,7 @@ fn wrapped_search_keeps_visible_match_position() {
     let line = format!("{}needle suffix", "a".repeat(140));
     let context = RenderContext {
         gutter_digits: 1,
+        chat_gutter: false,
         x: 0,
         width: 20,
         wrap: true,
@@ -512,6 +516,7 @@ fn search_highlight_adds_background_without_replacing_foreground() {
         1,
         RenderContext {
             gutter_digits: 1,
+            chat_gutter: false,
             x: 0,
             width: 80,
             wrap: false,
@@ -520,7 +525,18 @@ fn search_highlight_adds_background_without_replacing_foreground() {
     )
     .remove(0);
 
-    let highlighted = apply_search_highlight(line, Some("needle"), 1);
+    let highlighted = apply_search_highlight(
+        line,
+        Some("needle"),
+        RenderContext {
+            gutter_digits: 1,
+            chat_gutter: false,
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: FormatKind::Json,
+        },
+    );
     let styles = styles_for_text(&highlighted.spans, "needle");
 
     assert_eq!(styles.len(), 2);
@@ -542,6 +558,7 @@ fn non_search_viewport_render_does_not_paint_background_cells() {
     let request = RenderRequest {
         context: RenderContext {
             gutter_digits: 1,
+            chat_gutter: false,
             x: 0,
             width: 80,
             wrap: true,
@@ -572,6 +589,7 @@ fn search_background_is_scoped_to_match_spans_only() {
         1,
         RenderContext {
             gutter_digits: 1,
+            chat_gutter: false,
             x: 0,
             width: 80,
             wrap: false,
@@ -580,7 +598,18 @@ fn search_background_is_scoped_to_match_spans_only() {
     )
     .remove(0);
 
-    let highlighted = apply_search_highlight(line, Some("needle"), 1);
+    let highlighted = apply_search_highlight(
+        line,
+        Some("needle"),
+        RenderContext {
+            gutter_digits: 1,
+            chat_gutter: false,
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: FormatKind::Json,
+        },
+    );
     let background_spans = highlighted
         .spans
         .iter()
@@ -593,4 +622,28 @@ fn search_background_is_scoped_to_match_spans_only() {
             .iter()
             .all(|span| span.content.as_ref() == "needle")
     );
+}
+
+#[test]
+fn search_highlight_ignores_chat_role_gutter() {
+    let line = Line::from(vec![
+        line_number_gutter(1, 1),
+        chat_role_gutter(Some(crate::formats::json::chat::ChatRole::User), true),
+        Span::raw("  {"),
+    ]);
+
+    let highlighted = apply_search_highlight(
+        line,
+        Some("user"),
+        RenderContext {
+            gutter_digits: 1,
+            chat_gutter: true,
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: FormatKind::Json,
+        },
+    );
+
+    assert_eq!(background_cell_count(&[highlighted]), 0);
 }

@@ -9,7 +9,9 @@ use crate::{load::ViewFile, transform::FormatKind};
 use super::super::{
     breadcrumb::JsonBreadcrumbCache, input::ViewState, position::adjust_state_for_visible_height,
 };
-use super::{RenderContext, TailPositionCache, ViewPosition, footer::gutter_digits};
+use super::{
+    CHAT_ROLE_GUTTER_WIDTH, RenderContext, TailPositionCache, ViewPosition, footer::gutter_digits,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub(in crate::viewer) struct DrawLayout {
@@ -46,11 +48,18 @@ pub(in crate::viewer) fn draw_layout(
         usize::from(size.height.saturating_sub(3))
     };
     let gutter_digits = gutter_digits(file, selection_mode);
-    let gutter_width = if gutter_digits == 0 {
+    let line_gutter_width = if gutter_digits == 0 {
         0
     } else {
         gutter_digits + 3
     };
+    let chat_gutter = chat_gutter_enabled(mode, gutter_digits);
+    let chat_gutter_width = if chat_gutter {
+        CHAT_ROLE_GUTTER_WIDTH
+    } else {
+        0
+    };
+    let gutter_width = line_gutter_width.saturating_add(chat_gutter_width);
     let content_width = visible_width.saturating_sub(gutter_width);
 
     DrawLayout {
@@ -61,12 +70,17 @@ pub(in crate::viewer) fn draw_layout(
         selection_mode,
         context: RenderContext {
             gutter_digits,
+            chat_gutter,
             x: state.x,
             width: content_width,
             wrap: state.wrap,
             mode,
         },
     }
+}
+
+fn chat_gutter_enabled(mode: FormatKind, gutter_digits: usize) -> bool {
+    gutter_digits > 0 && matches!(mode, FormatKind::Json | FormatKind::Jsonl)
 }
 
 pub(in crate::viewer) fn sync_sticky_layout(

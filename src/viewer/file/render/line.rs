@@ -1,5 +1,6 @@
 use ratatui::text::{Line, Span};
 
+use crate::formats::{highlight_content, highlight_content_window_indexed};
 use crate::tui::palette::plain_style;
 use crate::tui::{
     text::{
@@ -10,13 +11,10 @@ use crate::tui::{
         continuation_indent, wrap_ranges_window_indexed, wrapped_row_count as tui_wrapped_row_count,
     },
 };
-use crate::{
-    formats::{highlight_content, highlight_content_window_indexed},
-    transform::FormatKind,
-};
 
 use super::{
     cache::{LineRenderIndex, RenderedVisualRow},
+    chat_role_gutter,
     types::RenderContext,
 };
 
@@ -100,8 +98,9 @@ pub(in crate::viewer) fn render_logical_line_window_with_status_indexed(
                     line,
                     context.x,
                     context.x.saturating_add(context.width),
-                    context.mode,
+                    context,
                 ),
+                row_index: 0,
                 end_byte: byte_index_for_char(
                     line,
                     context.x.saturating_add(context.width).min(line_chars),
@@ -153,6 +152,7 @@ pub(in crate::viewer) fn render_logical_line_window_with_status_indexed(
                 continuation_gutter(row_index, context.gutter_digits)
             };
             let mut line_spans = vec![gutter];
+            line_spans.push(chat_role_gutter(None, context.chat_gutter));
             if range.continuation_indent > 0 {
                 push_styled_span(
                     &mut line_spans,
@@ -167,6 +167,7 @@ pub(in crate::viewer) fn render_logical_line_window_with_status_indexed(
             ));
             RenderedVisualRow {
                 line: Line::from(line_spans),
+                row_index,
                 end_byte: range.end_byte,
                 line_end: range.end_byte >= line.len(),
             }
@@ -192,13 +193,14 @@ pub(in crate::viewer) fn styled_segment(
     line: &str,
     start: usize,
     end: usize,
-    mode: FormatKind,
+    context: RenderContext,
 ) -> Line<'static> {
     let mut spans = Vec::new();
     spans.push(gutter);
+    spans.push(chat_role_gutter(None, context.chat_gutter));
     let highlight_prefix = slice_chars(line, 0, end);
     spans.extend(slice_spans(
-        &highlight_content(&highlight_prefix, mode),
+        &highlight_content(&highlight_prefix, context.mode),
         start,
         end,
     ));

@@ -3,7 +3,7 @@ use crate::formats::{
     shared::{leading_indent, max_observed_offset},
 };
 
-use super::chat;
+use super::chat::{self, ChatRole};
 
 pub(crate) fn candidate_kind(line: &str) -> Option<StructureCandidateKind> {
     let indent = leading_indent(line);
@@ -31,10 +31,17 @@ pub(crate) fn candidate_kind_in_window(
     offset: usize,
 ) -> Option<StructureCandidateKind> {
     let kind = candidate_kind(lines.get(offset)?.as_str())?;
-    if chat_candidate_kind(kind) && chat::object_has_direct_chat_role(lines, offset) {
+    if chat_candidate_kind(kind) && chat_role_for_candidate(lines, offset).is_some() {
         return Some(StructureCandidateKind::JsonChatMessage);
     }
     Some(kind)
+}
+
+pub(crate) fn chat_role_for_candidate(lines: &[String], offset: usize) -> Option<ChatRole> {
+    let kind = candidate_kind(lines.get(offset)?.as_str())?;
+    chat_candidate_kind(kind)
+        .then(|| chat::object_direct_chat_role(lines, offset))
+        .flatten()
 }
 
 pub(crate) fn block_end(

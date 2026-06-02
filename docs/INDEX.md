@@ -38,7 +38,7 @@ Code orientation:
   kind, input shape, load strategy, and transform strategy.
 - `src/formats.rs` owns the format-capability entry point. Each folder under
   `src/formats/` groups one format's behavior:
-  - `json/` owns JSON formatting, highlighting, chat-role highlighting, and
+  - `json/` owns JSON formatting, highlighting, chat-role detection, and
     structure-jump rules.
   - `jsonl/` owns the JSONL profile while reusing JSON record behavior.
   - `xml/` owns XML-compatible formatting, highlighting, and structure rules.

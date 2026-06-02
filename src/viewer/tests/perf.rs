@@ -9,6 +9,7 @@ fn perf_huge_wrapped_line_paths() {
     );
     let context = RenderContext {
         gutter_digits: 1,
+        chat_gutter: false,
         x: 0,
         width: 94,
         wrap: true,
@@ -101,6 +102,7 @@ fn perf_repeated_viewport_scroll_render() {
     let request = RenderRequest {
         context: RenderContext {
             gutter_digits: 4,
+            chat_gutter: false,
             x: 0,
             width: 96,
             wrap: true,
@@ -154,6 +156,7 @@ fn perf_terminal_scroll_draw_bytes() {
     let request = RenderRequest {
         context: RenderContext {
             gutter_digits: 4,
+            chat_gutter: false,
             x: 0,
             width: 111,
             wrap: true,
@@ -232,6 +235,7 @@ fn perf_terminal_visual_row_scroll_bytes() {
     let request = RenderRequest {
         context: RenderContext {
             gutter_digits: 4,
+            chat_gutter: false,
             x: 0,
             width: 111,
             wrap: true,

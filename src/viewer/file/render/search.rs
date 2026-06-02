@@ -5,10 +5,12 @@ use ratatui::text::{Line, Span};
 use crate::tui::palette::search_match_bg;
 use crate::tui::text::{char_count, push_styled_span, slice_chars};
 
+use super::{CHAT_ROLE_GUTTER_WIDTH, RenderContext};
+
 pub(in crate::viewer) fn apply_search_highlight(
     line: Line<'static>,
     query: Option<&str>,
-    gutter_digits: usize,
+    context: RenderContext,
 ) -> Line<'static> {
     let Some(query) = query else {
         return line;
@@ -22,11 +24,7 @@ pub(in crate::viewer) fn apply_search_highlight(
         .iter()
         .map(|span| span.content.as_ref())
         .collect::<String>();
-    let start_char = if gutter_digits == 0 {
-        0
-    } else {
-        gutter_digits + 3
-    };
+    let start_char = search_start_char(context);
     let ranges = search_match_ranges(&visual_text, query, start_char);
     if ranges.is_empty() {
         return line;
@@ -37,6 +35,22 @@ pub(in crate::viewer) fn apply_search_highlight(
         alignment: line.alignment,
         spans: apply_search_ranges_to_spans(&line.spans, &ranges),
     }
+}
+
+fn search_start_char(context: RenderContext) -> usize {
+    if context.gutter_digits == 0 {
+        return 0;
+    }
+
+    let chat_gutter_width = if context.chat_gutter {
+        CHAT_ROLE_GUTTER_WIDTH
+    } else {
+        0
+    };
+    context
+        .gutter_digits
+        .saturating_add(3)
+        .saturating_add(chat_gutter_width)
 }
 
 pub(in crate::viewer) fn search_match_ranges(

@@ -1,10 +1,14 @@
+use super::chat_role_gutter;
 use super::{
     cache::RenderedLineCache,
     line::rendered_row_count,
     search::apply_search_highlight,
     types::{RenderContext, RenderRequest, RenderedViewport, ViewPosition, ViewportBottom},
 };
-use crate::transform::FormatKind;
+use crate::{
+    formats::{self, json::chat::ChatRole},
+    transform::FormatKind,
+};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(in crate::viewer) struct ViewportRenderOptions<'a> {
@@ -47,6 +51,7 @@ pub(in crate::viewer) fn render_viewport(
         if !top_rows.is_empty() {
             last_line_number = Some(first_line_number);
         }
+        let chat_role = chat_role_for_line(lines, 0, request.context);
         if options.search_query.is_some() {
             for row in top_rows.into_iter().take(height) {
                 bottom = Some(ViewportBottom {
@@ -55,9 +60,9 @@ pub(in crate::viewer) fn render_viewport(
                     line_end: row.line_end,
                 });
                 rendered.push(apply_search_highlight(
-                    row.line,
+                    apply_chat_role_gutter(row.line, row.row_index, chat_role, request.context),
                     options.search_query,
-                    request.context.gutter_digits,
+                    request.context,
                 ));
             }
         } else {
@@ -67,7 +72,12 @@ pub(in crate::viewer) fn render_viewport(
                     byte_end: row.end_byte,
                     line_end: row.line_end,
                 });
-                rendered.push(row.line);
+                rendered.push(apply_chat_role_gutter(
+                    row.line,
+                    row.row_index,
+                    chat_role,
+                    request.context,
+                ));
             }
         }
     }
@@ -79,6 +89,7 @@ pub(in crate::viewer) fn render_viewport(
 
         let remaining = height - rendered.len();
         let line_number = first_line_number + index + 1;
+        let offset = index + 1;
         let rows = cache.get_or_render_window(
             line,
             line_number,
@@ -88,9 +99,10 @@ pub(in crate::viewer) fn render_viewport(
                 request,
                 options
                     .line_modes
-                    .and_then(|modes| modes.get(index + 1).copied()),
+                    .and_then(|modes| modes.get(offset).copied()),
             ),
         );
+        let chat_role = chat_role_for_line(lines, offset, request.context);
         let taken = rows.len().min(remaining);
         if taken > 0 {
             last_line_number = Some(line_number);
@@ -103,9 +115,9 @@ pub(in crate::viewer) fn render_viewport(
                     line_end: row.line_end,
                 });
                 rendered.push(apply_search_highlight(
-                    row.line,
+                    apply_chat_role_gutter(row.line, row.row_index, chat_role, request.context),
                     options.search_query,
-                    request.context.gutter_digits,
+                    request.context,
                 ));
             }
         } else {
@@ -115,7 +127,12 @@ pub(in crate::viewer) fn render_viewport(
                     byte_end: row.end_byte,
                     line_end: row.line_end,
                 });
-                rendered.push(row.line);
+                rendered.push(apply_chat_role_gutter(
+                    row.line,
+                    row.row_index,
+                    chat_role,
+                    request.context,
+                ));
             }
         }
     }
@@ -125,6 +142,28 @@ pub(in crate::viewer) fn render_viewport(
         last_line_number,
         bottom,
     }
+}
+
+fn chat_role_for_line(lines: &[String], offset: usize, context: RenderContext) -> Option<ChatRole> {
+    if !context.chat_gutter {
+        return None;
+    }
+    formats::json::structure::chat_role_for_candidate(lines, offset)
+}
+
+fn apply_chat_role_gutter(
+    mut line: ratatui::text::Line<'static>,
+    row_index: usize,
+    role: Option<ChatRole>,
+    context: RenderContext,
+) -> ratatui::text::Line<'static> {
+    if !context.chat_gutter || row_index != 0 {
+        return line;
+    }
+    if let Some(span) = line.spans.get_mut(1) {
+        *span = chat_role_gutter(role, true);
+    }
+    line
 }
 
 fn line_request(request: RenderRequest, mode: Option<FormatKind>) -> RenderRequest {

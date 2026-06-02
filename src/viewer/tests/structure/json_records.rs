@@ -43,6 +43,7 @@ fn structure_navigation_jumps_inside_jsonl_record_before_next_record() {
         8,
         RenderContext {
             gutter_digits: 1,
+            chat_gutter: false,
             x: 0,
             width: 80,
             wrap: false,
