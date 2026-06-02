@@ -8,6 +8,12 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Highlight `system`, `user`, and `assistant` role values in JSON/JSONL viewer
+  output and prefer those chat message objects for `]`/`[` structure jumps,
+  including nested message objects with a direct `role` field.
+
 ## [0.4.1] - 2026-05-28
 
 ### Added

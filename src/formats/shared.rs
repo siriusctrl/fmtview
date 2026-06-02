@@ -6,6 +6,7 @@ const JSON_VISIBLE_COMPOSITE_LANDMARK_LINES: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StructureCandidateKind {
+    JsonChatMessage,
     JsonRecordStart,
     JsonArrayItemStart,
     JsonCompositeField,
@@ -20,7 +21,8 @@ pub(crate) enum StructureCandidateKind {
 impl StructureCandidateKind {
     pub(crate) fn is_landmark_when_visible(self, line_span: Option<usize>) -> bool {
         match self {
-            StructureCandidateKind::JsonRecordStart
+            StructureCandidateKind::JsonChatMessage
+            | StructureCandidateKind::JsonRecordStart
             | StructureCandidateKind::JsonArrayItemStart
             | StructureCandidateKind::JsonRootStart
             | StructureCandidateKind::MarkdownHeading

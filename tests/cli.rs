@@ -96,6 +96,19 @@ fn formats_long_inline_jsonl_showcase() {
 }
 
 #[test]
+fn formats_chat_jsonl_showcase() {
+    let example = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/chat.jsonl");
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.arg(example)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("  \"role\": \"system\""))
+        .stdout(predicate::str::contains("  \"role\": \"user\""))
+        .stdout(predicate::str::contains("      \"role\": \"assistant\""));
+}
+
+#[test]
 fn plain_type_passthrough_keeps_stdout_scriptable() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
     cmd.args(["--type", "plain", "--literal", "alpha {{ untouched }}\n"])

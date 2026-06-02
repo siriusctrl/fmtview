@@ -130,7 +130,8 @@ pub(crate) fn structure_anchor(
         .and_then(|previous| lines.get(previous).map(String::as_str));
     Some(StructureAnchor {
         line,
-        kind: structure_candidate_kind(format, content, previous),
+        kind: structure_candidate_kind_in_window(format, lines, offset)
+            .or_else(|| structure_candidate_kind(format, content, previous)),
         indent: leading_indent(content),
     })
 }
@@ -163,6 +164,26 @@ pub(crate) fn structure_candidate_kind(
         FormatKind::Plain | FormatKind::Auto => {
             plain::structure::is_paragraph_start(line, previous_line)
                 .then_some(StructureCandidateKind::PlainParagraph)
+        }
+    }
+}
+
+pub(crate) fn structure_candidate_kind_in_window(
+    format: FormatKind,
+    lines: &[String],
+    offset: usize,
+) -> Option<StructureCandidateKind> {
+    match format {
+        FormatKind::Json | FormatKind::Jsonl => {
+            json::structure::candidate_kind_in_window(lines, offset)
+        }
+        _ => {
+            let line = lines.get(offset).map(String::as_str).unwrap_or_default();
+            let previous = lines
+                .get(offset.saturating_sub(1))
+                .map(String::as_str)
+                .filter(|_| offset > 0);
+            structure_candidate_kind(format, line, previous)
         }
     }
 }

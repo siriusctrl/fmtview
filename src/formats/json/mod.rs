@@ -1,3 +1,4 @@
+pub(crate) mod chat;
 pub(crate) mod highlight;
 pub(crate) mod structure;
 pub(crate) mod transform;

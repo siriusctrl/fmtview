@@ -14,6 +14,8 @@ use crate::tui::palette::{
     string_style,
 };
 
+use super::chat::{ChatRole, role_value_ranges};
+
 #[cfg(test)]
 pub(crate) fn highlight_json_like(line: &str) -> Vec<Span<'static>> {
     highlight_json_like_window(line, 0, line.len(), None)
@@ -28,6 +30,7 @@ pub(crate) fn highlight_json_like_window(
     let mut spans = Vec::new();
     let mut cursor = 0;
     let mut value_string_state = None;
+    let chat_role_ranges = role_value_ranges(line);
     if let Some(checkpoint_index) = index.as_deref_mut()
         && let Some(checkpoint) = checkpoint_index.json_value_before(window_start)
     {
@@ -75,6 +78,21 @@ pub(crate) fn highlight_json_like_window(
 
         if ch == '"' {
             if json_quote_starts_value(line, cursor) {
+                if let Some((end, role)) =
+                    json_chat_role_string(line, cursor, window_end, &chat_role_ranges)
+                {
+                    push_span_window(
+                        &mut spans,
+                        line,
+                        cursor,
+                        end,
+                        role.style(),
+                        window_start,
+                        window_end,
+                    );
+                    cursor = end;
+                    continue;
+                }
                 let (end, closed) = highlight_json_string_value_window(
                     line,
                     cursor,
@@ -103,6 +121,21 @@ pub(crate) fn highlight_json_like_window(
                     window_end,
                 );
             } else {
+                if let Some((end, role)) =
+                    json_chat_role_string(line, cursor, window_end, &chat_role_ranges)
+                {
+                    push_span_window(
+                        &mut spans,
+                        line,
+                        cursor,
+                        end,
+                        role.style(),
+                        window_start,
+                        window_end,
+                    );
+                    cursor = end;
+                    continue;
+                }
                 let (end, closed) = highlight_json_string_value_window(
                     line,
                     cursor,
@@ -178,6 +211,23 @@ pub(crate) fn highlight_json_like_window(
     }
 
     spans
+}
+
+fn json_chat_role_string(
+    line: &str,
+    start: usize,
+    limit: usize,
+    chat_role_ranges: &[(Range<usize>, ChatRole)],
+) -> Option<(usize, ChatRole)> {
+    let (end, closed) = json_string_end_until(line, start, limit);
+    if !closed {
+        return None;
+    }
+
+    chat_role_ranges
+        .iter()
+        .find(|(range, _)| range.start == start && range.end == end)
+        .map(|(_, role)| (end, *role))
 }
 
 pub(crate) fn highlight_json_string_value_window(

@@ -3,7 +3,9 @@ use std::time::Duration;
 use anyhow::Result;
 
 use crate::{
-    formats::{first_non_ws_byte, leading_indent, structure_anchor, structure_candidate_kind},
+    formats::{
+        first_non_ws_byte, leading_indent, structure_anchor, structure_candidate_kind_in_window,
+    },
     load::ViewFile,
     transform::FormatKind,
 };
@@ -83,11 +85,7 @@ fn scan_structure_forward(
     let mut scanned = 0_usize;
     for offset in next_line - read_start..lines.len() {
         let line_number = read_start + offset;
-        if let Some(kind) = structure_candidate_kind(
-            format,
-            lines.get(offset).map(String::as_str).unwrap_or_default(),
-            lines.get(offset.saturating_sub(1)).map(String::as_str),
-        ) {
+        if let Some(kind) = structure_candidate_kind_in_window(format, &lines, offset) {
             let visibility = candidate_visibility(
                 format,
                 &lines,
@@ -168,11 +166,7 @@ fn scan_structure_backward(
     let mut candidates = Vec::new();
     for offset in (start - read_start..=scan_end_offset).rev() {
         let line_number = read_start + offset;
-        if let Some(kind) = structure_candidate_kind(
-            format,
-            lines.get(offset).map(String::as_str).unwrap_or_default(),
-            lines.get(offset.saturating_sub(1)).map(String::as_str),
-        ) {
+        if let Some(kind) = structure_candidate_kind_in_window(format, &lines, offset) {
             let visibility = candidate_visibility(
                 format,
                 &lines,

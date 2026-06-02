@@ -100,8 +100,8 @@ as the whole rule.
           |
           v
   classify candidate structure points
-    - landmark: JSONL record, JSON array item object, heading, table,
-      Jinja block, paragraph start
+    - landmark: JSONL record, JSON array item object, chat-style JSON
+      message object, heading, table, Jinja block, paragraph start
     - detail: JSON object/array field, XML/HTML start tag
           |
           v
@@ -129,6 +129,14 @@ useful smart behavior for long inline values and blocks that are not fully
 observable on the current screen. Format-specific code decides what counts as a
 candidate; shared viewer code still owns visibility, ranking, and scroll
 clamping.
+
+JSON and JSONL also have a small chat-aware structure rule. If an object has a
+direct `"role"` field whose value is `"system"`, `"user"`, or `"assistant"`,
+the JSON format package classifies that object as a chat message candidate.
+That can be a top-level array item or a nested object such as
+`"message": { "role": "assistant", ... }`. The scanner intentionally checks the
+candidate object's direct fields rather than all descendants, so a root object
+that merely contains a `messages` array does not absorb every message below it.
 
 The implementation mirrors that split:
 

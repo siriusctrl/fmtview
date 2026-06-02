@@ -1,0 +1,2 @@
+{"conversation_id":"demo-1","messages":[{"role":"system","content":"Answer with compact, practical steps."},{"role":"user","content":"Can you summarize this payload?"},{"role":"assistant","content":"Yes. The payload contains account metadata and three events."}]}
+{"conversation_id":"demo-2","metadata":{"source":"fixture","role":"observer"},"turn":{"role":"user","content":"Nested message objects should still be easy to jump to."},"response":{"message":{"role":"assistant","content":"Use ] and [ to move between the user and assistant objects."}}}

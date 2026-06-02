@@ -159,6 +159,118 @@ fn structure_navigation_prefers_sibling_array_item_over_nested_payload() {
 }
 
 #[test]
+fn structure_navigation_prefers_json_chat_messages() {
+    let file = indexed_file(&[
+        "[",
+        "  {",
+        r#"    "metadata": {"#,
+        r#"      "role": "observer""#,
+        "    }",
+        "  },",
+        "  {",
+        r#"    "role": "system","#,
+        r#"    "content": "rules""#,
+        "  },",
+        "  {",
+        r#"    "message": {"#,
+        r#"      "role": "assistant","#,
+        r#"      "content": "nested""#,
+        "    }",
+        "  }",
+        "]",
+    ]);
+    let mut state = ViewState::default();
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 6,
+            byte_index: 2
+        })
+    );
+
+    state.structure_cursor = Some(6);
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 11,
+            byte_index: 4
+        })
+    );
+}
+
+#[test]
+fn backward_structure_navigation_prefers_json_chat_messages() {
+    let file = indexed_file(&[
+        "[",
+        "  {",
+        r#"    "role": "user","#,
+        r#"    "content": "hello""#,
+        "  },",
+        "  {",
+        r#"    "payload": {"#,
+        r#"      "id": 1"#,
+        "    }",
+        "  },",
+        "  {",
+        r#"    "message": {"#,
+        r#"      "role": "assistant""#,
+        "    }",
+        "  }",
+        "]",
+    ]);
+    let mut state = ViewState {
+        structure_cursor: Some(14),
+        ..ViewState::default()
+    };
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Backward,
+    );
+    assert!(process_structure_step(&file, &mut state, FormatKind::Jsonl).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 11,
+            byte_index: 4
+        })
+    );
+
+    state.structure_cursor = Some(11);
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Backward,
+    );
+    assert!(process_structure_step(&file, &mut state, FormatKind::Jsonl).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 1,
+            byte_index: 2
+        })
+    );
+}
+
+#[test]
 fn structure_navigation_lands_on_large_visible_json_composite_fields() {
     let file = indexed_file(&[
         "{",

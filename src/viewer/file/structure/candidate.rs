@@ -26,6 +26,18 @@ pub(super) fn select_structure_candidate(
     format: FormatKind,
     anchor: Option<StructureAnchor>,
 ) -> Option<StructureCandidate> {
+    if matches!(format, FormatKind::Json | FormatKind::Jsonl)
+        && candidates
+            .iter()
+            .any(|candidate| candidate.kind == StructureCandidateKind::JsonChatMessage)
+    {
+        return candidates
+            .iter()
+            .copied()
+            .filter(|candidate| candidate.kind == StructureCandidateKind::JsonChatMessage)
+            .min_by_key(|candidate| structure_candidate_rank(*candidate, format, anchor));
+    }
+
     candidates
         .iter()
         .copied()
@@ -49,6 +61,10 @@ fn structure_candidate_rank(
     };
 
     match anchor.kind {
+        Some(StructureCandidateKind::JsonChatMessage) => {
+            let scope = usize::from(candidate.kind != StructureCandidateKind::JsonChatMessage);
+            (scope, distance, json_candidate_priority(candidate.kind))
+        }
         Some(StructureCandidateKind::JsonArrayItemStart) => {
             let scope = usize::from(candidate.indent > anchor.indent);
             (scope, json_candidate_priority(candidate.kind), distance)
@@ -67,14 +83,15 @@ fn structure_candidate_rank(
 
 fn json_candidate_priority(kind: StructureCandidateKind) -> usize {
     match kind {
-        StructureCandidateKind::JsonArrayItemStart => 0,
-        StructureCandidateKind::JsonRootStart => 1,
-        StructureCandidateKind::JsonRecordStart => 2,
-        StructureCandidateKind::JsonCompositeField => 3,
-        StructureCandidateKind::XmlStartTag => 4,
+        StructureCandidateKind::JsonChatMessage => 0,
+        StructureCandidateKind::JsonArrayItemStart => 1,
+        StructureCandidateKind::JsonRootStart => 2,
+        StructureCandidateKind::JsonRecordStart => 3,
+        StructureCandidateKind::JsonCompositeField => 4,
+        StructureCandidateKind::XmlStartTag => 5,
         StructureCandidateKind::MarkdownHeading
         | StructureCandidateKind::TomlTable
         | StructureCandidateKind::JinjaBlock
-        | StructureCandidateKind::PlainParagraph => 5,
+        | StructureCandidateKind::PlainParagraph => 6,
     }
 }

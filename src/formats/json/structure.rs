@@ -3,6 +3,8 @@ use crate::formats::{
     shared::{leading_indent, max_observed_offset},
 };
 
+use super::chat;
+
 pub(crate) fn candidate_kind(line: &str) -> Option<StructureCandidateKind> {
     let indent = leading_indent(line);
     let trimmed = line.trim_start();
@@ -22,6 +24,17 @@ pub(crate) fn candidate_kind(line: &str) -> Option<StructureCandidateKind> {
     } else {
         None
     }
+}
+
+pub(crate) fn candidate_kind_in_window(
+    lines: &[String],
+    offset: usize,
+) -> Option<StructureCandidateKind> {
+    let kind = candidate_kind(lines.get(offset)?.as_str())?;
+    if chat_candidate_kind(kind) && chat::object_has_direct_chat_role(lines, offset) {
+        return Some(StructureCandidateKind::JsonChatMessage);
+    }
+    Some(kind)
 }
 
 pub(crate) fn block_end(
@@ -73,6 +86,15 @@ pub(crate) fn block_end(
     }
 
     None
+}
+
+fn chat_candidate_kind(kind: StructureCandidateKind) -> bool {
+    matches!(
+        kind,
+        StructureCandidateKind::JsonRecordStart
+            | StructureCandidateKind::JsonArrayItemStart
+            | StructureCandidateKind::JsonCompositeField
+    )
 }
 
 fn value_after_key(trimmed: &str) -> Option<&str> {
