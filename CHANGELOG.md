@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-02
+
 ### Added
 
 - Show a JSON/JSONL chat role gutter for `system`, `user`, and `assistant`
