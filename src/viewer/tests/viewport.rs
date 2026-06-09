@@ -148,12 +148,36 @@ fn json_viewport_shows_chat_role_gutter_on_message_start() {
         ViewportRenderOptions::default(),
     );
 
-    assert_eq!(span_text(&viewport.lines[0].spans), "1 │           │ [");
-    assert_eq!(span_text(&viewport.lines[1].spans), "2 │ user      │   {");
+    assert_eq!(span_text(&viewport.lines[0].spans), "1 │   │ [");
+    assert_eq!(span_text(&viewport.lines[1].spans), "2 │ U │   {");
     assert_eq!(
         span_text(&viewport.lines[2].spans),
-        r#"3 │           │     "role": "user","#
+        r#"3 │   │     "role": "user","#
     );
+}
+
+#[test]
+fn json_chat_role_gutter_adapts_to_available_width() {
+    let file = indexed_lines(&[r#"{"role":"assistant"}"#]);
+    let state = ViewState::default();
+
+    let wide = draw_layout(
+        ratatui::layout::Size::new(80, 20),
+        &file,
+        &state,
+        FormatKind::Json,
+    );
+    assert!(wide.context.gutter.chat_role_enabled());
+    assert_eq!(wide.gutter_width, 8);
+
+    let narrow = draw_layout(
+        ratatui::layout::Size::new(61, 20),
+        &file,
+        &state,
+        FormatKind::Json,
+    );
+    assert!(!narrow.context.gutter.chat_role_enabled());
+    assert_eq!(narrow.gutter_width, 4);
 }
 
 #[test]

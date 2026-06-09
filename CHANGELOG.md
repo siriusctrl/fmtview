@@ -8,6 +8,11 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Changed
+
+- Use a compact adaptive `S`/`U`/`A` chat role gutter in the JSON/JSONL viewer,
+  hiding it automatically when terminal width is better spent on content.
+
 ## [0.4.2] - 2026-06-02
 
 ### Added

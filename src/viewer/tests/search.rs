@@ -625,7 +625,7 @@ fn search_highlight_ignores_chat_role_gutter() {
 
     let highlighted = apply_search_highlight(
         line,
-        Some("user"),
+        Some("U"),
         RenderContext {
             gutter: GutterLayout::new(1, true),
             x: 0,

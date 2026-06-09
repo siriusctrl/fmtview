@@ -45,7 +45,7 @@ pub(in crate::viewer) fn draw_layout(
     } else {
         usize::from(size.height.saturating_sub(3))
     };
-    let gutter = GutterLayout::for_view(file, selection_mode, mode);
+    let gutter = GutterLayout::for_view(file, selection_mode, mode, visible_width);
     let gutter_width = gutter.width();
     let content_width = visible_width.saturating_sub(gutter_width);
 

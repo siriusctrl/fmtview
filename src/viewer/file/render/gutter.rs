@@ -9,19 +9,30 @@ use super::footer::gutter_digits;
 
 const WRAP_GUTTER_MINOR_TICK_ROWS: usize = 8;
 const WRAP_GUTTER_MAJOR_TICK_ROWS: usize = 64;
-const CHAT_ROLE_GUTTER_WIDTH: usize = 12;
+const COMPACT_CHAT_GUTTER_WIDTH: usize = 4;
+const MIN_CONTENT_WIDTH_WITH_CHAT_GUTTER: usize = 58;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChatGutterMode {
+    Compact,
+    Off,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::viewer) struct GutterLayout {
     line_digits: usize,
-    chat_role: bool,
+    chat_mode: ChatGutterMode,
 }
 
 impl GutterLayout {
     pub(in crate::viewer) fn new(line_digits: usize, chat_role: bool) -> Self {
         Self {
             line_digits,
-            chat_role: chat_role && line_digits > 0,
+            chat_mode: if chat_role && line_digits > 0 {
+                ChatGutterMode::Compact
+            } else {
+                ChatGutterMode::Off
+            },
         }
     }
 
@@ -29,12 +40,19 @@ impl GutterLayout {
         file: &dyn ViewFile,
         selection_mode: bool,
         mode: FormatKind,
+        visible_width: usize,
     ) -> Self {
         let line_digits = gutter_digits(file, selection_mode);
-        Self::new(
+        let mut layout = Self::new(
             line_digits,
             matches!(mode, FormatKind::Json | FormatKind::Jsonl),
-        )
+        );
+        if layout.chat_role_width() > 0
+            && visible_width.saturating_sub(layout.width()) < MIN_CONTENT_WIDTH_WITH_CHAT_GUTTER
+        {
+            layout.chat_mode = ChatGutterMode::Off;
+        }
+        layout
     }
 
     pub(in crate::viewer) fn width(self) -> usize {
@@ -70,18 +88,18 @@ impl GutterLayout {
     }
 
     pub(in crate::viewer) fn chat_role(self, role: Option<ChatRole>) -> Span<'static> {
-        if !self.chat_role {
+        if self.chat_mode == ChatGutterMode::Off {
             return Span::raw("");
         }
 
         match role {
-            Some(role) => Span::styled(format!("{:<9} │ ", role.label()), role.style()),
-            None => Span::styled(format!("{:<9} │ ", ""), gutter_style()),
+            Some(role) => Span::styled(format!("{} │ ", role.compact_label()), role.style()),
+            None => Span::styled("  │ ".to_owned(), gutter_style()),
         }
     }
 
     pub(in crate::viewer) fn chat_role_enabled(self) -> bool {
-        self.chat_role
+        self.chat_mode != ChatGutterMode::Off
     }
 
     fn line_number_width(self) -> usize {
@@ -93,10 +111,9 @@ impl GutterLayout {
     }
 
     fn chat_role_width(self) -> usize {
-        if self.chat_role {
-            CHAT_ROLE_GUTTER_WIDTH
-        } else {
-            0
+        match self.chat_mode {
+            ChatGutterMode::Compact => COMPACT_CHAT_GUTTER_WIDTH,
+            ChatGutterMode::Off => 0,
         }
     }
 }

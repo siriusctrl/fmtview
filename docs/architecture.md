@@ -137,10 +137,11 @@ That can be a top-level array item or a nested object such as
 `"message": { "role": "assistant", ... }`. The scanner intentionally checks the
 candidate object's direct fields rather than all descendants, so a root object
 that merely contains a `messages` array does not absorb every message below it.
-The normal JSON/JSONL viewer reuses the same classification to fill a narrow
-role gutter beside the line-number gutter. That gutter is render-only: it is
-not part of transformed output, not used as searchable content, and it is hidden
-when selection mode removes viewer chrome for native terminal copying.
+The normal JSON/JSONL viewer reuses the same classification to fill a compact
+`S`/`U`/`A` role gutter beside the line-number gutter. That gutter is
+render-only: it is not part of transformed output, not used as searchable
+content, and it is hidden when the terminal is too narrow or when selection mode
+removes viewer chrome for native terminal copying.
 
 The implementation mirrors that split:
 

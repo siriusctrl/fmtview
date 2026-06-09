@@ -14,11 +14,11 @@ pub(crate) enum ChatRole {
 }
 
 impl ChatRole {
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) fn compact_label(self) -> &'static str {
         match self {
-            ChatRole::System => "system",
-            ChatRole::User => "user",
-            ChatRole::Assistant => "assistant",
+            ChatRole::System => "S",
+            ChatRole::User => "U",
+            ChatRole::Assistant => "A",
         }
     }
 

@@ -56,8 +56,9 @@ embedded markup, wrapped records, or formatted diffs.
   inside JSON string values.
 - Keep a compact sticky JSON key breadcrumb above the viewer body while
   scrolling nested documents.
-- Show a chat role gutter for JSON and JSONL message objects with `system`,
-  `user`, or `assistant` roles, and prefer those objects for structure jumps.
+- Show a compact chat role gutter for JSON and JSONL message objects with
+  `system`, `user`, or `assistant` roles, and prefer those objects for
+  structure jumps.
 - Preserve data semantics. JSON strings are highlighted for readability, not
   rewritten.
 - Keep large outputs responsive by indexing a temporary text file and only
@@ -367,9 +368,10 @@ through the document's outline instead of only paging to unseen content. For
 JSON and JSONL, an object with a direct `"role"` value of `"system"`, `"user"`,
 or `"assistant"` is treated as a chat message even when that object is nested
 inside another field. In the normal JSON/JSONL viewer, these message objects
-also show a narrow role gutter next to the line-number gutter, so `system`,
-`user`, and `assistant` turns remain visible without relying only on token
-colors. Selection mode hides this gutter along with line numbers. Visibility
+also show a compact `S`/`U`/`A` role gutter next to the line-number gutter, so
+turn boundaries remain visible without relying only on token colors. The gutter
+is automatically hidden in narrow terminals to preserve content width, and
+selection mode hides it along with line numbers. Visibility
 still matters for detail blocks: small fully visible JSON object/array fields
 are skipped, while larger composite fields, partially wrapped blocks, and
 horizontally clipped blocks remain jump targets. XML/HTML jumps to start tags
