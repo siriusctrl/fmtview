@@ -1,4 +1,4 @@
-use crate::formats::shared::{following_lines, max_boundary_offset};
+use crate::formats::indent::{following_lines, max_boundary_offset};
 
 pub(crate) fn block_end(
     lines: &[String],

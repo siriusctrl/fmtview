@@ -1,6 +1,6 @@
 use crate::formats::{
     StructureCandidateKind,
-    shared::{leading_indent, max_observed_offset},
+    indent::{leading_indent, max_observed_offset},
 };
 
 use super::chat::{self, ChatRole};

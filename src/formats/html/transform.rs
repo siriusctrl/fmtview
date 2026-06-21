@@ -378,7 +378,7 @@ fn is_name_byte(byte: u8) -> bool {
 }
 
 fn is_void_tag_bytes(name: &[u8]) -> bool {
-    crate::formats::shared::VOID_TAGS
+    crate::formats::markup::VOID_TAGS
         .iter()
         .any(|tag| tag.as_bytes().eq_ignore_ascii_case(name))
 }

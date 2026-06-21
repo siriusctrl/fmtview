@@ -4,7 +4,7 @@ use ratatui::{style::Style, text::Span};
 
 use crate::formats::{
     HighlightCheckpointIndex,
-    shared::{escape_token_end, floor_char_boundary, push_span_window, take_while},
+    spans::{escape_token_end, floor_char_boundary, push_span_window, take_while},
     xml::highlight::{
         XmlPairState, apply_xml_tag_state, highlight_xml_tag_window, looks_like_xml_tag,
     },

@@ -53,7 +53,10 @@ Code orientation:
     heading structure rules.
   - `toml/`, `jinja/`, and `plain/` own their respective highlighting and
     structure rules.
-  - `shared.rs` keeps small helpers reused by multiple format packages.
+  - `markup.rs`, `spans.rs`, `indent.rs`, and `structure.rs` keep focused
+    helpers reused by multiple format packages: markup sniffing and void tags,
+    styled-span slicing, indent/window traversal, and shared structure-candidate
+    types.
 - `src/load.rs` owns the load-module entry point and exports the load-facing
   API.
 - `src/load/` owns single-input view-file construction, indexing, lazy-load
@@ -85,8 +88,9 @@ Code orientation:
     the side-by-side row model.
 - `src/tui.rs` owns shared terminal UI primitives that are not specific to the
   normal file viewer or diff viewer:
-  - `screen.rs` handles terminal buffer rendering, ANSI writes, scroll regions,
-    and buffer-delta repainting.
+  - `screen.rs` owns terminal draw state and the public viewer terminal facade.
+    `frame.rs`, `ansi.rs`, and `scroll.rs` split frame rendering, compact ANSI
+    writes, scroll regions, and buffer-delta repainting.
   - `palette.rs` owns terminal colors used by format highlighting, viewer, and diff output.
   - `text.rs` and `wrap.rs` own shared character-counting, styled text slicing,
     display-width wrapping, and wrap checkpoint helpers.

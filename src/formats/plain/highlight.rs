@@ -1,6 +1,6 @@
 use ratatui::text::Span;
 
-use crate::{formats::shared::push_span_window, tui::palette::plain_style};
+use crate::{formats::spans::push_span_window, tui::palette::plain_style};
 
 pub(crate) fn highlight_plain_window(
     line: &str,

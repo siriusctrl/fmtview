@@ -1,18 +1,21 @@
 mod checkpoints;
 pub(crate) mod html;
+mod indent;
 pub(crate) mod jinja;
 pub(crate) mod json;
 pub(crate) mod jsonl;
 pub(crate) mod markdown;
+mod markup;
 pub(crate) mod plain;
-mod shared;
+mod spans;
+mod structure;
 pub(crate) mod toml;
 pub(crate) mod xml;
 
 pub(crate) use checkpoints::HighlightCheckpointIndex;
-pub(crate) use shared::{
-    StructureCandidateKind, detect_markup_kind, first_non_ws_byte, leading_indent,
-};
+pub(crate) use indent::{first_non_ws_byte, leading_indent};
+pub(crate) use markup::detect_markup_kind;
+pub(crate) use structure::StructureCandidateKind;
 
 #[cfg(test)]
 pub(crate) use json::highlight::highlight_json_like;
@@ -208,7 +211,7 @@ pub(crate) fn structure_block_end(
         }
         FormatKind::Xml | FormatKind::Html => {
             xml::structure::block_end(lines, read_start, start_offset, viewport_bottom).or_else(
-                || shared::indent_block_end(lines, read_start, start_offset, viewport_bottom),
+                || indent::indent_block_end(lines, read_start, start_offset, viewport_bottom),
             )
         }
         FormatKind::Markdown => {
@@ -225,7 +228,7 @@ pub(crate) fn structure_block_end(
         }
     }
     .or_else(|| {
-        shared::eof_block_end(
+        indent::eof_block_end(
             lines,
             read_start,
             viewport_bottom,

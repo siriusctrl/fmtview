@@ -4,7 +4,7 @@ use ratatui::text::Span;
 
 use crate::formats::{
     HighlightCheckpointIndex,
-    shared::{push_span_window, take_while},
+    spans::{push_span_window, take_while},
     xml::highlight::highlight_inline_xml_window_indexed,
 };
 use crate::tui::palette::{key_style, plain_style, punctuation_style, string_style};
