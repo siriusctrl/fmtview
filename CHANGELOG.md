@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-21
+
 ### Added
 
 - Format HTML with a tolerant tokenizer as a first-class type. `.html` and
