@@ -221,6 +221,7 @@ fn draw_view(
         ViewportRenderOptions {
             line_modes: line_modes.as_deref(),
             search_query: active_search_query(state),
+            active_search_match: state.search_match_target,
         },
     );
     let mut max_top_row_offset = effective_top_row_offset(
@@ -242,6 +243,7 @@ fn draw_view(
             ViewportRenderOptions {
                 line_modes: line_modes.as_deref(),
                 search_query: active_search_query(state),
+                active_search_match: state.search_match_target,
             },
         );
     }
@@ -266,6 +268,7 @@ fn draw_view(
             ViewportRenderOptions {
                 line_modes: line_modes.as_deref(),
                 search_query: active_search_query(state),
+                active_search_match: state.search_match_target,
             },
         );
         max_top_row_offset = effective_top_row_offset(

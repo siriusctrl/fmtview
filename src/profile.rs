@@ -13,6 +13,9 @@ use crate::{
 
 const SNIFF_BYTES: usize = 1024 * 1024;
 const SNIFF_LINES: usize = 16;
+/// Cap on the prefix retained for XML/HTML markup sniffing. Strong signals
+/// (`<?xml`, `<!doctype html>`, `<html>`) live near the top of the document.
+const MARKUP_SNIFF_PREFIX: usize = 4096;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TypeProfile {
     pub(crate) content: FormatKind,
@@ -48,7 +51,7 @@ impl TypeProfile {
         }
 
         Ok(match sample.first_non_ws {
-            Some(b'<') => explicit_profile(FormatKind::Xml),
+            Some(b'<') => explicit_profile(formats::detect_markup_kind(&sample.markup_prefix)),
             Some(b'{' | b'[') => explicit_profile(FormatKind::Json),
             _ => explicit_profile(FormatKind::Plain),
         })
@@ -85,6 +88,7 @@ struct TypeSample {
     first_non_ws: Option<u8>,
     non_empty_lines: usize,
     parseable_record_lines: usize,
+    markup_prefix: Vec<u8>,
 }
 
 impl TypeSample {
@@ -103,6 +107,11 @@ impl TypeSample {
                 break;
             }
             bytes_read += read;
+            if sample.markup_prefix.len() < MARKUP_SNIFF_PREFIX {
+                let remaining = MARKUP_SNIFF_PREFIX - sample.markup_prefix.len();
+                let take = line.len().min(remaining);
+                sample.markup_prefix.extend_from_slice(&line[..take]);
+            }
 
             if sample.first_non_ws.is_none() {
                 sample.first_non_ws = line
@@ -437,6 +446,68 @@ mod tests {
 
         assert_eq!(profile.content, FormatKind::Json);
         assert_eq!(profile.shape, ContentShape::WholeDocument);
+        assert_eq!(profile.load, LoadPlan::EagerTransformedDocument);
+    }
+
+    #[test]
+    fn resolves_html_extension_to_html_profile() {
+        let (_temp, source) =
+            source_with_suffix(b"<!doctype html><html><body><br></body></html>\n", ".html");
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Auto,
+                indent: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.content, FormatKind::Html);
+        assert_eq!(profile.shape, ContentShape::WholeDocument);
+        assert_eq!(profile.load, LoadPlan::EagerTransformedDocument);
+        assert_eq!(profile.transform, TransformStrategy::PrettyPrint);
+    }
+
+    #[test]
+    fn sniffs_doctype_html_as_html_without_extension() {
+        let (_temp, source) = source(b"<!doctype html>\n<html><body><br></body></html>\n");
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Auto,
+                indent: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(profile.content, FormatKind::Html);
+    }
+
+    #[test]
+    fn sniffs_xml_declaration_as_xml_without_extension() {
+        let (_temp, source) = source(b"<?xml version=\"1.0\"?><root><item/></root>\n");
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Auto,
+                indent: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(profile.content, FormatKind::Xml);
+    }
+
+    #[test]
+    fn explicit_html_type_chooses_html_profile() {
+        let (_temp, source) = source(b"<div><br></div>\n");
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Html,
+                indent: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(profile.content, FormatKind::Html);
         assert_eq!(profile.load, LoadPlan::EagerTransformedDocument);
     }
 }

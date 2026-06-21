@@ -97,6 +97,7 @@ pub(in crate::viewer) fn render_logical_line_window_with_status_indexed(
                     context,
                 ),
                 row_index: 0,
+                start_byte: byte_index_for_char(line, context.x.min(line_chars)),
                 end_byte: byte_index_for_char(
                     line,
                     context.x.saturating_add(context.width).min(line_chars),
@@ -164,6 +165,7 @@ pub(in crate::viewer) fn render_logical_line_window_with_status_indexed(
             RenderedVisualRow {
                 line: Line::from(line_spans),
                 row_index,
+                start_byte: range.start_byte,
                 end_byte: range.end_byte,
                 line_end: range.end_byte >= line.len(),
             }

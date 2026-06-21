@@ -1,7 +1,7 @@
 # fmtview
 
 Fast CLI viewing, highlighting, search, and diffing for JSON, JSONL,
-XML-compatible markup, Markdown, TOML, plain text, and Jinja templates.
+XML-compatible markup, HTML, Markdown, TOML, plain text, and Jinja templates.
 
 `fmtview` is built for the workflow where you want to inspect data quickly in a
 terminal: open large files without waiting for a full render, keep format
@@ -38,13 +38,13 @@ embedded markup, wrapped records, or formatted diffs.
 
 - View files in a terminal UI with line numbers, progress, and indent-aware
   soft wrap.
-- Highlight JSON, XML-compatible markup, embedded markup in JSON strings,
+- Highlight JSON, XML-compatible markup, HTML, embedded markup in JSON strings,
   Markdown, TOML, and Jinja templates.
 - Search the visible text without loading rendered output into memory.
 - Diff inputs after applying each input's profile, with interactive
   single-column and side-by-side layouts in a TTY and unified patches on
   redirected stdout.
-- Format JSON, JSONL, and XML-compatible markup when that is the right content
+- Format JSON, JSONL, XML-compatible markup, and HTML when that is the right content
   strategy.
 - Preview Markdown, TOML, plain text, and Jinja templates without rewriting
   their content.
@@ -153,7 +153,7 @@ load strategy, transform strategy, and format package. File extensions are only
 one signal. When the extension is unknown, `fmtview` sniffs a bounded
 prefix of the content: JSON-looking documents use the JSON formatter, record
 streams use the lazy JSONL path, markup-looking documents use the XML-compatible
-formatter, and otherwise the input falls back to plain-text passthrough.
+or HTML formatter, and otherwise the input falls back to plain-text passthrough.
 
 If an auto-detected structured type cannot be formatted in the interactive
 viewer, `fmtview` falls back to plain-text viewing and shows a temporary red
@@ -165,7 +165,8 @@ Known extensions still provide a fast, deterministic hint:
 
 - `.json` -> JSON formatting.
 - `.jsonl` and `.ndjson` -> lazy JSONL record formatting.
-- `.xml`, `.html`, `.htm`, and `.xhtml` -> XML-compatible markup formatting.
+- `.xml` and `.xhtml` -> XML-compatible markup formatting.
+- `.html` and `.htm` -> HTML formatting with a tolerant HTML5-style parser.
 - `.md`, `.markdown`, `.mdown`, and `.mkd` -> Markdown passthrough with
   Markdown highlighting in the TTY viewer. Fenced `json`, `jsonl`, `toml`,
   `xml`/`html`, and `jinja` blocks reuse the matching viewer highlighter.
@@ -186,8 +187,14 @@ Use `--type` when stdin or an unusual extension needs an explicit profile.
   formatted as JSON, and large record streams can open lazily in the TTY viewer.
   In the interactive viewer, malformed records are shown as raw text with a
   temporary red notice while later records continue formatting normally.
-- XML-compatible markup, including HTML-like documents, is formatted with
-  structural indentation.
+- XML-compatible markup is formatted with structural indentation.
+- HTML is formatted with structural indentation using a tolerant tokenizer:
+  void elements (`<br>`, `<img>`, ...), optional closing tags (`<p>`, `<li>`,
+  `<td>`, ...), unquoted attributes, and raw-text elements (`<script>`,
+  `<style>`, `<pre>`, `<textarea>`, `<title>`) are accepted. Markup and
+  text-node content are preserved, while formatting-only whitespace between
+  elements may be normalized into one-element-per-line indentation. Missing
+  close tags are not synthesized and stray close tags are not dropped.
 
 Other types are intentionally passthrough:
 
@@ -258,6 +265,7 @@ fmtview examples/chat.jsonl
 fmtview examples/long-inline.jsonl
 fmtview examples/response.xml
 fmtview examples/page.html
+fmtview examples/messy.html
 fmtview examples/notes.md
 fmtview examples/config.toml
 fmtview examples/template.html.j2
@@ -279,8 +287,11 @@ useful for testing structure jumps around partially observed inline content.
 `examples/chat.jsonl` includes top-level and nested chat-style message objects
 with `system`, `user`, and `assistant` roles for testing the role gutter and
 chat-aware structure jumps.
-`examples/page.html` is well-formed HTML that exercises the XML-compatible
-markup formatter.
+`examples/page.html` is well-formed HTML that also works as XML-compatible
+markup.
+`examples/messy.html` is loose HTML with void elements, unclosed optional
+tags, unquoted attributes, and raw `<script>`/`<pre>` content so you can try
+the tolerant HTML tokenizer.
 `examples/template.html.j2` exercises Jinja variables, blocks, comments, and
 raw sections without rendering or reformatting template statements.
 `examples/notes.md` exercises Markdown headings, lists, blockquotes, links,
@@ -419,10 +430,17 @@ tokenizes the markup inside it. Opening and closing tags are paired by depth, so
 `<root>` and `</root>` share one color while nested tags use another. A local
 mismatch such as `"<root></item>"` is highlighted as an error.
 
-Standalone markup uses XML parsing rules. Well-formed XML, XHTML, and
-XML-compatible HTML snippets are good inputs; browser-tolerant HTML that relies
-on omitted closing tags, such as `<br>` or `<img>` without a closing slash or
-end tag, should be normalized first.
+Standalone markup resolves to either XML or HTML. `.xml` and `.xhtml` use the
+strict XML parser. `.html` and `.htm` use the tolerant HTML tokenizer, which
+accepts void elements, optional closing tags, and unquoted attributes while
+preserving markup and text-node content. When the extension is unknown,
+`fmtview` sniffs a bounded prefix to pick between the two (`<?xml` and `xmlns`
+lean XML; `<!doctype html>`, an `<html>` root, or complete lowercase
+unsaturated void elements such as `<br>` lean HTML).
+XML-compatible HTML snippets are good inputs for the XML path; looser HTML
+that relies on omitted closing tags, such as `<br>` or `<img>` without a
+closing slash or end tag, should use the HTML profile (`fmtview --type html`)
+or the `.html`/`.htm` extension.
 
 ## Performance Model
 
@@ -455,7 +473,7 @@ rendered output in memory for browsing.
   prewarmed around the current viewport.
 - Highlighting and wrapping scan only the visible prefix of long lines.
 - Viewer search scans the indexed visible text in bounded chunks.
-- JSON, JSONL, XML-compatible markup, Markdown, TOML, plain text, and Jinja
+- JSON, JSONL, XML-compatible markup, HTML, Markdown, TOML, plain text, and Jinja
   templates are processed incrementally where their load strategy allows it.
 - JSON numbers are written from their original tokens instead of being coerced
   through native integer or floating-point types.
@@ -502,7 +520,7 @@ fmtview diff [OPTIONS] <LEFT> <RIGHT>
 Options:
 
 ```text
--t, --type <auto|json|jsonl|xml|plain|jinja>
+-t, --type <auto|json|jsonl|xml|html|markdown|toml|plain|jinja>
                                   Override type-profile detection
     --literal <STRING>            Read this string instead of a file/stdin
     --indent <N>                  Pretty-print indent width, default 2

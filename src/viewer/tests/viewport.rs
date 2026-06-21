@@ -102,6 +102,7 @@ fn markdown_viewport_reuses_inner_code_highlighter() {
         ViewportRenderOptions {
             line_modes: Some(&line_modes),
             search_query: None,
+            active_search_match: None,
         },
     );
 
@@ -210,6 +211,7 @@ fn markdown_json_code_does_not_enable_chat_role_gutter() {
         ViewportRenderOptions {
             line_modes: Some(&line_modes),
             search_query: None,
+            active_search_match: None,
         },
     );
 

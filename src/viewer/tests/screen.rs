@@ -13,6 +13,7 @@ fn highlight_palette_uses_muted_indexed_colors() {
     assert_eq!(number_style().fg, Some(PALETTE_ORANGE));
     assert_eq!(error_style().fg, Some(PALETTE_RED));
     assert_eq!(search_match_bg(), PALETTE_SEARCH_MATCH);
+    assert_eq!(search_inactive_match_bg(), PALETTE_SEARCH_MATCH_DIM);
 }
 
 #[test]

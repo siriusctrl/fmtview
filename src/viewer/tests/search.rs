@@ -337,6 +337,7 @@ fn wrapped_search_jumps_to_visual_row_containing_match() {
         ViewportRenderOptions {
             line_modes: None,
             search_query: Some("needle"),
+            active_search_match: state.search_match_target,
         },
     );
 
@@ -530,17 +531,66 @@ fn search_highlight_adds_background_without_replacing_foreground() {
             wrap: false,
             mode: FormatKind::Json,
         },
+        Some(7..13),
     );
-    let styles = styles_for_text(&highlighted.spans, "needle");
+    let styles = highlighted
+        .spans
+        .iter()
+        .filter(|span| span.content.contains("needle"))
+        .map(|span| span.style)
+        .collect::<Vec<_>>();
 
     assert_eq!(styles.len(), 2);
     assert!(
         styles
             .iter()
-            .all(|style| style.bg == Some(search_match_bg()))
+            .any(|style| style.bg == Some(search_match_bg()))
+    );
+    assert!(
+        styles
+            .iter()
+            .any(|style| style.bg == Some(search_inactive_match_bg()))
     );
     assert!(styles.iter().any(|style| style.fg == Some(PALETTE_BLUE)));
     assert!(styles.iter().any(|style| style.fg == Some(PALETTE_GREEN)));
+}
+
+#[test]
+fn active_search_match_keeps_stronger_background() {
+    let lines = vec!["needle alpha needle beta".to_owned()];
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter: GutterLayout::new(1, false),
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: FormatKind::Plain,
+        },
+        row_limit: 16,
+    };
+    let mut cache = RenderedLineCache::default();
+
+    let viewport = render_viewport(
+        &lines,
+        1,
+        0,
+        16,
+        request,
+        &mut cache,
+        ViewportRenderOptions {
+            line_modes: None,
+            search_query: Some("needle"),
+            active_search_match: Some(SearchTarget {
+                line: 0,
+                byte_index: lines[0].rfind("needle").unwrap(),
+            }),
+        },
+    );
+    let styles = styles_for_text(&viewport.lines[0].spans, "needle");
+
+    assert_eq!(styles.len(), 2);
+    assert_eq!(styles[0].bg, Some(search_inactive_match_bg()));
+    assert_eq!(styles[1].bg, Some(search_match_bg()));
 }
 
 #[test]
@@ -600,11 +650,19 @@ fn search_background_is_scoped_to_match_spans_only() {
             wrap: false,
             mode: FormatKind::Json,
         },
+        None,
     );
     let background_spans = highlighted
         .spans
         .iter()
         .filter(|span| span.style.bg == Some(search_match_bg()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(background_spans.len(), 0);
+    let background_spans = highlighted
+        .spans
+        .iter()
+        .filter(|span| span.style.bg == Some(search_inactive_match_bg()))
         .collect::<Vec<_>>();
 
     assert_eq!(background_spans.len(), 2);
@@ -633,6 +691,7 @@ fn search_highlight_ignores_chat_role_gutter() {
             wrap: false,
             mode: FormatKind::Json,
         },
+        None,
     );
 
     assert_eq!(background_cell_count(&[highlighted]), 0);

@@ -8,6 +8,35 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Format HTML with a tolerant tokenizer as a first-class type. `.html` and
+  `.htm` inputs, `--type html`, and auto-detection of unknown extensions now
+  use the HTML profile instead of the strict XML parser. Void elements
+  (`<br>`, `<img>`, ...), optional closing tags (`<p>`, `<li>`, `<td>`, ...),
+  unquoted attributes, and raw-text elements (`<script>`, `<style>`, `<pre>`,
+  `<textarea>`, `<title>`) are accepted. Markup and text-node content are
+  preserved, while formatting-only whitespace between elements may be
+  normalized into structural indentation. `.xml` and `.xhtml` keep the strict
+  XML parser.
+- Auto-detect markup as XML or HTML by sniffing a bounded prefix (`<?xml` and
+  `xmlns` lean XML; `<!doctype html>`, an `<html>` root, or complete lowercase
+  unsaturated void elements lean HTML).
+- Structure jumps (`]`/`[`) now treat known void elements as self-contained
+  for both XML and HTML.
+- Added `examples/messy.html` to exercise the tolerant HTML tokenizer.
+- Added an Xvfb/Kitty/ffmpeg visual verification helper for final viewer smoke
+  recordings, including MP4, extracted frames, keyframes, contact sheet, and
+  inspection metadata.
+
+### Changed
+
+- Search now renders non-current matches with a dimmer background while keeping
+  the current selected match brighter, making repeated matches on the same
+  viewport easier to orient.
+- XML structure jumps no longer open a phantom block for void elements such as
+  `<br>` or `<img>`.
+
 ## [0.4.3] - 2026-06-09
 
 ### Changed

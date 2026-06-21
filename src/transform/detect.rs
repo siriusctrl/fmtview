@@ -26,6 +26,12 @@ pub(super) fn candidate_kinds(
     if detected == FormatKind::Json {
         push_unique(&mut kinds, FormatKind::Jsonl);
     }
+    // HTML and XML share the `<` prefix; offer the other as a fallback when
+    // the heuristic picks one, so a mis-sniff can still recover.
+    if matches!(detected, FormatKind::Xml | FormatKind::Html) {
+        push_unique(&mut kinds, FormatKind::Html);
+        push_unique(&mut kinds, FormatKind::Xml);
+    }
 
     push_unique(&mut kinds, FormatKind::Json);
     push_unique(&mut kinds, FormatKind::Jsonl);
@@ -62,7 +68,7 @@ fn detect_kind(source: &InputSource) -> Result<FormatKind> {
         .find(|byte| !byte.is_ascii_whitespace());
 
     match first {
-        Some(b'<') => Ok(FormatKind::Xml),
+        Some(b'<') => Ok(formats::detect_markup_kind(&buf[..read])),
         Some(b'{' | b'[') => Ok(FormatKind::Json),
         _ => Ok(FormatKind::Plain),
     }

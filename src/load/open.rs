@@ -95,6 +95,7 @@ impl FormatKindLabel for FormatKind {
             FormatKind::Json => "JSON",
             FormatKind::Jsonl => "JSONL",
             FormatKind::Xml => "XML",
+            FormatKind::Html => "HTML",
             FormatKind::Toml => "TOML",
             FormatKind::Markdown => "Markdown",
             FormatKind::Plain => "plain text",

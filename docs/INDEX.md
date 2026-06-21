@@ -20,6 +20,10 @@ Read these when the task matches:
   - complete-output formatter algorithm comparison
   - terminal draw byte-count checks
   - comparing performance changes outside CI
+- `docs/visual-verification.md`
+  - Xvfb/Kitty/ffmpeg real-terminal recording workflow
+  - MP4, frame, keyframe, contact-sheet, and inspection artifacts
+  - final visual smoke checks for viewer-facing changes
 - `docs/architecture.md`
   - viewer-first product model
   - type profile boundaries
@@ -42,6 +46,9 @@ Code orientation:
     structure-jump rules.
   - `jsonl/` owns the JSONL profile while reusing JSON record behavior.
   - `xml/` owns XML-compatible formatting, highlighting, and structure rules.
+  - `html/` owns tolerant HTML5-style formatting that preserves markup and
+    text-node content while normalizing formatting whitespace. Highlighting and
+    `]`/`[` structure rules reuse `formats/xml`.
   - `markdown/` owns Markdown highlighting, fenced-code line modes, and
     heading structure rules.
   - `toml/`, `jinja/`, and `plain/` own their respective highlighting and
@@ -120,6 +127,9 @@ Code orientation:
     state, JSON ranking/visibility, and target clamping.
 - `tests/cli.rs` covers black-box CLI behavior through the compiled binary and
   should be the home for public command/output contracts.
+- `scripts/record-emulator-demo.sh` runs fmtview inside a real Kitty terminal
+  on Xvfb, records the visible window, and writes visual smoke artifacts under
+  `target/fmtview-emulator-recordings/`.
 - `src/perf/` owns the Rust load/format performance harness used by the shell
   wrappers:
   - `runner.rs` owns sample counts, filtering, timing summaries, and output.

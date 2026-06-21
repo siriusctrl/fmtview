@@ -52,7 +52,9 @@ fn start_tag_name(trimmed: &str) -> Option<String> {
 }
 
 fn tag_is_self_contained(trimmed: &str, tag: &str) -> bool {
-    trimmed.contains("/>") || trimmed.contains(&format!("</{tag}>"))
+    trimmed.contains("/>")
+        || trimmed.contains(&format!("</{tag}>"))
+        || crate::formats::shared::is_void_tag(tag)
 }
 
 fn start_tag_count(line: &str, tag: &str) -> usize {

@@ -215,6 +215,9 @@ Before tagging:
 - `cargo clippy --all-targets -- -D warnings` passes.
 - `cargo build --release --locked` passes.
 - TUI smoke test runs under a real PTY if viewer behavior changed.
+- Real-terminal visual smoke recording runs with Xvfb/Kitty/ffmpeg if viewer
+  layout, color, navigation, search, gutter, or diff UI behavior changed:
+  `scripts/record-emulator-demo.sh target/fmtview-emulator-recordings/<name> -- target/release/fmtview examples/chat.jsonl`.
 - README lists only installation channels that already work.
 
 After publishing:

@@ -1,4 +1,5 @@
 mod checkpoints;
+pub(crate) mod html;
 pub(crate) mod jinja;
 pub(crate) mod json;
 pub(crate) mod jsonl;
@@ -9,7 +10,9 @@ pub(crate) mod toml;
 pub(crate) mod xml;
 
 pub(crate) use checkpoints::HighlightCheckpointIndex;
-pub(crate) use shared::{StructureCandidateKind, first_non_ws_byte, leading_indent};
+pub(crate) use shared::{
+    StructureCandidateKind, detect_markup_kind, first_non_ws_byte, leading_indent,
+};
 
 #[cfg(test)]
 pub(crate) use json::highlight::highlight_json_like;
@@ -27,6 +30,7 @@ pub(crate) const FORMAT_SPECS: &[FormatSpec] = &[
     json::SPEC,
     jsonl::SPEC,
     xml::SPEC,
+    html::SPEC,
     toml::SPEC,
     markdown::SPEC,
     plain::SPEC,
@@ -82,7 +86,7 @@ pub(crate) fn highlight_content_window_indexed(
         FormatKind::Json | FormatKind::Jsonl => {
             json::highlight::highlight_json_like_window(line, window_start, window_end, index)
         }
-        FormatKind::Xml => {
+        FormatKind::Xml | FormatKind::Html => {
             xml::highlight::highlight_xml_line_window(line, window_start, window_end, index)
         }
         FormatKind::Toml => {
@@ -150,7 +154,7 @@ pub(crate) fn structure_candidate_kind(
 ) -> Option<StructureCandidateKind> {
     match format {
         FormatKind::Json | FormatKind::Jsonl => json::structure::candidate_kind(line),
-        FormatKind::Xml => xml::structure::is_start_tag(line.trim_start())
+        FormatKind::Xml | FormatKind::Html => xml::structure::is_start_tag(line.trim_start())
             .then_some(StructureCandidateKind::XmlStartTag),
         FormatKind::Markdown => {
             markdown::structure::is_heading(line).then_some(StructureCandidateKind::MarkdownHeading)
@@ -177,6 +181,7 @@ pub(crate) fn structure_candidate_kind_in_window(
         FormatKind::Json | FormatKind::Jsonl => {
             json::structure::candidate_kind_in_window(lines, offset)
         }
+        // Xml and Html share the same windowless candidate detection below.
         _ => {
             let line = lines.get(offset).map(String::as_str).unwrap_or_default();
             let previous = lines
@@ -201,7 +206,7 @@ pub(crate) fn structure_block_end(
         FormatKind::Json | FormatKind::Jsonl => {
             json::structure::block_end(lines, read_start, start_offset, viewport_bottom)
         }
-        FormatKind::Xml => {
+        FormatKind::Xml | FormatKind::Html => {
             xml::structure::block_end(lines, read_start, start_offset, viewport_bottom).or_else(
                 || shared::indent_block_end(lines, read_start, start_offset, viewport_bottom),
             )

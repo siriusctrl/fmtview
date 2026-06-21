@@ -1,5 +1,5 @@
 use super::{
-    cache::RenderedLineCache,
+    cache::{RenderedLineCache, RenderedVisualRow},
     line::rendered_row_count,
     search::apply_search_highlight,
     types::{RenderContext, RenderRequest, RenderedViewport, ViewPosition, ViewportBottom},
@@ -7,12 +7,15 @@ use super::{
 use crate::{
     formats::{self, json::chat::ChatRole},
     transform::FormatKind,
+    tui::{text::char_count, wrap::continuation_indent},
+    viewer::file::input::SearchTarget,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(in crate::viewer) struct ViewportRenderOptions<'a> {
     pub(in crate::viewer) line_modes: Option<&'a [FormatKind]>,
     pub(in crate::viewer) search_query: Option<&'a str>,
+    pub(in crate::viewer) active_search_match: Option<SearchTarget>,
 }
 
 pub(in crate::viewer) fn render_viewport(
@@ -58,10 +61,18 @@ pub(in crate::viewer) fn render_viewport(
                     byte_end: row.end_byte,
                     line_end: row.line_end,
                 });
+                let active_range = active_search_range(
+                    top_line,
+                    first_line_number - 1,
+                    &row,
+                    request.context,
+                    options,
+                );
                 rendered.push(apply_search_highlight(
                     apply_chat_role_gutter(row.line, row.row_index, chat_role, request.context),
                     options.search_query,
                     request.context,
+                    active_range,
                 ));
             }
         } else {
@@ -113,10 +124,13 @@ pub(in crate::viewer) fn render_viewport(
                     byte_end: row.end_byte,
                     line_end: row.line_end,
                 });
+                let active_range =
+                    active_search_range(line, line_number - 1, &row, request.context, options);
                 rendered.push(apply_search_highlight(
                     apply_chat_role_gutter(row.line, row.row_index, chat_role, request.context),
                     options.search_query,
                     request.context,
+                    active_range,
                 ));
             }
         } else {
@@ -148,6 +162,36 @@ fn chat_role_for_line(lines: &[String], offset: usize, context: RenderContext) -
         return None;
     }
     formats::json::structure::chat_role_for_candidate(lines, offset)
+}
+
+fn active_search_range(
+    line: &str,
+    line_index: usize,
+    row: &RenderedVisualRow,
+    context: RenderContext,
+    options: ViewportRenderOptions<'_>,
+) -> Option<std::ops::Range<usize>> {
+    let query = options.search_query?;
+    let active = options.active_search_match?;
+    if active.line != line_index
+        || active.byte_index < row.start_byte
+        || active.byte_index >= row.end_byte
+    {
+        return None;
+    }
+    let before = line.get(row.start_byte..active.byte_index)?;
+    let row_prefix_chars = char_count(before);
+    let indent = if context.wrap && row.row_index > 0 {
+        continuation_indent(line, context.width)
+    } else {
+        0
+    };
+    let start = context
+        .gutter
+        .content_start()
+        .saturating_add(indent)
+        .saturating_add(row_prefix_chars);
+    Some(start..start.saturating_add(char_count(query)))
 }
 
 fn apply_chat_role_gutter(

@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use ratatui::text::{Line, Span};
 
-use crate::tui::palette::search_match_bg;
+use crate::tui::palette::{search_inactive_match_bg, search_match_bg};
 use crate::tui::text::{char_count, push_styled_span, slice_chars};
 
 use super::RenderContext;
@@ -11,6 +11,7 @@ pub(in crate::viewer) fn apply_search_highlight(
     line: Line<'static>,
     query: Option<&str>,
     context: RenderContext,
+    active_range: Option<Range<usize>>,
 ) -> Line<'static> {
     let Some(query) = query else {
         return line;
@@ -33,7 +34,7 @@ pub(in crate::viewer) fn apply_search_highlight(
     Line {
         style: line.style,
         alignment: line.alignment,
-        spans: apply_search_ranges_to_spans(&line.spans, &ranges),
+        spans: apply_search_ranges_to_spans(&line.spans, &ranges, active_range),
     }
 }
 
@@ -69,6 +70,7 @@ pub(in crate::viewer) fn search_match_ranges(
 pub(in crate::viewer) fn apply_search_ranges_to_spans(
     spans: &[Span<'static>],
     ranges: &[Range<usize>],
+    active_range: Option<Range<usize>>,
 ) -> Vec<Span<'static>> {
     let mut highlighted = Vec::new();
     let mut cursor = 0;
@@ -80,7 +82,7 @@ pub(in crate::viewer) fn apply_search_ranges_to_spans(
         let span_end = cursor + len;
         cursor = span_end;
 
-        let split_points = search_split_points(span_start, span_end, ranges);
+        let split_points = search_split_points(span_start, span_end, ranges, active_range.as_ref());
         for window in split_points.windows(2) {
             let start = window[0];
             let end = window[1];
@@ -89,8 +91,13 @@ pub(in crate::viewer) fn apply_search_ranges_to_spans(
             }
 
             let mut style = span.style;
-            if range_is_highlighted(start, end, ranges) {
+            if active_range
+                .as_ref()
+                .is_some_and(|range| range_contains(start, end, range))
+            {
                 style = style.bg(search_match_bg());
+            } else if range_is_highlighted(start, end, ranges) {
+                style = style.bg(search_inactive_match_bg());
             }
             push_styled_span(
                 &mut highlighted,
@@ -107,9 +114,18 @@ pub(in crate::viewer) fn search_split_points(
     span_start: usize,
     span_end: usize,
     ranges: &[Range<usize>],
+    active_range: Option<&Range<usize>>,
 ) -> Vec<usize> {
     let mut points = vec![span_start, span_end];
     for range in ranges {
+        let start = range.start.max(span_start).min(span_end);
+        let end = range.end.max(span_start).min(span_end);
+        if start < end {
+            points.push(start);
+            points.push(end);
+        }
+    }
+    if let Some(range) = active_range {
         let start = range.start.max(span_start).min(span_end);
         let end = range.end.max(span_start).min(span_end);
         if start < end {
@@ -127,7 +143,9 @@ pub(in crate::viewer) fn range_is_highlighted(
     end: usize,
     ranges: &[Range<usize>],
 ) -> bool {
-    ranges
-        .iter()
-        .any(|range| start >= range.start && end <= range.end)
+    ranges.iter().any(|range| range_contains(start, end, range))
+}
+
+fn range_contains(start: usize, end: usize, range: &Range<usize>) -> bool {
+    start >= range.start && end <= range.end
 }

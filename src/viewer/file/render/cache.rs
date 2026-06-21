@@ -101,6 +101,7 @@ impl From<RenderRequest> for RenderCacheKey {
 pub(in crate::viewer) struct RenderedVisualRow {
     pub(in crate::viewer) line: Line<'static>,
     pub(in crate::viewer) row_index: usize,
+    pub(in crate::viewer) start_byte: usize,
     pub(in crate::viewer) end_byte: usize,
     pub(in crate::viewer) line_end: bool,
 }

@@ -464,7 +464,8 @@ fn format_for_fence_info(info: &str) -> FormatKind {
     let language = normalized_fence_language(info);
     match language.as_deref() {
         Some("json" | "jsonc" | "jsonl" | "ndjson") => FormatKind::Json,
-        Some("xml" | "html" | "xhtml" | "svg") => FormatKind::Xml,
+        Some("xml" | "xhtml" | "svg") => FormatKind::Xml,
+        Some("html" | "htm") => FormatKind::Html,
         Some("toml") => FormatKind::Toml,
         Some("jinja" | "jinja2" | "j2" | "html+jinja") => FormatKind::Jinja,
         Some("md" | "markdown") => FormatKind::Markdown,

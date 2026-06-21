@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 use tempfile::NamedTempFile;
 
 use crate::formats::{
+    html::transform::format_html_reader,
     json::transform::{format_json, format_json_value, format_jsonl, trim_line_end},
     xml::transform::format_xml_reader,
 };
@@ -44,7 +45,7 @@ pub fn format_source_to_temp(
     }
 
     bail!(
-        "failed to format {} as JSON, JSONL, XML, TOML, Markdown, plain text, or Jinja:\n{}",
+        "failed to format {} as JSON, JSONL, XML, HTML, TOML, Markdown, plain text, or Jinja:\n{}",
         source.label(),
         errors.join("\n")
     )
@@ -110,6 +111,12 @@ fn try_format_source_to_writer<W: Write>(
             options.indent,
         )
         .with_context(|| format!("failed to format {} as XML", source.label()))?,
+        FormatKind::Html => format_html_reader(
+            BufReader::with_capacity(IO_BUFFER_BYTES, source.open()?),
+            output,
+            options.indent,
+        )
+        .with_context(|| format!("failed to format {} as HTML", source.label()))?,
         FormatKind::Toml | FormatKind::Markdown | FormatKind::Plain | FormatKind::Jinja => {
             passthrough_source_to_writer(source, output)?
         }
@@ -133,6 +140,13 @@ pub fn format_record_to_bytes(input: &[u8], kind: FormatKind, indent: usize) -> 
         FormatKind::Xml => {
             format_xml_reader(Cursor::new(input), &mut output, indent)
                 .context("failed to parse XML-compatible record")?;
+            while output.ends_with(b"\n") || output.ends_with(b"\r") {
+                output.pop();
+            }
+        }
+        FormatKind::Html => {
+            format_html_reader(Cursor::new(input), &mut output, indent)
+                .context("failed to parse HTML record")?;
             while output.ends_with(b"\n") || output.ends_with(b"\r") {
                 output.pop();
             }
@@ -192,6 +206,11 @@ pub(crate) fn format_record_bytes(line: &[u8], options: FormatOptions) -> Result
         FormatKind::Xml => Some(format_record_to_bytes(
             trimmed,
             FormatKind::Xml,
+            options.indent,
+        )?),
+        FormatKind::Html => Some(format_record_to_bytes(
+            trimmed,
+            FormatKind::Html,
             options.indent,
         )?),
         FormatKind::Toml | FormatKind::Markdown | FormatKind::Plain | FormatKind::Jinja => None,

@@ -318,9 +318,12 @@ fn auto_detects_well_formed_html_as_markup() {
     cmd.arg(input.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("<!DOCTYPE html>"))
+        // Original casing and attribute text are preserved; only whitespace
+        // is added.
+        .stdout(predicate::str::contains("<!doctype html>"))
         .stdout(predicate::str::contains("    <main>"))
-        .stdout(predicate::str::contains("      <h1>Hello</h1>"));
+        .stdout(predicate::str::contains("      <h1>Hello</h1>"))
+        .stdout(predicate::str::contains("      <p>World</p>"));
 }
 
 #[test]
@@ -338,6 +341,56 @@ fn formats_html_showcase() {
         .stdout(predicate::str::contains(
             "<span>XML-compatible markup</span>",
         ));
+}
+
+#[test]
+fn html_tolerates_void_elements_and_optional_closes() {
+    let mut input = TempFileBuilder::new().suffix(".html").tempfile().unwrap();
+    write!(
+        input,
+        "<!doctype html>\n<ul><li>one<li>two<br><img src=x></ul>\n<p>unclosed para\n<div>block</div>"
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.arg(input.path())
+        .assert()
+        .success()
+        // Void elements are preserved without rewriting to self-closing.
+        .stdout(predicate::str::contains("<br>"))
+        .stdout(predicate::str::contains("<img src=x>"))
+        .stdout(predicate::str::contains("one"))
+        .stdout(predicate::str::contains("two"));
+}
+
+#[test]
+fn explicit_html_type_formats_loose_html() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["--type", "html"])
+        .write_stdin("<div><br><p>hi</p></div>")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<br>"))
+        .stdout(predicate::str::contains("<p>hi</p>"));
+}
+
+#[test]
+fn html_type_diff_uses_html_formatter() {
+    let mut left = TempFileBuilder::new().suffix(".html").tempfile().unwrap();
+    let mut right = TempFileBuilder::new().suffix(".html").tempfile().unwrap();
+    write!(left, "<ul><li>a</ul>").unwrap();
+    write!(right, "<ul><li>a<li>b</ul>").unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args([
+        "diff",
+        left.path().to_str().unwrap(),
+        right.path().to_str().unwrap(),
+    ])
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("+  <li>"))
+    .stdout(predicate::str::contains("+    b"));
 }
 
 #[test]

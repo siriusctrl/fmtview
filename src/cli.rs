@@ -16,7 +16,7 @@ use crate::{
 #[command(
     name = "fmtview",
     version,
-    about = "Fast formatter, diff tool, and terminal viewer for JSON, JSONL, XML-compatible markup, Markdown, TOML, plain text, and Jinja templates",
+    about = "Fast formatter, diff tool, and terminal viewer for JSON, JSONL, XML, HTML, Markdown, TOML, plain text, and Jinja templates",
     args_conflicts_with_subcommands = true,
     subcommand_precedence_over_arg = true
 )]
@@ -42,7 +42,7 @@ struct FormatCommand {
     #[arg(long, value_name = "STRING")]
     literal: Option<String>,
 
-    /// Number of spaces used when pretty-printing JSON and XML-compatible markup.
+    /// Number of spaces used when pretty-printing JSON, XML, and HTML.
     #[arg(long, default_value_t = 2)]
     indent: usize,
 }
@@ -65,7 +65,7 @@ struct DiffCommand {
     #[arg(short = 't', long = "type", value_enum, default_value_t = FormatKind::Auto)]
     kind: FormatKind,
 
-    /// Number of spaces used when pretty-printing JSON and XML-compatible markup.
+    /// Number of spaces used when pretty-printing JSON, XML, and HTML.
     #[arg(long, default_value_t = 2)]
     indent: usize,
 }

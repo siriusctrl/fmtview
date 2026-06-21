@@ -76,14 +76,15 @@ behavior, temp-file indexing, highlight checkpoints, and viewer readback.
 | --- | --- | --- | --- | --- | --- |
 | JSON | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed JSON | Pretty-printed JSON | `formats/json` |
 | JSONL/NDJSON | RecordStream | Lazy transformed records spooled and indexed on demand | Pretty-printed records | Pretty-printed records; TTY diff can open lazily | `formats/jsonl` profile plus JSON record behavior |
-| XML/HTML/XHTML | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed XML-compatible markup | Pretty-printed XML-compatible markup | `formats/xml` |
+| XML | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed XML-compatible markup | Pretty-printed XML-compatible markup | `formats/xml` |
+| HTML | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed HTML (tolerant tokenizer, text content preserved) | Pretty-printed HTML | `formats/html` (reuses `formats/xml` highlight and structure rules) |
 | Markdown | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | `formats/markdown`, with known fenced code blocks routed to format highlighters |
 | TOML | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | `formats/toml` |
 | Plain text | LineIndexed | Raw source indexed without rewriting content | Passthrough | Passthrough | `formats/plain` |
 | Jinja | LineIndexed | Raw source indexed without rendering or rewriting content | Passthrough | Passthrough | `formats/jinja` |
 
 Unknown extensions are sniffed with a bounded prefix. Unknown content that does
-not look like JSON, JSONL, or XML-compatible markup falls back to plain-text
+not look like JSON, JSONL, XML, or HTML falls back to plain-text
 passthrough. Extensions remain a fast deterministic hint, but they are not the
 architecture boundary.
 
@@ -230,7 +231,7 @@ The names below describe the behavior we want the code to make explicit:
 
   EagerTransformedDocument
     Transform the complete source into a temp file, index transformed lines,
-    then view/search/diff that transformed text. This is JSON and XML today.
+    then view/search/diff that transformed text. This is JSON, XML, and HTML today.
 
   LazyTransformedDocument
     Future whole-document transform that can emit transformed lines
