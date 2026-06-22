@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-22
+
 ### Changed
 
 - Polish the interactive viewer footer by using a unified transient-message
