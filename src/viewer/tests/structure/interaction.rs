@@ -12,8 +12,11 @@ fn bracket_keys_start_structure_navigation_tasks() {
     assert!(action.dirty);
     assert!(state.structure_task.is_none());
     assert_eq!(
-        state.search_message.as_deref(),
-        Some("no previous structure")
+        state
+            .footer_message
+            .as_ref()
+            .map(|message| (message.text.as_str(), message.kind)),
+        Some(("no previous structure", FooterMessageKind::Warning))
     );
 }
 

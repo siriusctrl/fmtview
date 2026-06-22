@@ -13,7 +13,7 @@ pub(crate) const PALETTE_RED: Color = Color::Indexed(168);
 pub(crate) const PALETTE_YELLOW: Color = Color::Indexed(180);
 pub(crate) const PALETTE_ORANGE: Color = Color::Indexed(173);
 pub(crate) const PALETTE_SEARCH_MATCH: Color = Color::Indexed(58);
-pub(crate) const PALETTE_SEARCH_MATCH_DIM: Color = Color::Indexed(236);
+pub(crate) const PALETTE_SEARCH_MATCH_DIM: Color = Color::Indexed(239);
 
 pub(crate) fn style_fg(color: Color) -> Style {
     Style::default().fg(color)
@@ -74,6 +74,10 @@ pub(crate) fn null_style() -> Style {
 
 pub(crate) fn error_style() -> Style {
     style_fg(PALETTE_RED)
+}
+
+pub(crate) fn warning_style() -> Style {
+    style_fg(PALETTE_YELLOW)
 }
 
 pub(crate) fn search_match_bg() -> Color {

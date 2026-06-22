@@ -102,5 +102,11 @@ fn structure_navigation_reports_missing_block() {
         StructureDirection::Forward,
     );
     assert!(process_structure_step(&file, &mut state, FormatKind::Markdown).unwrap());
-    assert_eq!(state.search_message.as_deref(), Some("no next structure"));
+    assert_eq!(
+        state
+            .footer_message
+            .as_ref()
+            .map(|message| (message.text.as_str(), message.kind)),
+        Some(("no next structure", FooterMessageKind::Warning))
+    );
 }

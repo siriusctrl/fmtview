@@ -9,6 +9,7 @@ use crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::{
     backend::CrosstermBackend,
     layout::Rect,
+    style::Modifier,
     text::{Line, Span},
 };
 use tempfile::NamedTempFile;

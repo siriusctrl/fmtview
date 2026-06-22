@@ -20,7 +20,13 @@ fn slash_search_finds_and_repeats_matches() {
     assert!(process_search_step(&file, &mut state).unwrap());
     assert_eq!(state.search_cursor, Some(1));
     assert_eq!(state.search_match_ordinal, Some(1));
-    assert_eq!(state.search_message.as_deref(), Some("match: needle"));
+    assert_eq!(
+        state
+            .footer_message
+            .as_ref()
+            .map(|message| (message.text.as_str(), message.kind)),
+        Some(("match: needle", FooterMessageKind::Info))
+    );
 
     handle_key_event(KeyCode::Char('n'), KeyModifiers::NONE, &mut state, 4, 10);
     assert!(process_search_step(&file, &mut state).unwrap());
@@ -417,12 +423,22 @@ fn search_reports_not_found_and_can_clear_message() {
     assert!(process_search_step(&file, &mut state).unwrap());
 
     assert_eq!(state.top, 0);
-    assert_eq!(state.search_message.as_deref(), Some("not found: missing"));
+    assert_eq!(
+        state
+            .footer_message
+            .as_ref()
+            .map(|message| (message.text.as_str(), message.kind)),
+        Some(("not found: missing", FooterMessageKind::Warning))
+    );
 
     let action = handle_key_event(KeyCode::Esc, KeyModifiers::NONE, &mut state, 2, 10);
     assert!(action.dirty);
     assert!(!action.quit);
-    assert_eq!(state.search_message, None);
+    assert_eq!(state.footer_message, None);
+    assert_eq!(state.search_query, "");
+    assert_eq!(state.search_index, None);
+    assert_eq!(state.search_target, None);
+    assert_eq!(state.search_match_target, None);
 }
 
 #[test]
@@ -472,7 +488,13 @@ fn backward_search_does_not_rearm_incomplete_lazy_prefix() {
     assert!(process_search_step(&file, &mut state).unwrap());
 
     assert!(state.search_task.is_none());
-    assert_eq!(state.search_message.as_deref(), Some("not found: missing"));
+    assert_eq!(
+        state
+            .footer_message
+            .as_ref()
+            .map(|message| (message.text.as_str(), message.kind)),
+        Some(("not found: missing", FooterMessageKind::Warning))
+    );
 }
 
 #[test]
@@ -590,7 +612,10 @@ fn active_search_match_keeps_stronger_background() {
 
     assert_eq!(styles.len(), 2);
     assert_eq!(styles[0].bg, Some(search_inactive_match_bg()));
+    assert!(!styles[0].add_modifier.contains(Modifier::UNDERLINED));
     assert_eq!(styles[1].bg, Some(search_match_bg()));
+    assert!(styles[1].add_modifier.contains(Modifier::BOLD));
+    assert!(styles[1].add_modifier.contains(Modifier::UNDERLINED));
 }
 
 #[test]

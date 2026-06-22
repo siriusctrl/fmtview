@@ -82,26 +82,34 @@ fn footer_shows_mouse_restore_hint_when_selection_mode_is_active() {
         ..ViewState::default()
     };
 
-    assert!(idle_footer_text(&state).contains("m mouse"));
+    assert_eq!(
+        idle_footer_text(&state),
+        " selection mode | m restore mouse "
+    );
 }
 
 #[test]
 fn notice_message_appears_in_footer_and_can_be_cleared() {
     let file = indexed_lines(&["plain text"]);
-    let mut state = ViewState {
-        notice_message: Some("showing plain text; use --type".to_owned()),
-        ..ViewState::default()
-    };
+    let mut state = ViewState::default();
+    state.set_notice(
+        "showing plain text; use --type".to_owned(),
+        Instant::now(),
+        NOTICE_DURATION,
+    );
 
     assert!(file_footer_text(&file, &state).contains("showing plain text"));
     assert_eq!(file_footer_style(&state), error_style());
+    assert_eq!(
+        state.footer_message.as_ref().map(|message| message.kind),
+        Some(FooterMessageKind::Error)
+    );
 
     let action = handle_key_event(KeyCode::Esc, KeyModifiers::NONE, &mut state, 1, 10);
 
     assert!(action.dirty);
     assert!(!action.quit);
-    assert_eq!(state.notice_message, None);
-    assert_eq!(state.notice_expires_at, None);
+    assert_eq!(state.footer_message, None);
 }
 
 #[test]
@@ -114,11 +122,32 @@ fn notice_message_expires_after_deadline() {
         NOTICE_DURATION,
     );
 
-    assert!(!state.expire_notice(now + NOTICE_DURATION - Duration::from_millis(1)));
-    assert!(state.notice_message.is_some());
-    assert!(state.expire_notice(now + NOTICE_DURATION));
-    assert_eq!(state.notice_message, None);
-    assert_eq!(state.notice_expires_at, None);
+    assert!(!state.expire_footer_message(now + NOTICE_DURATION - Duration::from_millis(1)));
+    assert!(state.footer_message.is_some());
+    assert!(state.expire_footer_message(now + NOTICE_DURATION));
+    assert_eq!(state.footer_message, None);
+}
+
+#[test]
+fn search_prompt_covers_notice_without_clearing_it() {
+    let file = indexed_lines(&["plain text"]);
+    let now = Instant::now();
+    let mut state = ViewState::default();
+    state.set_notice(
+        "showing plain text; use --type".to_owned(),
+        now,
+        NOTICE_DURATION,
+    );
+
+    handle_key_event(KeyCode::Char('/'), KeyModifiers::NONE, &mut state, 1, 10);
+
+    assert!(file_footer_text(&file, &state).contains("search:"));
+    assert!(state.footer_message.is_some());
+
+    handle_key_event(KeyCode::Esc, KeyModifiers::NONE, &mut state, 1, 10);
+
+    assert!(file_footer_text(&file, &state).contains("showing plain text"));
+    assert_eq!(file_footer_style(&state), error_style());
 }
 
 #[test]

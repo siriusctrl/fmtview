@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{load::ViewFile, transform::FormatKind};
 
-use super::input::ViewState;
+use super::input::{FooterMessageKind, ViewState};
 
 mod candidate;
 mod scan;
@@ -65,7 +65,7 @@ pub(in crate::viewer) fn start_structure_navigation(
         return true;
     };
 
-    state.search_message = None;
+    state.clear_footer_message();
     let viewport = state
         .structure_viewport
         .filter(|viewport| viewport.matches_state(state));
@@ -90,7 +90,7 @@ pub(in crate::viewer) fn process_structure_step(
     if let Some(target) = step.found {
         state.structure_target = Some(target);
         state.structure_cursor = Some(target.line);
-        state.search_message = None;
+        state.clear_footer_message();
         return Ok(true);
     }
 
@@ -140,7 +140,7 @@ fn no_block_message(direction: StructureDirection) -> &'static str {
 }
 
 fn set_no_block_message(state: &mut ViewState, direction: StructureDirection) {
-    state.search_message = Some(no_block_message(direction).to_owned());
+    state.set_footer_message(no_block_message(direction), FooterMessageKind::Warning);
     if state.viewport_at_tail {
         state.preserve_tail_on_next_draw = true;
     }

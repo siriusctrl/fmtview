@@ -1,6 +1,9 @@
 use std::ops::Range;
 
-use ratatui::text::{Line, Span};
+use ratatui::{
+    style::Modifier,
+    text::{Line, Span},
+};
 
 use crate::tui::palette::{search_inactive_match_bg, search_match_bg};
 use crate::tui::text::{char_count, push_styled_span, slice_chars};
@@ -95,7 +98,9 @@ pub(in crate::viewer) fn apply_search_ranges_to_spans(
                 .as_ref()
                 .is_some_and(|range| range_contains(start, end, range))
             {
-                style = style.bg(search_match_bg());
+                style = style
+                    .bg(search_match_bg())
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
             } else if range_is_highlighted(start, end, ranges) {
                 style = style.bg(search_inactive_match_bg());
             }

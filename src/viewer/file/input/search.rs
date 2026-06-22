@@ -3,7 +3,10 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::load::ViewFile;
 
-use super::{keys::accepts_search_char, state::ViewState};
+use super::{
+    keys::accepts_search_char,
+    state::{FooterMessageKind, ViewState},
+};
 use crate::viewer::file::SEARCH_CHUNK_LINES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,8 +71,6 @@ pub(in crate::viewer) fn handle_search_input_key(
 pub(in crate::viewer) fn start_search_prompt(state: &mut ViewState) -> bool {
     state.search_active = true;
     state.search_buffer.clear();
-    state.clear_notice();
-    state.search_message = None;
     state.search_task = None;
     state.search_target = None;
     state.search_cursor = None;
@@ -89,6 +90,21 @@ pub(in crate::viewer) fn cancel_search_prompt(state: &mut ViewState) -> bool {
     state.search_active = false;
     state.search_buffer.clear();
     true
+}
+
+pub(in crate::viewer) fn clear_search_session(state: &mut ViewState) -> bool {
+    let was_active = state.has_search_session() || state.footer_message.is_some();
+    state.search_active = false;
+    state.search_buffer.clear();
+    state.search_query.clear();
+    state.search_task = None;
+    state.search_index = None;
+    state.search_target = None;
+    state.search_cursor = None;
+    state.search_match_ordinal = None;
+    state.search_match_target = None;
+    state.clear_footer_message();
+    was_active
 }
 
 pub(in crate::viewer) fn submit_search_buffer(state: &mut ViewState, line_count: usize) -> bool {
@@ -114,7 +130,7 @@ pub(in crate::viewer) fn start_repeat_search(
     direction: SearchDirection,
 ) -> bool {
     if state.search_query.is_empty() {
-        state.search_message = Some("no search query".to_owned());
+        state.set_footer_message("no search query", FooterMessageKind::Warning);
         return true;
     }
 
@@ -159,7 +175,7 @@ pub(in crate::viewer) fn start_search(
     }
 
     state.search_query = query.clone();
-    state.search_message = Some(format!("searching: {query}"));
+    state.set_footer_message(format!("searching: {query}"), FooterMessageKind::Info);
     state.search_target = None;
     state.search_cursor = None;
     state.search_match_ordinal = None;
@@ -168,7 +184,7 @@ pub(in crate::viewer) fn start_search(
     ensure_search_match_index(state, &query);
     if line_count == 0 {
         state.search_task = None;
-        state.search_message = Some(format!("not found: {query}"));
+        state.set_footer_message(format!("not found: {query}"), FooterMessageKind::Warning);
         return true;
     }
 
@@ -193,20 +209,8 @@ fn ensure_search_match_index(state: &mut ViewState, query: &str) {
     state.search_index = Some(SearchMatchIndex::new(query.to_owned()));
 }
 
-pub(in crate::viewer) fn cancel_search_task(state: &mut ViewState) -> bool {
-    state.search_task = None;
-    state.search_target = None;
-    state.search_match_ordinal = None;
-    state.search_match_target = None;
-    state.search_message = Some("search canceled".to_owned());
-    true
-}
-
-pub(in crate::viewer) fn clear_search_message(state: &mut ViewState) -> bool {
-    let was_active = state.search_message.is_some() || state.notice_message.is_some();
-    state.clear_notice();
-    state.search_message = None;
-    was_active
+pub(in crate::viewer) fn clear_footer_message(state: &mut ViewState) -> bool {
+    state.clear_footer_message()
 }
 
 pub(in crate::viewer) fn process_search_index_step(
@@ -273,7 +277,7 @@ pub(in crate::viewer) fn process_search_step(
         state.search_target = Some(target);
         state.search_match_target = Some(target);
         state.search_match_ordinal = search_match_ordinal_from_index(file, state, target)?;
-        state.search_message = Some(format!("match: {}", task.query));
+        state.set_footer_message(format!("match: {}", task.query), FooterMessageKind::Info);
         return Ok(true);
     }
 
@@ -291,7 +295,10 @@ pub(in crate::viewer) fn process_search_step(
         state.search_target = None;
         state.search_match_ordinal = None;
         state.search_match_target = None;
-        state.search_message = Some(format!("not found: {}", task.query));
+        state.set_footer_message(
+            format!("not found: {}", task.query),
+            FooterMessageKind::Warning,
+        );
         return Ok(true);
     }
 

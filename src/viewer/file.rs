@@ -76,7 +76,7 @@ pub(super) fn run_loop(
 
     loop {
         dirty |= absorb_file_notice(file, &mut state, Instant::now());
-        dirty |= state.expire_notice(Instant::now());
+        dirty |= state.expire_footer_message(Instant::now());
         if state.search_task.is_some() {
             dirty |= process_search_step(file, &mut state)?;
         }

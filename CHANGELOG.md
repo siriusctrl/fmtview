@@ -8,6 +8,17 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Changed
+
+- Polish the interactive viewer footer by using a unified transient-message
+  model, styling warnings separately from errors, preserving fallback notices
+  while search prompts are open, and simplifying the selection-mode footer.
+- Make search matches easier to see in dark terminals by using a stronger
+  muted background for inactive matches and reserving underline for the current
+  focused match.
+- Treat Esc after a completed search as leaving search mode: clear the query,
+  match highlights, match count, and search footer before a later Esc quits.
+
 ## [0.5.0] - 2026-06-21
 
 ### Added

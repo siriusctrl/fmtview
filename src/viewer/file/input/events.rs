@@ -16,7 +16,7 @@ use super::{
         scroll_up_by, scroll_x_by, set_file_end, set_top,
     },
     search::{
-        SearchDirection, cancel_search_task, clear_search_message, handle_search_input_key,
+        SearchDirection, clear_footer_message, clear_search_session, handle_search_input_key,
         start_repeat_search, start_search_prompt,
     },
     state::{EventAction, ViewState},
@@ -160,10 +160,8 @@ pub(in crate::viewer) fn handle_key_event_with_count(
             StructureDirection::Backward,
         ),
         KeyCode::Enter => false,
-        KeyCode::Esc if state.search_task.is_some() => cancel_search_task(state),
-        KeyCode::Esc if state.search_message.is_some() || state.notice_message.is_some() => {
-            clear_search_message(state)
-        }
+        KeyCode::Esc if state.has_search_session() => clear_search_session(state),
+        KeyCode::Esc if state.footer_message.is_some() => clear_footer_message(state),
         KeyCode::Char('q') | KeyCode::Esc => {
             return EventAction {
                 dirty: false,

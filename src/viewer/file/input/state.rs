@@ -3,6 +3,20 @@ use std::time::{Duration, Instant};
 use super::search::{SearchMatchIndex, SearchTarget, SearchTask};
 use crate::viewer::file::structure::{StructureTask, StructureViewport};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::viewer) enum FooterMessageKind {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::viewer) struct FooterMessage {
+    pub(in crate::viewer) text: String,
+    pub(in crate::viewer) kind: FooterMessageKind,
+    pub(in crate::viewer) expires_at: Option<Instant>,
+}
+
 pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) top: usize,
     pub(in crate::viewer) top_row_offset: usize,
@@ -14,9 +28,7 @@ pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) search_active: bool,
     pub(in crate::viewer) search_buffer: String,
     pub(in crate::viewer) search_query: String,
-    pub(in crate::viewer) notice_message: Option<String>,
-    pub(in crate::viewer) notice_expires_at: Option<Instant>,
-    pub(in crate::viewer) search_message: Option<String>,
+    pub(in crate::viewer) footer_message: Option<FooterMessage>,
     pub(in crate::viewer) search_task: Option<SearchTask>,
     pub(in crate::viewer) search_index: Option<SearchMatchIndex>,
     pub(in crate::viewer) search_match_ordinal: Option<usize>,
@@ -45,9 +57,7 @@ impl Default for ViewState {
             search_active: false,
             search_buffer: String::new(),
             search_query: String::new(),
-            notice_message: None,
-            notice_expires_at: None,
-            search_message: None,
+            footer_message: None,
             search_task: None,
             search_index: None,
             search_match_ordinal: None,
@@ -85,37 +95,72 @@ impl ViewState {
         self.search_active || !self.jump_buffer.is_empty()
     }
 
+    pub(in crate::viewer) fn has_search_session(&self) -> bool {
+        self.search_active
+            || !self.search_query.is_empty()
+            || self.search_task.is_some()
+            || self.search_index.is_some()
+            || self.search_target.is_some()
+            || self.search_match_target.is_some()
+            || self.search_match_ordinal.is_some()
+            || self.search_cursor.is_some()
+    }
+
     pub(in crate::viewer) fn set_notice(
         &mut self,
         message: String,
         now: Instant,
         duration: Duration,
     ) {
-        self.notice_message = Some(message);
-        self.notice_expires_at = Some(now + duration);
+        self.set_timed_footer_message(message, FooterMessageKind::Error, now + duration);
     }
 
-    pub(in crate::viewer) fn clear_notice(&mut self) -> bool {
-        let was_active = self.notice_message.is_some();
-        self.notice_message = None;
-        self.notice_expires_at = None;
+    pub(in crate::viewer) fn set_footer_message(
+        &mut self,
+        text: impl Into<String>,
+        kind: FooterMessageKind,
+    ) {
+        self.footer_message = Some(FooterMessage {
+            text: text.into(),
+            kind,
+            expires_at: None,
+        });
+    }
+
+    pub(in crate::viewer) fn set_timed_footer_message(
+        &mut self,
+        text: impl Into<String>,
+        kind: FooterMessageKind,
+        expires_at: Instant,
+    ) {
+        self.footer_message = Some(FooterMessage {
+            text: text.into(),
+            kind,
+            expires_at: Some(expires_at),
+        });
+    }
+
+    pub(in crate::viewer) fn clear_footer_message(&mut self) -> bool {
+        let was_active = self.footer_message.is_some();
+        self.footer_message = None;
         was_active
     }
 
-    pub(in crate::viewer) fn expire_notice(&mut self, now: Instant) -> bool {
+    pub(in crate::viewer) fn expire_footer_message(&mut self, now: Instant) -> bool {
         if self
-            .notice_expires_at
+            .footer_message
+            .as_ref()
+            .and_then(|message| message.expires_at)
             .is_some_and(|expires_at| now >= expires_at)
         {
-            return self.clear_notice();
+            return self.clear_footer_message();
         }
         false
     }
 
-    pub(in crate::viewer) fn is_notice_visible(&self) -> bool {
-        !self.search_active
-            && self.jump_buffer.is_empty()
-            && self.search_message.is_none()
-            && self.notice_message.is_some()
+    pub(in crate::viewer) fn visible_footer_message(&self) -> Option<&FooterMessage> {
+        (!self.search_active && self.jump_buffer.is_empty())
+            .then_some(self.footer_message.as_ref())
+            .flatten()
     }
 }

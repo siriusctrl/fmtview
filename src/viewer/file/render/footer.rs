@@ -1,7 +1,7 @@
 use crate::load::ViewFile;
-use crate::tui::palette::{error_style, gutter_style};
+use crate::tui::palette::{error_style, gutter_style, warning_style};
 
-use super::super::input::ViewState;
+use super::super::input::{FooterMessageKind, ViewState};
 use super::{format_count, line_number_digits};
 use ratatui::style::Style;
 
@@ -35,13 +35,11 @@ pub(in crate::viewer) fn file_footer_text(file: &dyn ViewFile, state: &ViewState
             state.jump_buffer,
             line_count_text(file)
         )
-    } else if let Some(message) = state
-        .search_message
-        .as_ref()
-        .or(state.notice_message.as_ref())
-    {
+    } else if let Some(message) = state.visible_footer_message() {
         format!(
-            " {message}{} | / search | n/N | Esc clear ",
+            " {}{}{} | / search | n/N | Esc clear ",
+            footer_message_label(message.kind),
+            message.text,
             search_count_suffix(state)
         )
     } else {
@@ -50,29 +48,39 @@ pub(in crate::viewer) fn file_footer_text(file: &dyn ViewFile, state: &ViewState
 }
 
 pub(in crate::viewer) fn file_footer_style(state: &ViewState) -> Style {
-    if state.is_notice_visible() {
-        error_style()
-    } else {
-        gutter_style()
+    match state.visible_footer_message().map(|message| message.kind) {
+        Some(FooterMessageKind::Error) => error_style(),
+        Some(FooterMessageKind::Warning) => warning_style(),
+        Some(FooterMessageKind::Info) | None => gutter_style(),
     }
 }
 
 pub(in crate::viewer) fn idle_footer_text(state: &ViewState) -> String {
+    if !state.mouse_capture {
+        return " selection mode | m restore mouse ".to_owned();
+    }
+
     let wrap_hint = if state.wrap { "w unwrap" } else { "w wrap" };
-    let mouse_hint = if state.mouse_capture {
-        "m select"
-    } else {
-        "m mouse"
-    };
     let position = wrap_position_text(state)
         .map(|position| format!("{position} | "))
         .unwrap_or_default();
-    let search = search_count_text(state)
-        .map(|count| format!("{count} | "))
-        .unwrap_or_default();
+    if let Some(count) = search_count_text(state) {
+        return format!(
+            " {position}search: {count} | n/N next/prev | Esc clear search | / new search | {wrap_hint} | ]/[ structure "
+        );
+    }
+
     format!(
-        " {position}{search}{wrap_hint} | {mouse_hint} | / search n/N | ]/[ structure | 123 Enter jump to line | Space/f,b "
+        " {position}{wrap_hint} | / search | ]/[ structure | 123 Enter line | m select | Space/f,b "
     )
+}
+
+fn footer_message_label(kind: FooterMessageKind) -> &'static str {
+    match kind {
+        FooterMessageKind::Info => "info: ",
+        FooterMessageKind::Warning => "warning: ",
+        FooterMessageKind::Error => "error: ",
+    }
 }
 
 pub(in crate::viewer) fn search_count_suffix(state: &ViewState) -> String {
