@@ -17,7 +17,7 @@ fn highlight_palette_uses_muted_indexed_colors() {
 }
 
 #[test]
-fn ansi_draw_writes_compact_indexed_colors() {
+fn terminal_writer_writes_compact_indexed_colors() {
     let mut cell = ratatui::buffer::Cell::EMPTY;
     cell.set_symbol("x").set_fg(PALETTE_BLUE);
     let mut output = Vec::new();

@@ -9,14 +9,14 @@ use ratatui::{
 };
 
 use super::{
-    ansi::draw_cells_with_buffer,
-    frame::render_frame,
+    buffer_frame::render_frame,
     scroll::{ScrollDirection, draw_buffer_delta},
+    terminal_writer::draw_cells_with_buffer,
 };
 
-#[cfg(test)]
-pub(crate) use super::ansi::draw_cells;
 pub(crate) use super::scroll::ScrollHint;
+#[cfg(test)]
+pub(crate) use super::terminal_writer::draw_cells;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ScrollPosition {

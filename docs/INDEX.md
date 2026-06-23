@@ -89,8 +89,9 @@ Code orientation:
 - `src/tui.rs` owns shared terminal UI primitives that are not specific to the
   normal file viewer or diff viewer:
   - `screen.rs` owns terminal draw state and the public viewer terminal facade.
-    `frame.rs`, `ansi.rs`, and `scroll.rs` split frame rendering, compact ANSI
-    writes, scroll regions, and buffer-delta repainting.
+    `buffer_frame.rs`, `terminal_writer.rs`, and `scroll.rs` split buffer
+    frame rendering, compact terminal writes, scroll regions, and buffer-delta
+    repainting.
   - `palette.rs` owns terminal colors used by format highlighting, viewer, and diff output.
   - `text.rs` and `wrap.rs` own shared character-counting, styled text slicing,
     display-width wrapping, and wrap checkpoint helpers.

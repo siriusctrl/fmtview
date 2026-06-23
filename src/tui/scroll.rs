@@ -6,7 +6,7 @@ use ratatui::{
     style::{Color, Modifier},
 };
 
-use super::ansi::draw_cells_with_buffer;
+use super::terminal_writer::draw_cells_with_buffer;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum ScrollDirection {
