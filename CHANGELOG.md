@@ -8,6 +8,11 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Changed
+
+- Document HTML support in package metadata, the npm README, and release
+  verification notes so external package pages match the current formatter set.
+
 ## [0.5.1] - 2026-06-22
 
 ### Changed
