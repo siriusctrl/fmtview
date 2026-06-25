@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-06-25
+
 ### Added
 
 - Add `fmtview alias <bash|zsh|fish>` to print shell snippets for a short
