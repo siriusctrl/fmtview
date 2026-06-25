@@ -28,6 +28,16 @@ The main product surface is the terminal viewer: fast lazy loading, useful
 highlighting, in-viewer search, and interactive diffs while redirected stdout
 stays scriptable.
 
+For a shorter daily command, print or install a shell alias:
+
+```sh
+fmtview alias zsh
+fmtview alias zsh -i
+```
+
+The default alias is `fv`. Installation refuses to overwrite an existing `fv`
+command; use `--name fmtv` if you need another name.
+
 For source, full docs, and other installation options, see:
 
 https://github.com/siriusctrl/fmtview

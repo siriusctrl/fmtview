@@ -132,6 +132,32 @@ cargo test
 cargo build --release
 ```
 
+### Short Alias
+
+`fmtview` can print or install a shell alias when you want a shorter daily
+command:
+
+```sh
+fmtview alias bash
+fmtview alias zsh
+fmtview alias fish
+```
+
+By default this only prints the snippet, for example `alias fv='fmtview'`.
+Use `-i`/`--install` to write a managed block into the shell startup file:
+
+```sh
+fmtview alias zsh -i
+fmtview alias fish --install
+```
+
+If `fv` already exists on `PATH`, installation stops instead of overwriting it.
+Choose another name when needed:
+
+```sh
+fmtview alias zsh -i --name fmtv
+```
+
 ## Quick Start
 
 Preview a file:
@@ -515,6 +541,7 @@ See `docs/performance.md` for the benchmark metrics and comparison workflow.
 ```text
 fmtview [OPTIONS] [INPUT]
 fmtview diff [OPTIONS] <LEFT> <RIGHT>
+fmtview alias [OPTIONS] <bash|zsh|fish>
 ```
 
 Options:
@@ -524,6 +551,13 @@ Options:
                                   Override type-profile detection
     --literal <STRING>            Read this string instead of a file/stdin
     --indent <N>                  Pretty-print indent width, default 2
+```
+
+Alias options:
+
+```text
+-i, --install                     Install the alias into the shell startup file
+    --name <NAME>                 Alias name, default fv
 ```
 
 Use `-` or omit the input path to read stdin.

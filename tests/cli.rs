@@ -1,7 +1,7 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::io::Write;
-use tempfile::{Builder as TempFileBuilder, NamedTempFile};
+use std::{fs, io::Write};
+use tempfile::{Builder as TempFileBuilder, NamedTempFile, tempdir};
 
 #[test]
 fn formats_json_from_stdin() {
@@ -11,6 +11,60 @@ fn formats_json_from_stdin() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"b\": 1"));
+}
+
+#[test]
+fn alias_bash_prints_snippet() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["alias", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::eq("alias fv='fmtview'\n"));
+}
+
+#[test]
+fn alias_fish_prints_function() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["alias", "fish"])
+        .assert()
+        .success()
+        .stdout(predicate::eq("function fv\n    fmtview $argv\nend\n"));
+}
+
+#[test]
+fn alias_install_short_writes_zshrc() {
+    let home = tempdir().unwrap();
+    let path = tempdir().unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["alias", "zsh", "-i"])
+        .env("HOME", home.path())
+        .env("PATH", path.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("installed fv alias"));
+
+    let zshrc = fs::read_to_string(home.path().join(".zshrc")).unwrap();
+    assert!(zshrc.contains("# >>> fmtview alias >>>"));
+    assert!(zshrc.contains("alias fv='fmtview'"));
+    assert!(zshrc.contains("# <<< fmtview alias <<<"));
+}
+
+#[test]
+fn alias_install_refuses_existing_command() {
+    let home = tempdir().unwrap();
+    let path = tempdir().unwrap();
+    fs::write(path.path().join("fv"), "").unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["alias", "bash", "--install"])
+        .env("HOME", home.path())
+        .env("PATH", path.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("fv already exists"));
+
+    assert!(!home.path().join(".bashrc").exists());
 }
 
 #[test]

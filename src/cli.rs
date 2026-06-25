@@ -8,6 +8,7 @@ use crate::{
     input::InputSource,
     load,
     profile::TypeProfile,
+    shell_alias::{AliasCommandOptions, AliasShell, run_alias_command},
     transform::{self, FormatKind, FormatOptions},
     viewer,
 };
@@ -49,8 +50,26 @@ struct FormatCommand {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Print or install a short shell alias such as `fv`.
+    Alias(AliasCommand),
+
     /// Format both inputs and show a unified diff.
     Diff(DiffCommand),
+}
+
+#[derive(Debug, Args)]
+struct AliasCommand {
+    /// Shell syntax to generate.
+    #[arg(value_enum)]
+    shell: AliasShell,
+
+    /// Install the alias into the shell's startup file instead of printing it.
+    #[arg(short = 'i', long)]
+    install: bool,
+
+    /// Alias name to generate.
+    #[arg(long, default_value = "fv")]
+    name: String,
 }
 
 #[derive(Debug, Args)]
@@ -74,9 +93,22 @@ pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Some(Command::Alias(command)) => run_alias(command),
         Some(Command::Diff(command)) => run_diff(command),
         None => run_format(cli.format),
     }
+}
+
+fn run_alias(command: AliasCommand) -> Result<()> {
+    let mut stdout = io::stdout().lock();
+    run_alias_command(
+        &AliasCommandOptions {
+            shell: command.shell,
+            install: command.install,
+            name: command.name,
+        },
+        &mut stdout,
+    )
 }
 
 fn run_format(command: FormatCommand) -> Result<()> {

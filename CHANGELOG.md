@@ -8,6 +8,12 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Add `fmtview alias <bash|zsh|fish>` to print shell snippets for a short
+  `fv` command, plus `-i`/`--install` to write a managed startup-file block
+  without overwriting an existing command on `PATH`.
+
 ### Changed
 
 - Document HTML support in package metadata, the npm README, and release
