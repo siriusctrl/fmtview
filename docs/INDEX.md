@@ -37,13 +37,17 @@ Code orientation:
 - `src/lib.rs` exposes the internal crate modules used by the binary and tests.
 - `src/cli.rs` wires CLI arguments to transforms, diff, load planning, and
   viewer paths.
+- `src/shell_alias.rs` owns `fmtview alias <bash|zsh|fish>` snippet generation
+  and managed startup-file installation.
 - `src/input.rs` owns input materialization from files, stdin, and literals.
 - `src/profile.rs` resolves `--type` and auto-detection into a concrete content
   kind, input shape, load strategy, and transform strategy.
+- `src/profile/` keeps bounded content sniffing and profile behavior tests out
+  of the resolver entry point.
 - `src/formats.rs` owns the format-capability entry point. Each folder under
   `src/formats/` groups one format's behavior:
   - `json/` owns JSON formatting, highlighting, chat-role detection, and
-    structure-jump rules.
+    structure-jump rules, plus JSON path tracking used by sticky breadcrumbs.
   - `jsonl/` owns the JSONL profile while reusing JSON record behavior.
   - `xml/` owns XML-compatible formatting, highlighting, and structure rules.
   - `html/` owns tolerant HTML5-style formatting that preserves markup and
@@ -110,7 +114,8 @@ Code orientation:
       jump: task state, lazy scans, candidate ranking, and viewport visibility.
       Format-specific structure rules live under
       `src/formats/<type>/structure.rs`.
-    - `file/breadcrumb.rs` builds compact sticky JSON key breadcrumbs.
+    - `file/breadcrumb.rs` renders compact sticky JSON key breadcrumbs; JSON
+      path tracking lives under `src/formats/json/`.
     - `file/markdown_modes.rs` owns viewer-time Markdown fenced-code
       checkpointing. The per-line mode rules live with Markdown under
       `src/formats/markdown/`.

@@ -144,6 +144,11 @@ render-only: it is not part of transformed output, not used as searchable
 content, and it is hidden when the terminal is too narrow or when selection mode
 removes viewer chrome for native terminal copying.
 
+JSON key breadcrumbs follow the same boundary. The viewer owns when and where
+the breadcrumb is drawn, but JSON path tracking, key parsing, and string escape
+handling live in `formats/json`. That prevents viewer features from growing
+their own JSON parsers when they need format-aware context.
+
 The implementation mirrors that split:
 
 ```text

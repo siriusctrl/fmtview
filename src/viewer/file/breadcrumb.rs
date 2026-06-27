@@ -1,10 +1,10 @@
 use ratatui::text::{Line, Span};
 
-use crate::load::ViewFile;
 use crate::tui::{
     palette::{gutter_style, key_style},
     text::char_count,
 };
+use crate::{formats::json::path::JsonPathStack, load::ViewFile};
 
 const CHECKPOINT_INTERVAL: usize = 512;
 const SCAN_CHUNK_LINES: usize = 512;
@@ -19,20 +19,7 @@ pub(in crate::viewer) struct JsonBreadcrumbCache {
 #[derive(Debug, Clone)]
 struct PathCheckpoint {
     line: usize,
-    stack: Vec<PathEntry>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PathEntry {
-    indent: usize,
-    key: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum JsonLineKind {
-    Key { indent: usize, key: String },
-    Closing { indent: usize },
-    Other,
+    stack: JsonPathStack,
 }
 
 impl JsonBreadcrumbCache {
@@ -84,7 +71,7 @@ impl JsonBreadcrumbCache {
             }
 
             for text in &lines {
-                apply_line_to_stack(&mut stack, classify_json_line(text));
+                stack.apply_line(text);
                 next_line = next_line.saturating_add(1);
                 self.remember_checkpoint(next_line, &stack);
                 if next_line >= line {
@@ -99,7 +86,7 @@ impl JsonBreadcrumbCache {
         let Some(target) = target.first() else {
             return Vec::new();
         };
-        path_for_current_line(&stack, classify_json_line(target))
+        stack.current_path_for_line(target)
     }
 
     fn checkpoint_before(&self, line: usize) -> PathCheckpoint {
@@ -110,11 +97,11 @@ impl JsonBreadcrumbCache {
             .cloned()
             .unwrap_or_else(|| PathCheckpoint {
                 line: 0,
-                stack: Vec::new(),
+                stack: JsonPathStack::default(),
             })
     }
 
-    fn remember_checkpoint(&mut self, line: usize, stack: &[PathEntry]) {
+    fn remember_checkpoint(&mut self, line: usize, stack: &JsonPathStack) {
         if line == 0 || line % CHECKPOINT_INTERVAL != 0 {
             return;
         }
@@ -123,12 +110,12 @@ impl JsonBreadcrumbCache {
             .checkpoints
             .binary_search_by_key(&line, |checkpoint| checkpoint.line)
         {
-            Ok(index) => self.checkpoints[index].stack = stack.to_vec(),
+            Ok(index) => self.checkpoints[index].stack = stack.clone(),
             Err(index) => self.checkpoints.insert(
                 index,
                 PathCheckpoint {
                     line,
-                    stack: stack.to_vec(),
+                    stack: stack.clone(),
                 },
             ),
         }
@@ -149,115 +136,6 @@ fn indent_lines(lines: Vec<Line<'static>>, indent_width: usize) -> Vec<Line<'sta
             line
         })
         .collect()
-}
-
-fn path_for_current_line(stack: &[PathEntry], line: JsonLineKind) -> Vec<String> {
-    let mut stack = stack.to_vec();
-    match line {
-        JsonLineKind::Key { indent, key } => {
-            pop_to_parent(&mut stack, indent);
-            stack.push(PathEntry { indent, key });
-        }
-        JsonLineKind::Closing { .. } | JsonLineKind::Other => {}
-    }
-
-    stack.into_iter().map(|entry| entry.key).collect()
-}
-
-fn apply_line_to_stack(stack: &mut Vec<PathEntry>, line: JsonLineKind) {
-    match line {
-        JsonLineKind::Key { indent, key } => {
-            pop_to_parent(stack, indent);
-            stack.push(PathEntry { indent, key });
-        }
-        JsonLineKind::Closing { indent } => {
-            pop_to_parent(stack, indent);
-        }
-        JsonLineKind::Other => {}
-    }
-}
-
-fn pop_to_parent(stack: &mut Vec<PathEntry>, indent: usize) {
-    while stack.last().is_some_and(|entry| entry.indent >= indent) {
-        stack.pop();
-    }
-}
-
-fn classify_json_line(line: &str) -> JsonLineKind {
-    let indent = line.len().saturating_sub(line.trim_start().len());
-    let trimmed = line.trim_start();
-    if trimmed.starts_with('}') || trimmed.starts_with(']') {
-        return JsonLineKind::Closing { indent };
-    }
-
-    parse_json_key(trimmed)
-        .map(|key| JsonLineKind::Key { indent, key })
-        .unwrap_or(JsonLineKind::Other)
-}
-
-fn parse_json_key(trimmed: &str) -> Option<String> {
-    if !trimmed.starts_with('"') {
-        return None;
-    }
-
-    let end = json_string_end(trimmed)?;
-    if !trimmed[end..].trim_start().starts_with(':') {
-        return None;
-    }
-
-    Some(decode_json_string_content(&trimmed[1..end - 1]))
-}
-
-fn json_string_end(text: &str) -> Option<usize> {
-    let mut escaped = false;
-    for (offset, ch) in text[1..].char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if ch == '\\' {
-            escaped = true;
-            continue;
-        }
-        if ch == '"' {
-            return Some(1 + offset + ch.len_utf8());
-        }
-    }
-
-    None
-}
-
-fn decode_json_string_content(content: &str) -> String {
-    let mut output = String::with_capacity(content.len());
-    let mut chars = content.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            output.push(ch);
-            continue;
-        }
-
-        match chars.next() {
-            Some('"') => output.push('"'),
-            Some('\\') => output.push('\\'),
-            Some('/') => output.push('/'),
-            Some('b') => output.push_str("\\b"),
-            Some('f') => output.push_str("\\f"),
-            Some('n') => output.push_str("\\n"),
-            Some('r') => output.push_str("\\r"),
-            Some('t') => output.push_str("\\t"),
-            Some('u') => {
-                output.push_str("\\u");
-                for _ in 0..4 {
-                    if let Some(hex) = chars.next() {
-                        output.push(hex);
-                    }
-                }
-            }
-            Some(other) => output.push(other),
-            None => output.push('\\'),
-        }
-    }
-    output
 }
 
 fn breadcrumb_lines(path: &[String], width: usize, max_rows: usize) -> Vec<Line<'static>> {

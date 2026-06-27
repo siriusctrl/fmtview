@@ -8,15 +8,21 @@ distribution plans, tokens, and maintainer checklists belong here.
 
 ## Distribution Channels
 
-Current stable channel:
+Current stable channels:
 
+- crates.io: `cargo install fmtview --locked`.
+- npm Linux x64 binary wrapper: `npm install -g fmtview`.
+- GitHub Releases with a static Linux x64 binary archive and checksums.
 - Git install: `cargo install --git https://github.com/siriusctrl/fmtview --locked`
 
-Target public channels:
+Current binary coverage:
 
-- GitHub Releases with prebuilt binaries and checksums.
-- crates.io, so Rust users can run `cargo install fmtview --locked`.
-- npm, so Linux x64 users without a Rust toolchain can run `npm install -g fmtview`.
+- `x86_64-unknown-linux-musl` for GitHub Release artifacts and npm.
+
+Potential future channels:
+
+- Linux aarch64.
+- macOS x64 and Apple Silicon.
 
 Add a channel to README only after it is actually published and verified.
 
@@ -118,8 +124,7 @@ Potential future targets:
 
 ## crates.io
 
-Before the first crates.io publish, ensure `Cargo.toml` has complete package
-metadata:
+Keep `Cargo.toml` package metadata complete:
 
 - `description`
 - `license`
@@ -137,25 +142,19 @@ workflow uses the `CARGO_REGISTRY_TOKEN` GitHub secret when it is configured:
 gh secret set CARGO_REGISTRY_TOKEN
 ```
 
-After the first publish, README may list:
-
-```sh
-cargo install fmtview --locked
-```
-
 ## npm
 
 npm should be an installation wrapper for prebuilt Rust binaries, not a second
 implementation.
 
-Initial package layout:
+Current package layout:
 
 - `fmtview` - JS shim plus a bundled static Linux x64 binary.
 
 The npm package exposes the CLI through `package.json` `bin`, and the shim
-executes `vendor/fmtview`. It is intentionally Linux x64 only for the first
-release. The bundled binary should come from the `x86_64-unknown-linux-musl`
-release artifact, not from the host `x86_64-unknown-linux-gnu` target.
+executes `vendor/fmtview`. It is currently Linux x64 only. The bundled binary
+should come from the `x86_64-unknown-linux-musl` release artifact, not from the
+host `x86_64-unknown-linux-gnu` target.
 
 A future multi-platform npm release should move to a root wrapper package plus
 platform packages in `optionalDependencies`. Prefer that over downloading
@@ -196,13 +195,6 @@ GitHub Actions, with the same owner, repository, and workflow filename. npm CLI
 automatically detects the GitHub Actions OIDC environment during
 `npm publish --provenance --access public`.
 
-README may list npm installation only after the package has been published and
-smoke-tested:
-
-```sh
-npm install -g fmtview
-```
-
 ## Release Checklist
 
 Before tagging:
@@ -222,7 +214,10 @@ Before tagging:
 
 After publishing:
 
-- Install from the published channel and run `fmtview --version`.
+- Install from crates.io and npm when those channels are part of the release,
+  then run `fmtview --version`.
+- Run a small CLI smoke from the published package, for example
+  `fmtview alias bash`.
 - Open JSON, JSONL, XML-compatible markup, and HTML samples in the viewer.
 - Verify GitHub Release checksums.
 - Verify crates.io or npm package pages point to the repository.
