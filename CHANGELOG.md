@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-07-17
+
 ### Added
 
 - Recognize direct `"role": "tool"` JSON/JSONL message objects for `T` gutter
