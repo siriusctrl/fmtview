@@ -35,10 +35,12 @@ pub(in crate::viewer) const LAZY_PRELOAD_BUDGET: Duration = Duration::from_milli
 pub(in crate::viewer) const JUMP_BUFFER_MAX_DIGITS: usize = 20;
 pub(in crate::viewer) const SEARCH_CHUNK_LINES: usize = 4096;
 pub(in crate::viewer) const TAIL_ROW_OFFSET: usize = usize::MAX;
+pub(in crate::viewer) const LAST_ROW_OFFSET: usize = usize::MAX - 1;
 pub(in crate::viewer) const NOTICE_DURATION: Duration = Duration::from_secs(10);
 
 pub(in crate::viewer) mod breadcrumb;
 mod cache;
+pub(in crate::viewer) mod chat_roles;
 pub(in crate::viewer) mod input;
 pub(in crate::viewer) mod markdown_modes;
 pub(in crate::viewer) mod position;
@@ -55,9 +57,10 @@ use input::{ViewState, drain_events, process_search_index_step, process_search_s
 use position::resolve_targets_from_view;
 use render::{
     RenderRequest, RenderedLineCache, ViewPosition, ViewportRenderOptions, draw_layout,
-    effective_top_row_offset, exact_top_line_tail_offset, file_footer_style, file_footer_text,
-    file_title_text, prewarm_render_cache, refresh_sticky_after_position_change, render_row_limit,
-    render_viewport, sync_sticky_layout, viewer_progress_percent,
+    effective_top_row_offset, exact_top_line_scroll_limit, exact_top_line_tail_offset,
+    file_footer_style, file_footer_text, file_title_text, prewarm_render_cache,
+    refresh_sticky_after_position_change, render_row_limit, render_viewport, sync_sticky_layout,
+    viewer_progress_percent,
 };
 use structure::{StructureViewport, process_structure_step};
 
@@ -202,7 +205,9 @@ fn draw_view(
         context: layout.context,
         row_limit: render_row_limit(sticky.visible_height),
     };
-    if state.top_row_offset == TAIL_ROW_OFFSET {
+    if state.top_row_offset == LAST_ROW_OFFSET {
+        state.top_row_offset = exact_top_line_scroll_limit(lines.lines, layout.context);
+    } else if state.top_row_offset == TAIL_ROW_OFFSET {
         state.top_row_offset =
             exact_top_line_tail_offset(lines.lines, sticky.visible_height, layout.context);
     }
@@ -210,6 +215,17 @@ fn draw_view(
     let line_modes = caches
         .markdown
         .line_modes(file, state.top, lines.lines, mode)?;
+    let chat_role_marks = if layout.context.gutter.chat_role_enabled()
+        && matches!(mode, FormatKind::Json | FormatKind::Jsonl)
+    {
+        Some(
+            caches
+                .chat_roles
+                .marks_for_view(file, state.top, lines.lines)?,
+        )
+    } else {
+        None
+    };
 
     let mut viewport = render_viewport(
         lines.lines,
@@ -220,17 +236,13 @@ fn draw_view(
         &mut caches.render,
         ViewportRenderOptions {
             line_modes: line_modes.as_deref(),
+            chat_role_marks: chat_role_marks.as_deref(),
             search_query: active_search_query(state),
             active_search_match: state.search_match_target,
         },
     );
-    let mut max_top_row_offset = effective_top_row_offset(
-        state.top + 1,
-        sticky.visible_height,
-        layout.context,
-        &caches.render,
-        sticky.tail,
-    );
+    let mut max_top_row_offset =
+        effective_top_row_offset(state.top + 1, layout.context, &caches.render, sticky.tail);
     if viewport.lines.is_empty() && state.top_row_offset > 0 {
         state.top_row_offset = max_top_row_offset;
         viewport = render_viewport(
@@ -242,18 +254,14 @@ fn draw_view(
             &mut caches.render,
             ViewportRenderOptions {
                 line_modes: line_modes.as_deref(),
+                chat_role_marks: chat_role_marks.as_deref(),
                 search_query: active_search_query(state),
                 active_search_match: state.search_match_target,
             },
         );
     }
-    max_top_row_offset = effective_top_row_offset(
-        state.top + 1,
-        sticky.visible_height,
-        layout.context,
-        &caches.render,
-        sticky.tail,
-    );
+    max_top_row_offset =
+        effective_top_row_offset(state.top + 1, layout.context, &caches.render, sticky.tail);
     if state.top_row_offset > max_top_row_offset
         && caches.render.status(state.top + 1).total_rows.is_some()
     {
@@ -267,17 +275,13 @@ fn draw_view(
             &mut caches.render,
             ViewportRenderOptions {
                 line_modes: line_modes.as_deref(),
+                chat_role_marks: chat_role_marks.as_deref(),
                 search_query: active_search_query(state),
                 active_search_match: state.search_match_target,
             },
         );
-        max_top_row_offset = effective_top_row_offset(
-            state.top + 1,
-            sticky.visible_height,
-            layout.context,
-            &caches.render,
-            sticky.tail,
-        );
+        max_top_row_offset =
+            effective_top_row_offset(state.top + 1, layout.context, &caches.render, sticky.tail);
     }
     state.top_max_row_offset = max_top_row_offset;
 

@@ -15,7 +15,7 @@ fn page_down_clamps_to_known_wrapped_tail() {
 }
 
 #[test]
-fn top_line_tail_offset_points_to_last_full_view() {
+fn top_line_scroll_limit_reaches_the_last_wrapped_row() {
     let lines = ["abcdefghijklmnop".to_owned()];
     let context = RenderContext {
         gutter: GutterLayout::new(1, false),
@@ -31,7 +31,60 @@ fn top_line_tail_offset_points_to_last_full_view() {
     let mut cache = RenderedLineCache::default();
     cache.get_or_render_window(&lines[0], 1, 0, 8, request);
 
-    assert_eq!(top_line_tail_offset(1, 2, context, &cache), 2);
+    assert_eq!(top_line_scroll_limit(1, context, &cache), 3);
+}
+
+#[test]
+fn wrapped_scroll_moves_each_visual_row_past_the_viewport_top() {
+    let lines = ["abcdefghijklmnop".to_owned(), "next".to_owned()];
+    let context = RenderContext {
+        gutter: GutterLayout::new(1, false),
+        x: 0,
+        width: 4,
+        wrap: true,
+        mode: FormatKind::Json,
+    };
+    let request = RenderRequest {
+        context,
+        row_limit: 8,
+    };
+    let mut cache = RenderedLineCache::default();
+    cache.get_or_render_window(&lines[0], 1, 0, 8, request);
+    let mut state = ViewState {
+        top_max_row_offset: top_line_scroll_limit(1, context, &cache),
+        ..ViewState::default()
+    };
+
+    for expected in 1..=3 {
+        assert!(scroll_down(&mut state, lines.len()));
+        assert_eq!(state.top, 0);
+        assert_eq!(state.top_row_offset, expected);
+    }
+
+    assert!(scroll_down(&mut state, lines.len()));
+    assert_eq!(state.top, 1);
+    assert_eq!(state.top_row_offset, 0);
+}
+
+#[test]
+fn wrapped_scroll_up_returns_to_the_previous_lines_last_visual_row() {
+    let lines = ["abcdefghijklmnop".to_owned(), "next".to_owned()];
+    let context = RenderContext {
+        gutter: GutterLayout::new(1, false),
+        x: 0,
+        width: 4,
+        wrap: true,
+        mode: FormatKind::Json,
+    };
+    let mut state = ViewState {
+        top: 1,
+        ..ViewState::default()
+    };
+
+    assert!(scroll_up(&mut state, lines.len()));
+    assert_eq!(state.top, 0);
+    assert_eq!(state.top_row_offset, LAST_ROW_OFFSET);
+    assert_eq!(exact_top_line_scroll_limit(&lines, context), 3);
 }
 
 #[test]
@@ -51,7 +104,7 @@ fn unknown_wrapped_tail_keeps_scrolling_inside_current_line() {
     let mut cache = RenderedLineCache::default();
     cache.get_or_render_window(&line, 1, 0, 8, request);
     let mut state = ViewState {
-        top_max_row_offset: top_line_tail_offset(1, 2, context, &cache),
+        top_max_row_offset: top_line_scroll_limit(1, context, &cache),
         ..ViewState::default()
     };
 

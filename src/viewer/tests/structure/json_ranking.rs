@@ -214,6 +214,37 @@ fn structure_navigation_prefers_json_chat_messages() {
 }
 
 #[test]
+fn structure_navigation_treats_tool_objects_as_chat_messages() {
+    let file = indexed_file(&[
+        "[",
+        "  {",
+        r#"    "content": "unlabeled""#,
+        "  },",
+        "  {",
+        r#"    "role": "tool","#,
+        r#"    "content": "result""#,
+        "  }",
+        "]",
+    ]);
+    let mut state = ViewState::default();
+
+    start_structure_navigation(
+        &mut state,
+        file.line_count(),
+        file.line_count_exact(),
+        StructureDirection::Forward,
+    );
+    assert!(process_structure_step(&file, &mut state, FormatKind::Json).unwrap());
+    assert_eq!(
+        state.structure_target,
+        Some(SearchTarget {
+            line: 4,
+            byte_index: 2
+        })
+    );
+}
+
+#[test]
 fn backward_structure_navigation_prefers_json_chat_messages() {
     let file = indexed_file(&[
         "[",

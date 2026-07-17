@@ -132,17 +132,22 @@ candidate; shared viewer code still owns visibility, ranking, and scroll
 clamping.
 
 JSON and JSONL also have a small chat-aware structure rule. If an object has a
-direct `"role"` field whose value is `"system"`, `"user"`, or `"assistant"`,
-the JSON format package classifies that object as a chat message candidate.
+direct `"role"` field whose value is `"system"`, `"user"`, `"assistant"`, or
+`"tool"`, the JSON format package classifies that object as a chat message
+candidate.
 That can be a top-level array item or a nested object such as
 `"message": { "role": "assistant", ... }`. The scanner intentionally checks the
 candidate object's direct fields rather than all descendants, so a root object
 that merely contains a `messages` array does not absorb every message below it.
-The normal JSON/JSONL viewer reuses the same classification to fill a compact
-`S`/`U`/`A` role gutter beside the line-number gutter. That gutter is
-render-only: it is not part of transformed output, not used as searchable
-content, and it is hidden when the terminal is too narrow or when selection mode
-removes viewer chrome for native terminal copying.
+The normal JSON/JSONL viewer reuses the same direct-role rule to fill a compact
+`S`/`U`/`A`/`T` gutter beside the line-number gutter. The label appears on the
+message object's opening line, while a checkpointed container tracker keeps the
+role-colored guide active through nested and wrapped interior rows. The guide
+is neutral on opening and closing brace rows so adjacent role colors stay
+visually separated; sibling objects without a direct role are neutral too. The
+gutter is render-only: it is not part of transformed output, not used as
+searchable content, and it is hidden when the terminal is too narrow or when
+selection mode removes viewer chrome for native terminal copying.
 
 JSON key breadcrumbs follow the same boundary. The viewer owns when and where
 the breadcrumb is drawn, but JSON path tracking, key parsing, and string escape
@@ -192,7 +197,8 @@ that happens to draw terminal text:
 
   viewer/file/
     normal file viewer mode: input/search, structure navigation, sticky
-    breadcrumbs, Markdown line modes, viewport positioning, and render caches
+    breadcrumbs, checkpointed chat-role scopes, Markdown line modes, viewport
+    positioning, and render caches
 
   viewer/file/render/
     normal-file render output: gutter layout, line windows, visual rows,

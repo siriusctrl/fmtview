@@ -1,4 +1,4 @@
-use super::super::TAIL_ROW_OFFSET;
+use super::super::{LAST_ROW_OFFSET, TAIL_ROW_OFFSET};
 use super::state::ViewState;
 
 pub(in crate::viewer) fn scroll_down(state: &mut ViewState, line_count: usize) -> bool {
@@ -37,7 +37,7 @@ pub(in crate::viewer) fn scroll_up(state: &mut ViewState, line_count: usize) -> 
     let old = state.top;
     state.top = state.top.saturating_sub(1);
     if state.top != old {
-        state.top_row_offset = if state.wrap { TAIL_ROW_OFFSET } else { 0 };
+        state.top_row_offset = if state.wrap { LAST_ROW_OFFSET } else { 0 };
         state.top_max_row_offset = 0;
         state.wrap_bounds_stale = state.wrap;
         return true;

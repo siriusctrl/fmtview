@@ -159,6 +159,7 @@ fn formats_chat_jsonl_showcase() {
         .success()
         .stdout(predicate::str::contains("  \"role\": \"system\""))
         .stdout(predicate::str::contains("  \"role\": \"user\""))
+        .stdout(predicate::str::contains("      \"role\": \"tool\""))
         .stdout(predicate::str::contains("      \"role\": \"assistant\""));
 }
 

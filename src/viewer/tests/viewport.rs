@@ -101,6 +101,7 @@ fn markdown_viewport_reuses_inner_code_highlighter() {
         &mut cache,
         ViewportRenderOptions {
             line_modes: Some(&line_modes),
+            chat_role_marks: None,
             search_query: None,
             active_search_match: None,
         },
@@ -138,6 +139,8 @@ fn json_viewport_shows_chat_role_gutter_on_message_start() {
         row_limit: 8,
     };
     let mut cache = RenderedLineCache::default();
+    let mut role_tracker = crate::formats::json::chat::ChatRoleTracker::default();
+    let role_marks = role_tracker.mark_lines(&lines, 0);
 
     let viewport = render_viewport(
         &lines,
@@ -146,7 +149,10 @@ fn json_viewport_shows_chat_role_gutter_on_message_start() {
         6,
         request,
         &mut cache,
-        ViewportRenderOptions::default(),
+        ViewportRenderOptions {
+            chat_role_marks: Some(&role_marks),
+            ..ViewportRenderOptions::default()
+        },
     );
 
     assert_eq!(span_text(&viewport.lines[0].spans), "1 │   │ [");
@@ -155,6 +161,12 @@ fn json_viewport_shows_chat_role_gutter_on_message_start() {
         span_text(&viewport.lines[2].spans),
         r#"3 │   │     "role": "user","#
     );
+    let user_style = crate::formats::json::chat::ChatRole::User.style();
+    assert_eq!(viewport.lines[1].spans[1].style, user_style);
+    assert_eq!(viewport.lines[1].spans[2].style, gutter_style());
+    assert_eq!(viewport.lines[2].spans[2].style, user_style);
+    assert_eq!(viewport.lines[3].spans[2].style, user_style);
+    assert_eq!(viewport.lines[4].spans[2].style, gutter_style());
 }
 
 #[test]
@@ -179,6 +191,100 @@ fn json_chat_role_gutter_adapts_to_available_width() {
     );
     assert!(!narrow.context.gutter.chat_role_enabled());
     assert_eq!(narrow.gutter_width, 4);
+}
+
+#[test]
+fn json_chat_role_guide_colors_wrapped_body_rows() {
+    let lines = vec![
+        "{".to_owned(),
+        r#"  "role": "user","#.to_owned(),
+        r#"  "content": "a long message body that wraps across several visual rows""#.to_owned(),
+        "}".to_owned(),
+    ];
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter: GutterLayout::new(1, true),
+            x: 0,
+            width: 12,
+            wrap: true,
+            mode: FormatKind::Json,
+        },
+        row_limit: 32,
+    };
+    let mut role_tracker = crate::formats::json::chat::ChatRoleTracker::default();
+    let role_marks = role_tracker.mark_lines(&lines, 0);
+    let mut cache = RenderedLineCache::default();
+
+    let viewport = render_viewport(
+        &lines,
+        1,
+        0,
+        32,
+        request,
+        &mut cache,
+        ViewportRenderOptions {
+            chat_role_marks: Some(&role_marks),
+            ..ViewportRenderOptions::default()
+        },
+    );
+
+    assert!(viewport.lines.len() > lines.len());
+    assert_eq!(span_text(&viewport.lines[0].spans), "1 │ U │ {");
+    let user_style = crate::formats::json::chat::ChatRole::User.style();
+    let last = viewport.lines.len() - 1;
+    assert_eq!(viewport.lines[0].spans[1].style, user_style);
+    assert_eq!(viewport.lines[0].spans[2].style, gutter_style());
+    for line in &viewport.lines[1..last] {
+        assert_eq!(line.spans[2].style, user_style);
+    }
+    assert_eq!(viewport.lines[last].spans[2].style, gutter_style());
+    for line in viewport.lines.iter().skip(1) {
+        assert!(!line.spans[1].content.contains('U'));
+    }
+}
+
+#[test]
+fn json_tool_role_uses_t_label_and_interior_guide() {
+    let lines = vec![
+        "{".to_owned(),
+        r#"  "role": "tool","#.to_owned(),
+        r#"  "content": {"ok": true}"#.to_owned(),
+        "}".to_owned(),
+    ];
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter: GutterLayout::new(1, true),
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: FormatKind::Json,
+        },
+        row_limit: 8,
+    };
+    let mut role_tracker = crate::formats::json::chat::ChatRoleTracker::default();
+    let role_marks = role_tracker.mark_lines(&lines, 0);
+    let mut cache = RenderedLineCache::default();
+
+    let viewport = render_viewport(
+        &lines,
+        1,
+        0,
+        lines.len(),
+        request,
+        &mut cache,
+        ViewportRenderOptions {
+            chat_role_marks: Some(&role_marks),
+            ..ViewportRenderOptions::default()
+        },
+    );
+
+    let tool_style = crate::formats::json::chat::ChatRole::Tool.style();
+    assert_eq!(span_text(&viewport.lines[0].spans), "1 │ T │ {");
+    assert_eq!(viewport.lines[0].spans[1].style, tool_style);
+    assert_eq!(viewport.lines[0].spans[2].style, gutter_style());
+    assert_eq!(viewport.lines[1].spans[2].style, tool_style);
+    assert_eq!(viewport.lines[2].spans[2].style, tool_style);
+    assert_eq!(viewport.lines[3].spans[2].style, gutter_style());
 }
 
 #[test]
@@ -210,6 +316,7 @@ fn markdown_json_code_does_not_enable_chat_role_gutter() {
         &mut cache,
         ViewportRenderOptions {
             line_modes: Some(&line_modes),
+            chat_role_marks: None,
             search_query: None,
             active_search_match: None,
         },
@@ -396,12 +503,9 @@ fn wrapped_tail_view_renders_last_full_page() {
     assert_eq!(viewport.lines.len(), 3);
     assert_eq!(viewport.last_line_number, Some(3));
     assert!(viewport_reaches_file_end(&viewport, file.line_count()));
-    assert!(
-        tail.row_offset > top_line_tail_offset(tail.top + 1, 3, context, &cache),
-        "global file tail may need a deeper offset than the top line's own full-page tail"
-    );
+    assert!(tail.row_offset < top_line_scroll_limit(tail.top + 1, context, &cache));
     assert_eq!(
-        effective_top_row_offset(tail.top + 1, 3, context, &cache, Some(tail)),
+        effective_top_row_offset(tail.top + 1, context, &cache, Some(tail)),
         tail.row_offset
     );
     assert_eq!(span_text(&viewport.lines[0].spans), "  ┆ efgh");
@@ -438,7 +542,7 @@ fn eof_wrap_offset_clamps_to_last_full_page() {
         &mut cache,
         ViewportRenderOptions::default(),
     );
-    let max_offset = effective_top_row_offset(1, 2, context, &cache, Some(tail));
+    let max_offset = effective_top_row_offset(1, context, &cache, Some(tail));
     let clamped = render_viewport(
         &lines,
         1,

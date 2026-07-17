@@ -116,6 +116,10 @@ Code orientation:
       `src/formats/<type>/structure.rs`.
     - `file/breadcrumb.rs` renders compact sticky JSON key breadcrumbs; JSON
       path tracking lives under `src/formats/json/`.
+    - `file/chat_roles.rs` checkpoints JSON role-scope state so the sidebar can
+      recover the active message role when a viewport starts deep inside an
+      object; JSON container and direct-role rules live under
+      `src/formats/json/`.
     - `file/markdown_modes.rs` owns viewer-time Markdown fenced-code
       checkpointing. The per-line mode rules live with Markdown under
       `src/formats/markdown/`.

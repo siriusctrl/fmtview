@@ -13,6 +13,6 @@ pub(in crate::viewer) use state::{FooterMessageKind, ViewState};
 #[cfg(test)]
 pub(in crate::viewer) use events::{handle_event, handle_key_event, handle_key_event_with_count};
 #[cfg(test)]
-pub(in crate::viewer) use scroll::scroll_down_by;
+pub(in crate::viewer) use scroll::{scroll_down, scroll_down_by, scroll_up};
 #[cfg(test)]
 pub(in crate::viewer) use search::{SearchDirection, start_search};

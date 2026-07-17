@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn mouse_wheel_scrolls_by_logical_line() {
+fn mouse_wheel_scrolls_one_row() {
     let mut state = ViewState::default();
     let action = handle_event(
         mouse_event(MouseEventKind::ScrollDown, KeyModifiers::NONE),
@@ -60,7 +60,7 @@ fn batched_scroll_stops_after_crossing_to_unmeasured_wrapped_line() {
 }
 
 #[test]
-fn up_from_logical_line_moves_to_previous_line_tail() {
+fn up_from_logical_line_targets_previous_lines_last_row() {
     let mut state = ViewState {
         top: 1,
         ..ViewState::default()
@@ -70,6 +70,6 @@ fn up_from_logical_line_moves_to_previous_line_tail() {
 
     assert!(action.dirty);
     assert_eq!(state.top, 0);
-    assert_eq!(state.top_row_offset, TAIL_ROW_OFFSET);
+    assert_eq!(state.top_row_offset, LAST_ROW_OFFSET);
     assert!(state.wrap_bounds_stale);
 }

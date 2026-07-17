@@ -5,7 +5,7 @@ use super::{
     types::{RenderContext, RenderRequest, RenderedViewport, ViewPosition, ViewportBottom},
 };
 use crate::{
-    formats::{self, json::chat::ChatRole},
+    formats::json::chat::ChatRoleMark,
     transform::FormatKind,
     tui::{text::char_count, wrap::continuation_indent},
     viewer::file::input::SearchTarget,
@@ -14,6 +14,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, Default)]
 pub(in crate::viewer) struct ViewportRenderOptions<'a> {
     pub(in crate::viewer) line_modes: Option<&'a [FormatKind]>,
+    pub(in crate::viewer) chat_role_marks: Option<&'a [ChatRoleMark]>,
     pub(in crate::viewer) search_query: Option<&'a str>,
     pub(in crate::viewer) active_search_match: Option<SearchTarget>,
 }
@@ -53,7 +54,11 @@ pub(in crate::viewer) fn render_viewport(
         if !top_rows.is_empty() {
             last_line_number = Some(first_line_number);
         }
-        let chat_role = chat_role_for_line(lines, 0, request.context);
+        let chat_role = options
+            .chat_role_marks
+            .and_then(|marks| marks.first())
+            .copied()
+            .unwrap_or_default();
         if options.search_query.is_some() {
             for row in top_rows.into_iter().take(height) {
                 bottom = Some(ViewportBottom {
@@ -112,7 +117,11 @@ pub(in crate::viewer) fn render_viewport(
                     .and_then(|modes| modes.get(offset).copied()),
             ),
         );
-        let chat_role = chat_role_for_line(lines, offset, request.context);
+        let chat_role = options
+            .chat_role_marks
+            .and_then(|marks| marks.get(offset))
+            .copied()
+            .unwrap_or_default();
         let taken = rows.len().min(remaining);
         if taken > 0 {
             last_line_number = Some(line_number);
@@ -157,13 +166,6 @@ pub(in crate::viewer) fn render_viewport(
     }
 }
 
-fn chat_role_for_line(lines: &[String], offset: usize, context: RenderContext) -> Option<ChatRole> {
-    if !context.gutter.chat_role_enabled() {
-        return None;
-    }
-    formats::json::structure::chat_role_for_candidate(lines, offset)
-}
-
 fn active_search_range(
     line: &str,
     line_index: usize,
@@ -197,14 +199,19 @@ fn active_search_range(
 fn apply_chat_role_gutter(
     mut line: ratatui::text::Line<'static>,
     row_index: usize,
-    role: Option<ChatRole>,
+    mark: ChatRoleMark,
     context: RenderContext,
 ) -> ratatui::text::Line<'static> {
-    if !context.gutter.chat_role_enabled() || row_index != 0 {
+    if !context.gutter.chat_role_enabled() {
         return line;
     }
-    if let Some(span) = line.spans.get_mut(1) {
-        *span = context.gutter.chat_role(role);
+    if line.spans.len() >= 3 {
+        let [label, guide] =
+            context
+                .gutter
+                .chat_role(mark.role, mark.label && row_index == 0, mark.guide);
+        line.spans[1] = label;
+        line.spans[2] = guide;
     }
     line
 }
@@ -248,36 +255,48 @@ pub(in crate::viewer) fn exact_top_line_tail_offset(
     rendered_row_count(line, context).saturating_sub(visible_height)
 }
 
+pub(in crate::viewer) fn exact_top_line_scroll_limit(
+    lines: &[String],
+    context: RenderContext,
+) -> usize {
+    if !context.wrap {
+        return 0;
+    }
+
+    lines
+        .first()
+        .map(|line| rendered_row_count(line, context).saturating_sub(1))
+        .unwrap_or(0)
+}
+
 pub(in crate::viewer) fn effective_top_row_offset(
     line_number: usize,
-    visible_height: usize,
     context: RenderContext,
     cache: &RenderedLineCache,
     tail: Option<ViewPosition>,
 ) -> usize {
-    let mut max_offset = top_line_tail_offset(line_number, visible_height, context, cache);
+    let mut max_offset = top_line_scroll_limit(line_number, context, cache);
     if context.wrap
         && let Some(tail) = tail
         && tail.top + 1 == line_number
     {
-        max_offset = max_offset.max(tail.row_offset);
+        max_offset = max_offset.min(tail.row_offset);
     }
     max_offset
 }
 
-pub(in crate::viewer) fn top_line_tail_offset(
+pub(in crate::viewer) fn top_line_scroll_limit(
     line_number: usize,
-    visible_height: usize,
     context: RenderContext,
     cache: &RenderedLineCache,
 ) -> usize {
-    if visible_height == 0 || !context.wrap {
+    if !context.wrap {
         return 0;
     }
 
     let status = cache.status(line_number);
     match status.total_rows {
-        Some(rows) => rows.saturating_sub(visible_height),
+        Some(rows) => rows.saturating_sub(1),
         None if status.known_rows > 0 => usize::MAX,
         None => 0,
     }

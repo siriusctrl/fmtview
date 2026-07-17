@@ -8,6 +8,27 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Recognize direct `"role": "tool"` JSON/JSONL message objects for `T` gutter
+  labels, green role guides, role-value highlighting, and structure jumps.
+
+### Changed
+
+- Extend the JSON/JSONL `S`/`U`/`A`/`T` gutter color through each message
+  object's visible interior, including wrapped continuation rows, while
+  leaving the opening/closing brace rows and objects without a direct role
+  neutral. The role letter remains colored on the opening row.
+
+### Fixed
+
+- Scroll long wrapped logical lines past the viewport top one visual row at a
+  time in either direction instead of jumping between a last-full-page
+  position and the next logical line. End-of-file views still clamp to the
+  last complete page.
+- Resolve chat roles at their actual JSON object depth so nested or following
+  sibling roles cannot relabel an outer or role-less message object.
+
 ## [0.5.2] - 2026-06-25
 
 ### Added

@@ -1,5 +1,6 @@
 use super::{
     breadcrumb::JsonBreadcrumbCache,
+    chat_roles::JsonChatRoleCache,
     markdown_modes::MarkdownModeCache,
     render::{LineWindowCache, RenderedLineCache, TailPositionCache},
 };
@@ -11,4 +12,5 @@ pub(in crate::viewer) struct ViewerCaches {
     pub(in crate::viewer) markdown: MarkdownModeCache,
     pub(in crate::viewer) tail: TailPositionCache,
     pub(in crate::viewer) breadcrumb: JsonBreadcrumbCache,
+    pub(in crate::viewer) chat_roles: JsonChatRoleCache,
 }

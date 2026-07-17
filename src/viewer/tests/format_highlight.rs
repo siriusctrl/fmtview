@@ -20,21 +20,27 @@ fn json_string_escape_tokens_are_highlighted() {
 #[test]
 fn json_chat_role_values_get_role_styles() {
     let spans = highlight_json_like(
-        r#""role": "system", "role": "user", "role": "assistant", "content": "assistant""#,
+        r#""role": "system", "role": "user", "role": "assistant", "role": "tool", "content": "assistant""#,
     );
 
     let system_style = styles_for_text(&spans, r#""system""#);
     let user_style = styles_for_text(&spans, r#""user""#);
     let assistant_style = styles_for_text(&spans, r#""assistant""#);
+    let tool_style = styles_for_text(&spans, r#""tool""#);
     assert_eq!(system_style.len(), 1);
     assert_eq!(user_style.len(), 1);
     assert_eq!(assistant_style.len(), 1);
+    assert_eq!(tool_style.len(), 1);
     assert_ne!(system_style[0], string_style());
     assert_ne!(user_style[0], string_style());
     assert_ne!(assistant_style[0], string_style());
+    assert_ne!(tool_style[0], string_style());
     assert_ne!(system_style[0], user_style[0]);
     assert_ne!(system_style[0], assistant_style[0]);
     assert_ne!(user_style[0], assistant_style[0]);
+    assert_ne!(tool_style[0], system_style[0]);
+    assert_ne!(tool_style[0], user_style[0]);
+    assert_ne!(tool_style[0], assistant_style[0]);
 
     assert_eq!(styles_for_text(&spans, "assistant"), vec![string_style()]);
 }

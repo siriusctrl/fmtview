@@ -342,6 +342,7 @@ fn wrapped_search_jumps_to_visual_row_containing_match() {
         &mut cache,
         ViewportRenderOptions {
             line_modes: None,
+            chat_role_marks: None,
             search_query: Some("needle"),
             active_search_match: state.search_match_target,
         },
@@ -601,6 +602,7 @@ fn active_search_match_keeps_stronger_background() {
         &mut cache,
         ViewportRenderOptions {
             line_modes: None,
+            chat_role_marks: None,
             search_query: Some("needle"),
             active_search_match: Some(SearchTarget {
                 line: 0,
@@ -700,11 +702,14 @@ fn search_background_is_scoped_to_match_spans_only() {
 
 #[test]
 fn search_highlight_ignores_chat_role_gutter() {
-    let line = Line::from(vec![
-        line_number_gutter(1, 1),
-        GutterLayout::new(1, true).chat_role(Some(crate::formats::json::chat::ChatRole::User)),
-        Span::raw("  {"),
-    ]);
+    let mut spans = vec![line_number_gutter(1, 1)];
+    spans.extend(GutterLayout::new(1, true).chat_role(
+        Some(crate::formats::json::chat::ChatRole::User),
+        true,
+        false,
+    ));
+    spans.push(Span::raw("  {"));
+    let line = Line::from(spans);
 
     let highlighted = apply_search_highlight(
         line,

@@ -149,7 +149,7 @@ pub(in crate::viewer) fn render_logical_line_window_with_status_indexed(
                 context.gutter.continuation(row_index)
             };
             let mut line_spans = vec![gutter];
-            line_spans.push(context.gutter.chat_role(None));
+            line_spans.extend(context.gutter.chat_role(None, false, false));
             if range.continuation_indent > 0 {
                 push_styled_span(
                     &mut line_spans,
@@ -195,7 +195,7 @@ pub(in crate::viewer) fn styled_segment(
 ) -> Line<'static> {
     let mut spans = Vec::new();
     spans.push(gutter);
-    spans.push(context.gutter.chat_role(None));
+    spans.extend(context.gutter.chat_role(None, false, false));
     let highlight_prefix = slice_chars(line, 0, end);
     spans.extend(slice_spans(
         &highlight_content(&highlight_prefix, context.mode),

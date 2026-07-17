@@ -87,15 +87,27 @@ impl GutterLayout {
         )
     }
 
-    pub(in crate::viewer) fn chat_role(self, role: Option<ChatRole>) -> Span<'static> {
+    pub(in crate::viewer) fn chat_role(
+        self,
+        role: Option<ChatRole>,
+        show_label: bool,
+        color_guide: bool,
+    ) -> [Span<'static>; 2] {
         if self.chat_mode == ChatGutterMode::Off {
-            return Span::raw("");
+            return [Span::raw(""), Span::raw("")];
         }
 
-        match role {
-            Some(role) => Span::styled(format!("{} │ ", role.compact_label()), role.style()),
-            None => Span::styled("  │ ".to_owned(), gutter_style()),
-        }
+        let label = match role {
+            Some(role) if show_label => {
+                Span::styled(format!("{} ", role.compact_label()), role.style())
+            }
+            _ => Span::styled("  ".to_owned(), gutter_style()),
+        };
+        let guide = match role {
+            Some(role) if color_guide => Span::styled("│ ".to_owned(), role.style()),
+            _ => Span::styled("│ ".to_owned(), gutter_style()),
+        };
+        [label, guide]
     }
 
     pub(in crate::viewer) fn chat_role_enabled(self) -> bool {
