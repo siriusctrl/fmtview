@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-07-17
+
 ### Added
 
 - Link JSON/JSONL tool results to earlier tool calls by exact ID across common
