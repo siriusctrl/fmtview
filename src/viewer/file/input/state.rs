@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 use super::search::{SearchMatchIndex, SearchTarget, SearchTask};
+use crate::formats::json::tool_links::{ToolLink, ToolLinkStatus};
 use crate::viewer::file::structure::{StructureTask, StructureViewport};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +40,10 @@ pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) structure_target: Option<SearchTarget>,
     pub(in crate::viewer) structure_cursor: Option<usize>,
     pub(in crate::viewer) structure_viewport: Option<StructureViewport>,
+    pub(in crate::viewer) tool_context: Option<ToolLink>,
+    pub(in crate::viewer) tool_context_line: Option<usize>,
+    pub(in crate::viewer) tool_selection: Option<ToolLink>,
+    pub(in crate::viewer) tool_target: Option<usize>,
     pub(in crate::viewer) viewport_at_tail: bool,
     pub(in crate::viewer) preserve_tail_on_next_draw: bool,
     pub(in crate::viewer) mouse_capture: bool,
@@ -68,6 +73,10 @@ impl Default for ViewState {
             structure_target: None,
             structure_cursor: None,
             structure_viewport: None,
+            tool_context: None,
+            tool_context_line: None,
+            tool_selection: None,
+            tool_target: None,
             viewport_at_tail: false,
             preserve_tail_on_next_draw: false,
             mouse_capture: true,
@@ -162,5 +171,52 @@ impl ViewState {
         (!self.search_active && self.jump_buffer.is_empty())
             .then_some(self.footer_message.as_ref())
             .flatten()
+    }
+
+    pub(in crate::viewer) fn set_tool_context(&mut self, link: Option<(ToolLink, usize)>) {
+        let (tool_context, tool_context_line) = link
+            .map(|(link, line)| (Some(link), Some(line)))
+            .unwrap_or((None, None));
+        self.tool_context = tool_context;
+        self.tool_context_line = tool_context_line;
+    }
+
+    pub(in crate::viewer) fn toggle_tool_pair(&mut self) -> bool {
+        let Some(link) = self
+            .tool_context
+            .clone()
+            .or_else(|| self.tool_selection.clone())
+        else {
+            self.set_footer_message(
+                "no tool call/result at the current viewport",
+                FooterMessageKind::Warning,
+            );
+            return true;
+        };
+        let Some(call_line) = link.call_line else {
+            let message = match link.status {
+                ToolLinkStatus::Ambiguous => "tool result id matches multiple earlier calls",
+                ToolLinkStatus::Unmatched => "no earlier tool call matches this result id",
+                ToolLinkStatus::Matched => "tool pair is incomplete",
+            };
+            self.set_footer_message(message, FooterMessageKind::Warning);
+            return true;
+        };
+
+        let context_line = self.tool_context_line.unwrap_or(self.top);
+        let at_call = context_line == call_line || self.top == call_line;
+        let target = if at_call { link.result_line } else { call_line };
+        self.tool_target = Some(target);
+        self.tool_context_line = Some(target);
+        self.tool_selection = Some(link);
+        self.clear_footer_message();
+        true
+    }
+
+    pub(in crate::viewer) fn clear_tool_navigation(&mut self) {
+        self.tool_context = None;
+        self.tool_context_line = None;
+        self.tool_selection = None;
+        self.tool_target = None;
     }
 }

@@ -69,6 +69,7 @@ pub(in crate::viewer) fn handle_search_input_key(
 }
 
 pub(in crate::viewer) fn start_search_prompt(state: &mut ViewState) -> bool {
+    state.clear_tool_navigation();
     state.search_active = true;
     state.search_buffer.clear();
     state.search_task = None;
@@ -174,6 +175,7 @@ pub(in crate::viewer) fn start_search(
         return false;
     }
 
+    state.clear_tool_navigation();
     state.search_query = query.clone();
     state.set_footer_message(format!("searching: {query}"), FooterMessageKind::Info);
     state.search_target = None;

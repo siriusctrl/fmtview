@@ -102,6 +102,7 @@ fn markdown_viewport_reuses_inner_code_highlighter() {
         ViewportRenderOptions {
             line_modes: Some(&line_modes),
             chat_role_marks: None,
+            tool_relation_marks: None,
             search_query: None,
             active_search_match: None,
         },
@@ -183,6 +184,15 @@ fn json_chat_role_gutter_adapts_to_available_width() {
     assert!(wide.context.gutter.chat_role_enabled());
     assert_eq!(wide.gutter_width, 8);
 
+    let medium = draw_layout(
+        ratatui::layout::Size::new(68, 20),
+        &file,
+        &state,
+        FormatKind::Json,
+    );
+    assert!(medium.context.gutter.chat_role_enabled());
+    assert_eq!(medium.gutter_width, 8);
+
     let narrow = draw_layout(
         ratatui::layout::Size::new(61, 20),
         &file,
@@ -191,6 +201,51 @@ fn json_chat_role_gutter_adapts_to_available_width() {
     );
     assert!(!narrow.context.gutter.chat_role_enabled());
     assert_eq!(narrow.gutter_width, 4);
+}
+
+#[test]
+fn json_tool_direction_reuses_line_number_separator() {
+    let lines = vec![
+        r#"{"role":"assistant","tool_calls":[{"id":"call_7"}]}"#.to_owned(),
+        r#"{"role":"tool","tool_call_id":"call_7","content":"ok"}"#.to_owned(),
+        r#"{"role":"tool","tool_call_id":"missing","content":"no match"}"#.to_owned(),
+    ];
+    let request = RenderRequest {
+        context: RenderContext {
+            gutter: GutterLayout::new(1, true),
+            x: 0,
+            width: 80,
+            wrap: false,
+            mode: FormatKind::Json,
+        },
+        row_limit: 8,
+    };
+    let mut role_tracker = crate::formats::json::chat::ChatRoleTracker::default();
+    let role_marks = role_tracker.mark_lines(&lines, 0);
+    let mut tool_tracker = crate::formats::json::tool_links::ToolLinkTracker::default();
+    let tool_marks = tool_tracker.mark_lines(&lines, 0);
+    let mut cache = RenderedLineCache::default();
+
+    let viewport = render_viewport(
+        &lines,
+        1,
+        0,
+        3,
+        request,
+        &mut cache,
+        ViewportRenderOptions {
+            chat_role_marks: Some(&role_marks),
+            tool_relation_marks: Some(&tool_marks),
+            ..ViewportRenderOptions::default()
+        },
+    );
+
+    assert!(span_text(&viewport.lines[0].spans).starts_with("1 ↓ A │ "));
+    assert!(span_text(&viewport.lines[1].spans).starts_with("2 ↑ T │ "));
+    assert!(span_text(&viewport.lines[2].spans).starts_with("3 │ T │ "));
+    assert_eq!(viewport.lines[0].spans[0].content.as_ref(), "1 ↓ ");
+    assert_eq!(viewport.lines[1].spans[0].content.as_ref(), "2 ↑ ");
+    assert_eq!(viewport.lines[2].spans[0].content.as_ref(), "3 │ ");
 }
 
 #[test]
@@ -317,6 +372,7 @@ fn markdown_json_code_does_not_enable_chat_role_gutter() {
         ViewportRenderOptions {
             line_modes: Some(&line_modes),
             chat_role_marks: None,
+            tool_relation_marks: None,
             search_query: None,
             active_search_match: None,
         },

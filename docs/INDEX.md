@@ -46,8 +46,9 @@ Code orientation:
   of the resolver entry point.
 - `src/formats.rs` owns the format-capability entry point. Each folder under
   `src/formats/` groups one format's behavior:
-  - `json/` owns JSON formatting, highlighting, chat-role detection, and
-    structure-jump rules, plus JSON path tracking used by sticky breadcrumbs.
+  - `json/` owns JSON formatting, highlighting, chat-role and tool-link
+    detection, and structure-jump rules, plus JSON path tracking used by sticky
+    breadcrumbs.
   - `jsonl/` owns the JSONL profile while reusing JSON record behavior.
   - `xml/` owns XML-compatible formatting, highlighting, and structure rules.
   - `html/` owns tolerant HTML5-style formatting that preserves markup and
@@ -116,15 +117,15 @@ Code orientation:
       `src/formats/<type>/structure.rs`.
     - `file/breadcrumb.rs` renders compact sticky JSON key breadcrumbs; JSON
       path tracking lives under `src/formats/json/`.
-    - `file/chat_roles.rs` checkpoints JSON role-scope state so the sidebar can
-      recover the active message role when a viewport starts deep inside an
-      object; JSON container and direct-role rules live under
-      `src/formats/json/`.
+    - `file/chat_roles.rs` checkpoints and caches JSON conversation windows so
+      the sidebar can recover role scopes and tool-call/result relations when a
+      viewport starts deep inside an object. JSON direct-role and contextual
+      ID-matching rules live under `src/formats/json/`.
     - `file/markdown_modes.rs` owns viewer-time Markdown fenced-code
       checkpointing. The per-line mode rules live with Markdown under
       `src/formats/markdown/`.
-    - `file/position.rs` resolves search/structure targets to visible viewport
-      positions and clamps tail positions.
+    - `file/position.rs` resolves search, structure, and tool-pair targets to
+      visible viewport positions and clamps tail positions.
   - `diff.rs` and `diff/` own the interactive diff viewer mode. They consume
     `src/diff/` models but keep terminal-facing behavior in the viewer layer.
     - `diff/input.rs` handles diff-viewer keys and mouse events.

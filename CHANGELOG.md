@@ -8,6 +8,21 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Link JSON/JSONL tool results to earlier tool calls by exact ID across common
+  `tool_call_id`/`tool_use_id` fields and contextual custom ID fields. Matched
+  calls and results show compact `↓`/`↑` direction markers in the existing
+  line-number separator without adding width, and `t` jumps exactly between a
+  matched pair.
+
+### Changed
+
+- Cache bounded JSON/JSONL conversation-context windows so adjacent scrolling
+  reuses role and tool-link analysis, cap tool-link cold-jump prefix recovery and
+  checkpoint history, and skip speculative render-cache prewarming while
+  terminal input is already queued.
+
 ## [0.5.3] - 2026-07-17
 
 ### Added

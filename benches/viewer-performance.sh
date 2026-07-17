@@ -170,3 +170,18 @@ bench_one \
   "terminal visual-row scroll bytes" \
   "perf_terminal_visual_row_scroll_bytes" \
   "terminal visual row scroll"
+
+bench_one \
+  "chat context adjacent scroll CPU" \
+  "perf_chat_context_adjacent_scroll" \
+  "chat context adjacent scroll"
+
+bench_one \
+  "tool context adjacent scroll CPU" \
+  "perf_tool_context_adjacent_scroll" \
+  "tool context adjacent scroll"
+
+bench_one \
+  "tool context cold deep jump CPU" \
+  "perf_tool_context_cold_deep_jump" \
+  "tool context cold deep jump"

@@ -1,7 +1,9 @@
 use ratatui::text::Span;
 
 use crate::{
-    formats::json::chat::ChatRole, load::ViewFile, transform::FormatKind,
+    formats::json::{chat::ChatRole, tool_links::ToolRelationMark},
+    load::ViewFile,
+    transform::FormatKind,
     tui::palette::gutter_style,
 };
 
@@ -65,12 +67,25 @@ impl GutterLayout {
     }
 
     pub(in crate::viewer) fn line_number(self, line_number: usize) -> Span<'static> {
+        self.line_number_with_tool_direction(line_number, ToolRelationMark::None)
+    }
+
+    pub(in crate::viewer) fn line_number_with_tool_direction(
+        self,
+        line_number: usize,
+        relation: ToolRelationMark,
+    ) -> Span<'static> {
         if self.line_digits == 0 {
             return Span::raw("");
         }
 
+        let marker = match relation {
+            ToolRelationMark::MatchedCall => '↓',
+            ToolRelationMark::MatchedResult => '↑',
+            ToolRelationMark::None => '│',
+        };
         Span::styled(
-            format!("{line_number:>width$} │ ", width = self.line_digits),
+            format!("{line_number:>width$} {marker} ", width = self.line_digits),
             gutter_style(),
         )
     }

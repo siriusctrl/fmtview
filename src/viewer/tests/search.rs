@@ -343,6 +343,7 @@ fn wrapped_search_jumps_to_visual_row_containing_match() {
         ViewportRenderOptions {
             line_modes: None,
             chat_role_marks: None,
+            tool_relation_marks: None,
             search_query: Some("needle"),
             active_search_match: state.search_match_target,
         },
@@ -603,6 +604,7 @@ fn active_search_match_keeps_stronger_background() {
         ViewportRenderOptions {
             line_modes: None,
             chat_role_marks: None,
+            tool_relation_marks: None,
             search_query: Some("needle"),
             active_search_match: Some(SearchTarget {
                 line: 0,

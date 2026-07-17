@@ -14,6 +14,11 @@ Run the viewer benchmark smoke suite for TUI rendering and terminal bytes:
 benches/viewer-performance.sh
 ```
 
+The viewer suite also measures adjacent JSON/JSONL role and tool-link context
+windows plus a cold jump deep into a file. These catch repeated lookahead work,
+tool-heavy cache maintenance, and accidentally unbounded prefix scans that are
+not visible in the lower-level viewport-render benchmark.
+
 Run the load benchmark smoke suite for raw indexed files and lazy record
 spooling:
 
@@ -183,6 +188,13 @@ Viewer metrics:
 - `terminal visual-row scroll bytes` measures repeated scrolling inside one
   extremely long wrapped logical line, which is the path most likely to expose
   visible terminal repaint artifacts.
+- `chat context adjacent scroll CPU` measures repeated role-scope resolution
+  while moving through adjacent JSON windows.
+- `tool context adjacent scroll CPU` exercises the same path with dense matched
+  tool calls/results so link-history maintenance remains cheap.
+- `tool context cold deep jump CPU` starts without checkpoints near a deep
+  target and reports how many source lines were read, guarding the bounded
+  tool-link prefix-scan policy.
 - `background_cells` should move toward zero for normal non-search scrolling.
   Search highlighting may still use background color for match spans.
 

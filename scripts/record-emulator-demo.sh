@@ -233,6 +233,19 @@ send_key "next_structure" "bracketright"
 sleep 0.7
 send_key "previous_structure" "bracketleft"
 sleep 0.7
+if [[ "$demo_command" == "target/debug/fmtview examples/chat.jsonl" \
+  || "$demo_command" == "target/release/fmtview examples/chat.jsonl" ]]; then
+  send_key "tool_search_open" "slash"
+  sleep 0.2
+  send_type "tool_search_query" "tool_call_id"
+  sleep 0.2
+  send_key "tool_search_enter" "Return"
+  sleep 0.7
+  send_key "tool_jump_to_call" "t"
+  sleep 0.7
+  send_key "tool_jump_to_result" "t"
+  sleep 0.7
+fi
 send_key "quit" "q"
 sleep 0.5
 

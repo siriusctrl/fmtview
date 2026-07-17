@@ -182,6 +182,7 @@ pub(in crate::viewer) fn handle_key_event_with_count(
             reset_top_row_offset(state);
             true
         }
+        KeyCode::Char('t') if plain_key(modifiers) => state.toggle_tool_pair(),
         KeyCode::Down | KeyCode::Char('j') => {
             let dirty = scroll_down(state, line_count);
             clear_structure_cursor_if_dirty(state, dirty)
@@ -263,6 +264,7 @@ fn clear_structure_cursor_if_dirty(state: &mut ViewState, dirty: bool) -> bool {
     if dirty {
         state.structure_cursor = None;
         state.preserve_tail_on_next_draw = false;
+        state.clear_tool_navigation();
     }
     dirty
 }

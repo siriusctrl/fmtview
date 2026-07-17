@@ -56,6 +56,7 @@ pub(in crate::viewer) fn jump_to_buffered_line(
         target_top_for_line(requested, line_count, line_count_exact),
     );
     state.structure_cursor = None;
+    state.clear_tool_navigation();
     true
 }
 

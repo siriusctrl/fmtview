@@ -1,3 +1,4 @@
+use crate::formats::json::tool_links::ToolLinkStatus;
 use crate::load::ViewFile;
 use crate::tui::palette::{error_style, gutter_style, warning_style};
 
@@ -42,6 +43,8 @@ pub(in crate::viewer) fn file_footer_text(file: &dyn ViewFile, state: &ViewState
             message.text,
             search_count_suffix(state)
         )
+    } else if state.tool_context.is_some() {
+        tool_context_footer_text(state)
     } else {
         idle_footer_text(state)
     }
@@ -51,7 +54,12 @@ pub(in crate::viewer) fn file_footer_style(state: &ViewState) -> Style {
     match state.visible_footer_message().map(|message| message.kind) {
         Some(FooterMessageKind::Error) => error_style(),
         Some(FooterMessageKind::Warning) => warning_style(),
-        Some(FooterMessageKind::Info) | None => gutter_style(),
+        Some(FooterMessageKind::Info) => gutter_style(),
+        None => match state.tool_context.as_ref().map(|link| link.status) {
+            Some(ToolLinkStatus::Ambiguous) => error_style(),
+            Some(ToolLinkStatus::Unmatched) => warning_style(),
+            Some(ToolLinkStatus::Matched) | None => gutter_style(),
+        },
     }
 }
 
@@ -71,8 +79,46 @@ pub(in crate::viewer) fn idle_footer_text(state: &ViewState) -> String {
     }
 
     format!(
-        " {position}{wrap_hint} | / search | ]/[ structure | 123 Enter line | m select | Space/f,b "
+        " {position}{wrap_hint} | / search | ]/[ structure | t tool pair | 123 Enter line | m select | Space/f,b "
     )
+}
+
+fn tool_context_footer_text(state: &ViewState) -> String {
+    let Some(link) = state.tool_context.as_ref() else {
+        return idle_footer_text(state);
+    };
+    let id = compact_tool_id(link.id.as_ref());
+    match (link.status, link.call_line) {
+        (ToolLinkStatus::Matched, Some(call_line)) => {
+            let at_call = state.tool_context_line == Some(call_line);
+            if at_call {
+                format!(
+                    " tool call ↓ result line {} | id: {id} | t jump | ]/[ structure ",
+                    link.result_line.saturating_add(1)
+                )
+            } else {
+                format!(
+                    " tool result ↑ call line {} | id: {id} | t jump | ]/[ structure ",
+                    call_line.saturating_add(1)
+                )
+            }
+        }
+        (ToolLinkStatus::Ambiguous, _) => {
+            format!(" ambiguous tool result | id: {id} | multiple earlier calls ")
+        }
+        _ => format!(" unmatched tool result | id: {id} | no earlier call "),
+    }
+}
+
+fn compact_tool_id(id: &str) -> String {
+    const MAX_CHARS: usize = 32;
+    let mut chars = id.chars();
+    let prefix = chars.by_ref().take(MAX_CHARS).collect::<String>();
+    if chars.next().is_some() {
+        format!("{prefix}…")
+    } else {
+        prefix
+    }
 }
 
 fn footer_message_label(kind: FooterMessageKind) -> &'static str {

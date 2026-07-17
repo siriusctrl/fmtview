@@ -145,9 +145,23 @@ message object's opening line, while a checkpointed container tracker keeps the
 role-colored guide active through nested and wrapped interior rows. The guide
 is neutral on opening and closing brace rows so adjacent role colors stay
 visually separated; sibling objects without a direct role are neutral too. The
-gutter is render-only: it is not part of transformed output, not used as
-searchable content, and it is hidden when the terminal is too narrow or when
-selection mode removes viewer chrome for native terminal copying.
+same JSON format package owns a bounded tool-link tracker. It only accepts
+ID-like fields from contextual tool-call objects or direct `role: tool` result
+objects and matches exact values against bounded earlier pending calls. The
+viewer consumes those relations as compact endpoint directions in the existing
+line-number separator, footer context, and exact `t` navigation. Role and
+relation marks are cached in checkpointed windows so adjacent scroll positions
+do not repeat the same lookahead scan. Tool-link cold jumps cap recent-prefix
+recovery at 4,096 lines, while visible role gutters retain exact scope recovery
+from complete checkpoints or the document root. Both checkpoint histories and
+per-object ID candidates have hard limits. Open result objects keep a
+non-consuming provisional match for body navigation, while closing the object
+finalizes the best consistent decision and consumes any matched pending
+candidate or candidates. The
+directions and role gutter are render-only: they are not part of transformed
+output or searchable content. Direction markers add no width; the role gutter
+is hidden as width shrinks, and selection mode removes all viewer chrome for
+native terminal copying.
 
 JSON key breadcrumbs follow the same boundary. The viewer owns when and where
 the breadcrumb is drawn, but JSON path tracking, key parsing, and string escape
@@ -197,8 +211,8 @@ that happens to draw terminal text:
 
   viewer/file/
     normal file viewer mode: input/search, structure navigation, sticky
-    breadcrumbs, checkpointed chat-role scopes, Markdown line modes, viewport
-    positioning, and render caches
+    breadcrumbs, checkpointed conversation scopes/tool links, Markdown line
+    modes, viewport positioning, and render caches
 
   viewer/file/render/
     normal-file render output: gutter layout, line windows, visual rows,

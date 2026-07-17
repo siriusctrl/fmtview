@@ -47,7 +47,15 @@ pub(in crate::viewer) fn resolve_targets_from_view(
 ) -> Result<Option<ViewPosition>> {
     resolve_search_target_from_view(file, state, line_cache, visible_height, render_context)?;
     resolve_structure_target_from_view(file, state, line_cache, visible_height, render_context)?;
+    resolve_tool_target_from_view(state);
     adjust_state_for_visible_height(file, state, visible_height, render_context, tail_cache)
+}
+
+fn resolve_tool_target_from_view(state: &mut ViewState) -> bool {
+    let Some(target_line) = state.tool_target.take() else {
+        return false;
+    };
+    position_exact_target_line(state, target_line)
 }
 
 fn resolve_search_target_from_view(
@@ -120,7 +128,7 @@ pub(in crate::viewer) fn resolve_structure_target_position(
     };
 
     state.structure_target = None;
-    position_structure_target_line(state, target.line)
+    position_exact_target_line(state, target.line)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,7 +227,7 @@ fn position_target_logical_line(
     true
 }
 
-fn position_structure_target_line(state: &mut ViewState, target_line: usize) -> bool {
+fn position_exact_target_line(state: &mut ViewState, target_line: usize) -> bool {
     let old_top = state.top;
     let old_offset = state.top_row_offset;
     state.top = target_line;

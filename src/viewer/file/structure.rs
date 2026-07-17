@@ -49,6 +49,7 @@ pub(in crate::viewer) fn start_structure_navigation(
     line_count_exact: bool,
     direction: StructureDirection,
 ) -> bool {
+    state.clear_tool_navigation();
     state.structure_task = None;
     state.structure_target = None;
     state.search_target = None;

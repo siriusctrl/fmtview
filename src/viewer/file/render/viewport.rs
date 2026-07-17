@@ -5,7 +5,7 @@ use super::{
     types::{RenderContext, RenderRequest, RenderedViewport, ViewPosition, ViewportBottom},
 };
 use crate::{
-    formats::json::chat::ChatRoleMark,
+    formats::json::{chat::ChatRoleMark, tool_links::ToolLineMark},
     transform::FormatKind,
     tui::{text::char_count, wrap::continuation_indent},
     viewer::file::input::SearchTarget,
@@ -15,6 +15,7 @@ use crate::{
 pub(in crate::viewer) struct ViewportRenderOptions<'a> {
     pub(in crate::viewer) line_modes: Option<&'a [FormatKind]>,
     pub(in crate::viewer) chat_role_marks: Option<&'a [ChatRoleMark]>,
+    pub(in crate::viewer) tool_relation_marks: Option<&'a [ToolLineMark]>,
     pub(in crate::viewer) search_query: Option<&'a str>,
     pub(in crate::viewer) active_search_match: Option<SearchTarget>,
 }
@@ -59,6 +60,11 @@ pub(in crate::viewer) fn render_viewport(
             .and_then(|marks| marks.first())
             .copied()
             .unwrap_or_default();
+        let tool_relation = options
+            .tool_relation_marks
+            .and_then(|marks| marks.first())
+            .cloned()
+            .unwrap_or_default();
         if options.search_query.is_some() {
             for row in top_rows.into_iter().take(height) {
                 bottom = Some(ViewportBottom {
@@ -74,7 +80,14 @@ pub(in crate::viewer) fn render_viewport(
                     options,
                 );
                 rendered.push(apply_search_highlight(
-                    apply_chat_role_gutter(row.line, row.row_index, chat_role, request.context),
+                    apply_conversation_gutter(
+                        row.line,
+                        first_line_number,
+                        row.row_index,
+                        chat_role,
+                        &tool_relation,
+                        request.context,
+                    ),
                     options.search_query,
                     request.context,
                     active_range,
@@ -87,10 +100,12 @@ pub(in crate::viewer) fn render_viewport(
                     byte_end: row.end_byte,
                     line_end: row.line_end,
                 });
-                rendered.push(apply_chat_role_gutter(
+                rendered.push(apply_conversation_gutter(
                     row.line,
+                    first_line_number,
                     row.row_index,
                     chat_role,
+                    &tool_relation,
                     request.context,
                 ));
             }
@@ -122,6 +137,11 @@ pub(in crate::viewer) fn render_viewport(
             .and_then(|marks| marks.get(offset))
             .copied()
             .unwrap_or_default();
+        let tool_relation = options
+            .tool_relation_marks
+            .and_then(|marks| marks.get(offset))
+            .cloned()
+            .unwrap_or_default();
         let taken = rows.len().min(remaining);
         if taken > 0 {
             last_line_number = Some(line_number);
@@ -136,7 +156,14 @@ pub(in crate::viewer) fn render_viewport(
                 let active_range =
                     active_search_range(line, line_number - 1, &row, request.context, options);
                 rendered.push(apply_search_highlight(
-                    apply_chat_role_gutter(row.line, row.row_index, chat_role, request.context),
+                    apply_conversation_gutter(
+                        row.line,
+                        line_number,
+                        row.row_index,
+                        chat_role,
+                        &tool_relation,
+                        request.context,
+                    ),
                     options.search_query,
                     request.context,
                     active_range,
@@ -149,10 +176,12 @@ pub(in crate::viewer) fn render_viewport(
                     byte_end: row.end_byte,
                     line_end: row.line_end,
                 });
-                rendered.push(apply_chat_role_gutter(
+                rendered.push(apply_conversation_gutter(
                     row.line,
+                    line_number,
                     row.row_index,
                     chat_role,
+                    &tool_relation,
                     request.context,
                 ));
             }
@@ -196,16 +225,20 @@ fn active_search_range(
     Some(start..start.saturating_add(char_count(query)))
 }
 
-fn apply_chat_role_gutter(
+fn apply_conversation_gutter(
     mut line: ratatui::text::Line<'static>,
+    line_number: usize,
     row_index: usize,
     mark: ChatRoleMark,
+    tool: &ToolLineMark,
     context: RenderContext,
 ) -> ratatui::text::Line<'static> {
-    if !context.gutter.chat_role_enabled() {
-        return line;
+    if row_index == 0 && !line.spans.is_empty() {
+        line.spans[0] = context
+            .gutter
+            .line_number_with_tool_direction(line_number, tool.relation);
     }
-    if line.spans.len() >= 3 {
+    if context.gutter.chat_role_enabled() && line.spans.len() >= 3 {
         let [label, guide] =
             context
                 .gutter

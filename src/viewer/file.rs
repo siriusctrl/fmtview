@@ -215,14 +215,13 @@ fn draw_view(
     let line_modes = caches
         .markdown
         .line_modes(file, state.top, lines.lines, mode)?;
-    let chat_role_marks = if layout.context.gutter.chat_role_enabled()
-        && matches!(mode, FormatKind::Json | FormatKind::Jsonl)
-    {
-        Some(
-            caches
-                .chat_roles
-                .marks_for_view(file, state.top, lines.lines)?,
-        )
+    let conversation_marks = if matches!(mode, FormatKind::Json | FormatKind::Jsonl) {
+        Some(caches.chat_roles.marks_for_view(
+            file,
+            state.top,
+            lines.lines,
+            layout.context.gutter.chat_role_enabled(),
+        )?)
     } else {
         None
     };
@@ -236,7 +235,12 @@ fn draw_view(
         &mut caches.render,
         ViewportRenderOptions {
             line_modes: line_modes.as_deref(),
-            chat_role_marks: chat_role_marks.as_deref(),
+            chat_role_marks: conversation_marks
+                .as_ref()
+                .map(|marks| marks.roles.as_slice()),
+            tool_relation_marks: conversation_marks
+                .as_ref()
+                .map(|marks| marks.tools.as_slice()),
             search_query: active_search_query(state),
             active_search_match: state.search_match_target,
         },
@@ -254,7 +258,12 @@ fn draw_view(
             &mut caches.render,
             ViewportRenderOptions {
                 line_modes: line_modes.as_deref(),
-                chat_role_marks: chat_role_marks.as_deref(),
+                chat_role_marks: conversation_marks
+                    .as_ref()
+                    .map(|marks| marks.roles.as_slice()),
+                tool_relation_marks: conversation_marks
+                    .as_ref()
+                    .map(|marks| marks.tools.as_slice()),
                 search_query: active_search_query(state),
                 active_search_match: state.search_match_target,
             },
@@ -275,7 +284,12 @@ fn draw_view(
             &mut caches.render,
             ViewportRenderOptions {
                 line_modes: line_modes.as_deref(),
-                chat_role_marks: chat_role_marks.as_deref(),
+                chat_role_marks: conversation_marks
+                    .as_ref()
+                    .map(|marks| marks.roles.as_slice()),
+                tool_relation_marks: conversation_marks
+                    .as_ref()
+                    .map(|marks| marks.tools.as_slice()),
                 search_query: active_search_query(state),
                 active_search_match: state.search_match_target,
             },
@@ -305,6 +319,10 @@ fn draw_view(
         .last_line_number
         .unwrap_or(current)
         .min(file.line_count());
+    let tool_context = conversation_marks
+        .as_ref()
+        .and_then(|marks| visible_tool_context(marks, state, bottom));
+    state.set_tool_context(tool_context);
     state.structure_viewport = Some(StructureViewport {
         top: state.top,
         top_row_offset: state.top_row_offset,
@@ -345,15 +363,17 @@ fn draw_view(
         })
         .context("failed to draw terminal frame")?;
 
-    prewarm_render_cache(
-        file,
-        &mut caches.line,
-        &mut caches.render,
-        &mut caches.markdown,
-        position,
-        sticky.visible_height,
-        render_request,
-    );
+    if !event::poll(Duration::ZERO).context("failed to poll terminal event before prewarming")? {
+        prewarm_render_cache(
+            file,
+            &mut caches.line,
+            &mut caches.render,
+            &mut caches.markdown,
+            position,
+            sticky.visible_height,
+            render_request,
+        );
+    }
 
     Ok(())
 }
@@ -369,6 +389,43 @@ fn absorb_file_notice(file: &dyn ViewFile, state: &mut ViewState, now: Instant) 
 
 fn active_search_query(state: &ViewState) -> Option<&str> {
     (!state.search_query.is_empty()).then_some(state.search_query.as_str())
+}
+
+fn visible_tool_context(
+    marks: &chat_roles::ConversationViewMarks,
+    state: &ViewState,
+    bottom_line_number: usize,
+) -> Option<(crate::formats::json::tool_links::ToolLink, usize)> {
+    let visible_len = bottom_line_number.saturating_sub(state.top);
+    let preferred_line = if state.tool_selection.is_some() {
+        state.tool_context_line
+    } else {
+        state
+            .search_match_target
+            .map(|target| target.line)
+            .or(state.tool_context_line)
+    };
+
+    preferred_line
+        .filter(|line| *line >= state.top && *line < bottom_line_number)
+        .and_then(|line| {
+            marks
+                .tools
+                .get(line.checked_sub(state.top)?)
+                .and_then(|mark| mark.link.clone().map(|link| (link, line)))
+        })
+        .or_else(|| {
+            marks
+                .tools
+                .iter()
+                .take(visible_len)
+                .enumerate()
+                .find_map(|(offset, mark)| {
+                    mark.link
+                        .clone()
+                        .map(|link| (link, state.top.saturating_add(offset)))
+                })
+        })
 }
 
 fn logical_scroll_hint(
@@ -397,4 +454,39 @@ fn known_line_rows(render_cache: &RenderedLineCache, zero_based_line: usize) -> 
         return None;
     }
     u16::try_from(rows).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::formats::json::tool_links::{
+        ToolLineMark, ToolLink, ToolLinkStatus, ToolRelationMark,
+    };
+
+    #[test]
+    fn tool_context_ignores_prefetched_lines_below_the_rendered_viewport() {
+        let link = ToolLink {
+            id: Arc::from("call_7"),
+            call_line: Some(2),
+            result_line: 15,
+            status: ToolLinkStatus::Matched,
+        };
+        let mut marks = chat_roles::ConversationViewMarks {
+            roles: Vec::new(),
+            tools: vec![ToolLineMark::default(); 6],
+        };
+        marks.tools[5] = ToolLineMark {
+            relation: ToolRelationMark::MatchedResult,
+            link: Some(link.clone()),
+        };
+        let state = ViewState {
+            top: 10,
+            ..ViewState::default()
+        };
+
+        assert_eq!(visible_tool_context(&marks, &state, 13), None);
+        assert_eq!(visible_tool_context(&marks, &state, 16), Some((link, 15)));
+    }
 }
