@@ -6,7 +6,6 @@ use ratatui::layout::Size;
 use crate::load::ViewFile;
 use crate::transform::FormatKind;
 
-pub(in crate::viewer) const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 pub(in crate::viewer) const MOUSE_SCROLL_LINES: usize = 1;
 pub(in crate::viewer) const MOUSE_HORIZONTAL_COLUMNS: usize = 4;
 pub(in crate::viewer) const RENDER_CACHE_MAX_LINES: usize = 512;
@@ -100,12 +99,9 @@ impl FileViewer {
         Ok(dirty)
     }
 
-    pub fn poll_interval(&self) -> Duration {
-        if self.state.search_task.is_some() || self.state.structure_task.is_some() {
-            Duration::ZERO
-        } else {
-            EVENT_POLL_INTERVAL
-        }
+    /// Whether the engine has a search or navigation task ready to advance.
+    pub fn needs_immediate_advance(&self) -> bool {
+        self.state.search_task.is_some() || self.state.structure_task.is_some()
     }
 
     pub fn preload(&self) -> Result<bool> {

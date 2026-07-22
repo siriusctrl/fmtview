@@ -22,7 +22,6 @@ use navigation::diff_scroll_hint;
 use render::render_frame;
 
 const SIDE_BY_SIDE_MIN_WIDTH: usize = 110;
-const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const DIFF_SCROLL_HINT_MAX_ROWS: usize = 12;
 const LAZY_DIFF_FIRST_OPEN_RECORDS: usize = 256;
 const LAZY_DIFF_IDLE_RECORDS: usize = 256;
@@ -65,10 +64,6 @@ impl DiffViewer {
         let state = DiffViewState::new(initial_layout(size.width));
         view.preload(LAZY_DIFF_FIRST_OPEN_RECORDS, LAZY_DIFF_FIRST_OPEN_BUDGET)?;
         Ok(Self { view, state })
-    }
-
-    pub fn poll_interval(&self) -> Duration {
-        EVENT_POLL_INTERVAL
     }
 
     pub fn preload(&mut self) -> Result<bool> {

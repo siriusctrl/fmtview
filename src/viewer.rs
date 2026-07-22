@@ -22,6 +22,7 @@ use crate::tui::screen::ViewerTerminal;
 
 const EVENT_DRAIN_BUDGET: Duration = Duration::from_millis(8);
 const EVENT_DRAIN_LIMIT: usize = 512;
+const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 pub(crate) fn run(file: Box<dyn ViewFile>, mode: FormatKind, notice: Option<String>) -> Result<()> {
     run_terminal(|terminal| run_file_loop(terminal, FileViewer::new(file, mode, notice)))
@@ -55,7 +56,12 @@ fn run_file_loop(
             }
         }
 
-        if !event::poll(viewer.poll_interval()).context("failed to poll terminal event")? {
+        let poll_interval = if viewer.needs_immediate_advance() {
+            Duration::ZERO
+        } else {
+            EVENT_POLL_INTERVAL
+        };
+        if !event::poll(poll_interval).context("failed to poll terminal event")? {
             dirty |= viewer.preload()?;
             continue;
         }
@@ -88,7 +94,7 @@ fn run_diff_loop(
             dirty = false;
         }
 
-        if !event::poll(viewer.poll_interval()).context("failed to poll terminal event")? {
+        if !event::poll(EVENT_POLL_INTERVAL).context("failed to poll terminal event")? {
             dirty |= viewer.preload()?;
             continue;
         }
@@ -194,6 +200,15 @@ fn adapt_modifiers(modifiers: CrosstermModifiers) -> KeyModifiers {
     if modifiers.contains(CrosstermModifiers::ALT) {
         adapted = adapted.union(KeyModifiers::ALT);
     }
+    if modifiers.contains(CrosstermModifiers::SUPER) {
+        adapted = adapted.union(KeyModifiers::SUPER);
+    }
+    if modifiers.contains(CrosstermModifiers::HYPER) {
+        adapted = adapted.union(KeyModifiers::HYPER);
+    }
+    if modifiers.contains(CrosstermModifiers::META) {
+        adapted = adapted.union(KeyModifiers::META);
+    }
     adapted
 }
 
@@ -261,5 +276,33 @@ impl Drop for TerminalCleanup {
         let mut stdout = io::stdout();
         execute!(stdout, DisableMouseCapture, LeaveAlternateScreen).ok();
         stdout.flush().ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_adapter_preserves_all_key_modifiers() {
+        let modifiers = CrosstermModifiers::SHIFT
+            | CrosstermModifiers::CONTROL
+            | CrosstermModifiers::ALT
+            | CrosstermModifiers::SUPER
+            | CrosstermModifiers::HYPER
+            | CrosstermModifiers::META;
+
+        let adapted = adapt_modifiers(modifiers);
+
+        for expected in [
+            KeyModifiers::SHIFT,
+            KeyModifiers::CONTROL,
+            KeyModifiers::ALT,
+            KeyModifiers::SUPER,
+            KeyModifiers::HYPER,
+            KeyModifiers::META,
+        ] {
+            assert!(adapted.contains(expected));
+        }
     }
 }

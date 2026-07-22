@@ -1,8 +1,9 @@
 use std::io::Write;
 
 use fmtview_core::{
-    DiffViewer, FileViewer, FormatKind, FormatOptions, InputEvent, InputSource, KeyCode,
-    KeyModifiers, TypeProfile, diff_view, open_view_file, render_frame_to_buffer,
+    ContentShape, DiffViewer, FileViewer, FormatKind, FormatOptions, InputEvent, InputSource,
+    KeyCode, KeyModifiers, LoadPlan, TypeProfile, diff_view, open_view_file,
+    render_frame_to_buffer,
 };
 use ratatui::{
     buffer::Buffer,
@@ -21,6 +22,9 @@ fn file_engine_renders_and_searches_without_a_terminal() {
         indent: 2,
     };
     let profile = TypeProfile::resolve(&source, &options).unwrap();
+    assert_eq!(profile.content_kind(), FormatKind::Json);
+    assert_eq!(profile.content_shape(), ContentShape::WholeDocument);
+    assert_eq!(profile.load_plan(), LoadPlan::EagerTransformedDocument);
     let opened = open_view_file(&source, &options, profile).unwrap();
     let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
     let size = Size::new(60, 12);

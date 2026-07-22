@@ -47,10 +47,14 @@ pub(crate) fn kind_for_extension(extension: &str) -> Option<FormatKind> {
         .map(|spec| spec.kind)
 }
 
+/// Coarse input shape used to select a loading and transformation strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ContentShape {
+pub enum ContentShape {
+    /// Source text already has line boundaries suitable for direct indexing.
     LineIndexed,
+    /// Input is a sequence of independent newline-delimited records.
     RecordStream,
+    /// Formatting requires document-level parser state.
     WholeDocument,
 }
 
