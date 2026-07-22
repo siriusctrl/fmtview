@@ -288,8 +288,9 @@ pub trait RecordTimeline {
 The contract has these invariants:
 
 - `label` is stable for the lifetime of the timeline. A snapshot reports the
-  source epoch plus committed, observed, and pending boundaries; it is not a
-  request to enumerate the source.
+  source epoch plus committed start/end, observed, and pending boundaries; it
+  is not a request to enumerate the source. The committed start lets a backward
+  consumer distinguish the true new-epoch prefix from an arbitrary tail batch.
 - Older and newer cursors are independent. Opening a timeline positions both at
   the current committed tail, `load_older` walks backward in source order, and
   `load_newer` walks forward after refresh. Every request has record and byte
@@ -304,30 +305,38 @@ The contract has these invariants:
   truncation, replacement, or identity change.
 - A reset starts a new identity epoch. The viewer keeps already displayed old
   epoch records as immutable generation history, then appends the replacement
-  epoch at that boundary. It reconciles only the bounded, order-preserving
-  longest suffix(old)/prefix(new) overlap: identity first and exact raw bytes
-  only for reset recovery. It never performs set-based content deduplication,
-  so legitimate adjacent duplicate records remain visible. Later older loads
-  from the new epoch insert at the epoch boundary and cannot interleave ahead of
-  stale old-epoch history.
+  epoch at that boundary. Only after backward loading reaches the snapshot's
+  committed start does it reconcile the bounded, order-preserving longest
+  suffix(old)/prefix(new) overlap: identity first and exact raw bytes only for
+  reset recovery. An arbitrary tail-batch match is never treated as a prefix.
+  It never performs set-based content deduplication, so legitimate adjacent
+  duplicate records remain visible. Later older loads from the new epoch insert
+  at the epoch boundary and cannot interleave ahead of stale old-epoch history.
+  Reset invalidates unread cursors from the prior snapshot; the durable consumer
+  history is the records already returned by a load call. Recovering source
+  bytes overwritten between polls would require eager copying or a persistent
+  source index, both intentionally outside this bounded seam.
 
-`FileRecordTimeline` implements the seam for growing newline-delimited files.
-It locates committed EOF from bounded reverse chunks, never exposes an
-incomplete final line, and lets bounded forward loads do the record work after
-a refresh. Refresh validates bounded start/middle/end samples of committed
-history independently of file timestamps, so same-identity copytruncate
-rewrites outside the old tail are still detected without indexing the whole
-file. Inode/device identity is used on Unix; portable fallbacks never treat file
-length as identity.
+`FileRecordTimeline` implements the seam for append-oriented growing
+newline-delimited files. It locates committed EOF with fixed-size reverse
+chunks, never exposes an incomplete final line, and lets bounded forward loads
+do the record work after a refresh. The total initial scan is proportional to
+the incomplete EOF suffix; a newline-free single record therefore requires
+O(file size) source reads even though memory stays chunk-bounded. Refresh
+validates bounded start/middle/end samples of committed history independently
+of file timestamps, so ordinary same-identity copytruncate rewrites outside the
+old tail are detected without indexing the whole file. Inode/device identity is
+used on Unix; portable fallbacks never treat file length as identity.
 
 An unchanged incomplete suffix is not reread on every application poll. The
 file implementation retains start/middle/end samples for both committed and
 pending ranges plus a change stamp for the previously verified newline-free
-range. Unix uses nanosecond ctime. On a platform/filesystem where timestamps are
-coarse, a same-size rewrite confined to bytes outside every bounded sample may
-be detected only after a later observable size, stamp, or sample change; fully
-detecting arbitrary in-place rewrites would require reading or indexing the
-whole file and would violate tail-first opening. Stat/read races caused by a
+range. Unix uses nanosecond ctime. More generally, a bounded poll cannot prove
+that an arbitrary in-place rewrite outside every retained sample did not occur
+when identity, length, and available timestamps are unchanged.
+Writers requiring that guarantee should expose an explicit generation through
+a custom `RecordTimeline`; the built-in file source targets append, rotation,
+truncate, and ordinary copytruncate workflows. Stat/read races caused by a
 concurrent shrink are retried, and snapshot fields are committed only after all
 reads succeed.
 

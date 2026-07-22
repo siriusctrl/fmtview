@@ -299,6 +299,109 @@ fn replacement_tail_overlap_is_not_duplicated() {
 }
 
 #[test]
+fn replacement_tail_match_does_not_masquerade_as_a_prefix_overlap() {
+    let (handle, timeline) = fake_timeline([record(10)]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+
+    handle.replace([record(0), record(1), record(10), record(3)]);
+    file.refresh_records(2, 4096).unwrap();
+    load_all_older(&file, 2);
+    let text = file.read_window(0, file.line_count()).unwrap().join("\n");
+
+    assert_eq!(text.matches("record-10").count(), 2, "{text}");
+    assert!(
+        text.find("record-10").unwrap() < text.find("record-0").unwrap(),
+        "{text}"
+    );
+}
+
+#[test]
+fn replacement_prefix_overlap_can_span_lazy_older_batches() {
+    let (handle, timeline) = fake_timeline([record(0), record(1)]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+
+    handle.replace([record(0), record(1), record(2), record(3), record(4)]);
+    file.refresh_records(2, 4096).unwrap();
+    load_all_older(&file, 2);
+    let text = file.read_window(0, file.line_count()).unwrap().join("\n");
+
+    assert_eq!(text.matches("record-0").count(), 1, "{text}");
+    assert_eq!(text.matches("record-1").count(), 1, "{text}");
+    assert!(
+        text.find("record-1").unwrap() < text.find("record-2").unwrap(),
+        "{text}"
+    );
+}
+
+#[test]
+fn replacement_overlap_before_the_initial_tail_batch_is_reconciled_lazily() {
+    let overlap_a = b"{\"message\":\"overlap-a\"}\n".to_vec();
+    let overlap_b = b"{\"message\":\"overlap-b\"}\n".to_vec();
+    let (handle, timeline) = fake_timeline([overlap_a.clone(), overlap_b.clone()]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+
+    handle.replace(
+        [overlap_a, overlap_b]
+            .into_iter()
+            .chain((0..130).map(record)),
+    );
+    let change = file.refresh_records(64, 64 * 1024).unwrap();
+    assert!(change.reset);
+    assert!(change.appended_lines > 0);
+    assert!(file.has_older_records());
+    assert!(
+        file.read_window(0, file.line_count())
+            .unwrap()
+            .join("\n")
+            .contains("record-129")
+    );
+
+    load_all_older(&file, 64);
+    let text = file.read_window(0, file.line_count()).unwrap().join("\n");
+    assert_eq!(text.matches("overlap-a").count(), 1, "{text}");
+    assert_eq!(text.matches("overlap-b").count(), 1, "{text}");
+}
+
+#[test]
+fn replacement_larger_than_the_overlap_window_keeps_tail_first_loading() {
+    let overlap = b"{\"message\":\"overlap\"}\n".to_vec();
+    let (handle, timeline) = fake_timeline([overlap.clone()]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+
+    handle.replace([overlap].into_iter().chain((0..300).map(record)));
+    let change = file.refresh_records(64, 64 * 1024).unwrap();
+    assert!(change.reset);
+    assert!(change.appended_lines > 0);
+    assert!(file.has_older_records());
+    let tail = file.read_window(0, file.line_count()).unwrap().join("\n");
+    assert!(tail.contains("record-299"), "{tail}");
+
+    load_all_older(&file, 64);
+    let complete = file.read_window(0, file.line_count()).unwrap().join("\n");
+    assert_eq!(complete.matches("\"overlap\"").count(), 1, "{complete}");
+}
+
+#[test]
 fn legitimate_adjacent_duplicate_records_remain_visible() {
     let duplicate = b"{\"message\":\"same\"}\n".to_vec();
     let (handle, timeline) = fake_timeline([duplicate.clone(), duplicate.clone()]);
@@ -822,6 +925,16 @@ fn frame_text(frame: fmtview_core::RenderFrame) -> String {
         .collect::<String>()
 }
 
+fn load_all_older(file: &dyn ViewFile, max_records: usize) {
+    for _ in 0..16 {
+        if !file.has_older_records() {
+            return;
+        }
+        file.load_older_records(max_records, 4096).unwrap();
+    }
+    panic!("timeline did not reach its older boundary");
+}
+
 #[derive(Clone)]
 struct FakeHandle {
     state: Rc<RefCell<FakeState>>,
@@ -881,6 +994,7 @@ impl RecordTimeline for FakeTimeline {
         let state = self.state.borrow();
         TimelineSnapshot {
             epoch: self.generation,
+            committed_start: 0,
             committed_end: state.records.len() as u64,
             observed_end: state.records.len() as u64,
             pending_bytes: 0,

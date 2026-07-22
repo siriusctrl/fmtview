@@ -4,15 +4,19 @@ use anyhow::Result;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ViewFileChange {
+    /// Apply insertion shifts before overlap-removal shifts.
     pub inserted_at: usize,
     pub inserted_lines: usize,
+    /// A reconciled replacement prefix that maps to identical preceding lines.
+    pub removed_at: usize,
+    pub removed_lines: usize,
     pub appended_lines: usize,
     pub reset: bool,
 }
 
 impl ViewFileChange {
     pub fn changed(self) -> bool {
-        self.inserted_lines > 0 || self.appended_lines > 0 || self.reset
+        self.inserted_lines > 0 || self.removed_lines > 0 || self.appended_lines > 0 || self.reset
     }
 }
 

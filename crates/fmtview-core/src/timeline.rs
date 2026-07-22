@@ -17,8 +17,11 @@ const RANGE_SAMPLE_BYTES: u64 = 64;
 /// Stable identity for one committed record within a source epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RecordId {
+    /// Source generation; offsets are comparable only within this epoch.
     pub epoch: u64,
+    /// Inclusive raw source offset.
     pub start_offset: u64,
+    /// Exclusive raw source offset.
     pub end_offset: u64,
 }
 
@@ -26,10 +29,14 @@ pub struct RecordId {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimelineRecord {
     pub id: RecordId,
+    /// Exact source bytes, including any record delimiter owned by the source.
     pub raw: Vec<u8>,
 }
 
 /// A bounded request to move through a record timeline.
+///
+/// Limits are soft for one indivisible record: an implementation must return a
+/// complete record rather than truncate it to satisfy `max_bytes`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordLoadLimit {
     pub max_records: usize,
@@ -74,8 +81,13 @@ pub enum TimelineResetReason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimelineSnapshot {
     pub epoch: u64,
+    /// Inclusive offset of the oldest committed record in this epoch.
+    pub committed_start: u64,
+    /// Exclusive offset of the newest committed record in this epoch.
     pub committed_end: u64,
+    /// Exclusive offset of all currently observed bytes, committed or pending.
     pub observed_end: u64,
+    /// Observed bytes not yet committed as complete records.
     pub pending_bytes: u64,
 }
 
@@ -96,7 +108,15 @@ pub enum TimelineRefresh {
 ///
 /// Implementations decide when a record is valid and committed. Every yielded
 /// record must be stable for its `RecordId`, and its `raw` bytes must be exact.
-/// `Pending` means a live boundary may advance; `End` is terminal.
+/// Records are returned in source order. `committed_start` identifies the first
+/// possible record offset in the current epoch, which lets consumers recognize
+/// a true prefix after walking backward. `Pending` means a live boundary may
+/// advance; `End` is terminal. A `Reset` starts a new epoch and invalidates
+/// unread cursor state from the previous snapshot; only records already yielded
+/// by a load call are durable consumer history. If a method returns an error,
+/// its cursors and snapshot must remain unchanged so callers can retry without
+/// losing records. `TimelineRead::Records` must contain at least one record so a
+/// bounded consumer always makes progress.
 pub trait RecordTimeline {
     fn label(&self) -> &str;
     fn snapshot(&self) -> TimelineSnapshot;
@@ -349,6 +369,7 @@ impl RecordTimeline for FileRecordTimeline {
     fn snapshot(&self) -> TimelineSnapshot {
         TimelineSnapshot {
             epoch: self.epoch,
+            committed_start: 0,
             committed_end: self.committed_end,
             observed_end: self.observed_end,
             pending_bytes: self.observed_end.saturating_sub(self.committed_end),

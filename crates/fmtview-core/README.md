@@ -10,7 +10,8 @@ CLI parsing, and shell integration remain in the `fmtview` package.
 It also exposes `RecordTimeline`, a backend-neutral bidirectional source seam
 for committed record streams. Implementations provide a stable label and
 snapshot, bounded older/newer reads, exact raw record bytes with stable
-epoch/offset identities, and append/pending/end/reset refresh outcomes.
+epoch/offset identities plus an explicit committed-start boundary, and
+append/pending/end/reset refresh outcomes.
 `RecordTimelineViewFile` adds formatting and indexed on-disk spooling;
 `FileRecordTimeline` supplies a tail-first growing JSONL/NDJSON implementation.
 The core viewer owns viewport-anchor preservation and follow state through

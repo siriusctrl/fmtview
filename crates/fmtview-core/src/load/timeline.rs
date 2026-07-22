@@ -143,7 +143,7 @@ struct TimelineViewState {
     older_insert_at: usize,
     records: Vec<TimelineRecordRef>,
     older_record_insert_at: usize,
-    reconcile_reset_older: bool,
+    reset_boundary: Option<ResetBoundary>,
     older_end: bool,
     newer_end: bool,
     at_newer_boundary: bool,
@@ -163,7 +163,7 @@ impl TimelineViewState {
             older_insert_at: 0,
             records: Vec::new(),
             older_record_insert_at: 0,
-            reconcile_reset_older: false,
+            reset_boundary: None,
             older_end: false,
             newer_end: false,
             at_newer_boundary: true,
@@ -177,20 +177,7 @@ impl TimelineViewState {
         }
         match self.timeline.load_older(limit)? {
             TimelineRead::Records(records) => {
-                let mut records = records;
-                if self.reconcile_reset_older {
-                    let overlap = self.reset_older_overlap(&records)?;
-                    if overlap > 0 {
-                        let overlap_lines = self.records
-                            [self.older_record_insert_at - overlap..self.older_record_insert_at]
-                            .iter()
-                            .map(|record| record.line_count)
-                            .sum::<usize>();
-                        self.older_record_insert_at -= overlap;
-                        self.older_insert_at = self.older_insert_at.saturating_sub(overlap_lines);
-                        records.truncate(records.len().saturating_sub(overlap));
-                    }
-                }
+                let reached_older_end = self.reached_older_end(&records);
                 let inserted_at = self.older_insert_at;
                 let inserted_record_at = self.older_record_insert_at;
                 let spooled = self.spool_records(&records, true)?;
@@ -198,16 +185,29 @@ impl TimelineViewState {
                 self.lines.splice(inserted_at..inserted_at, spooled.lines);
                 self.records
                     .splice(inserted_record_at..inserted_record_at, spooled.records);
+                let (removed_at, removed_lines) = if reached_older_end {
+                    self.older_end = true;
+                    self.finish_reset_reconciliation()?
+                } else {
+                    (0, 0)
+                };
                 Ok(ViewFileChange {
                     inserted_at,
                     inserted_lines,
+                    removed_at,
+                    removed_lines,
                     ..ViewFileChange::default()
                 })
             }
             TimelineRead::Pending => Ok(ViewFileChange::default()),
             TimelineRead::End => {
                 self.older_end = true;
-                Ok(ViewFileChange::default())
+                let (removed_at, removed_lines) = self.finish_reset_reconciliation()?;
+                Ok(ViewFileChange {
+                    removed_at,
+                    removed_lines,
+                    ..ViewFileChange::default()
+                })
             }
         }
     }
@@ -257,7 +257,10 @@ impl TimelineViewState {
     fn load_reset_tail(&mut self, limit: RecordLoadLimit) -> Result<ViewFileChange> {
         self.older_insert_at = self.lines.len();
         self.older_record_insert_at = self.records.len();
-        self.reconcile_reset_older = true;
+        self.reset_boundary = Some(ResetBoundary {
+            old_lines: self.lines.len(),
+            old_records: self.records.len(),
+        });
         self.older_end = false;
         self.newer_end = false;
         self.at_newer_boundary = true;
@@ -271,28 +274,26 @@ impl TimelineViewState {
             }
             TimelineRead::End => {
                 self.older_end = true;
+                self.reset_boundary = None;
                 return Ok(ViewFileChange {
                     reset: true,
                     ..ViewFileChange::default()
                 });
             }
         };
-
-        let overlap = self.reset_tail_overlap(&records)?;
-        let overlap_lines = self.records[self.records.len().saturating_sub(overlap)..]
-            .iter()
-            .map(|record| record.line_count)
-            .sum::<usize>();
-        self.older_insert_at = self.lines.len().saturating_sub(overlap_lines);
-        self.older_record_insert_at = self.records.len().saturating_sub(overlap);
-
-        let new_records = &records[overlap..];
-        let old_len = self.lines.len();
-        let spooled = self.spool_records(new_records, true)?;
+        let reached_older_end = self.reached_older_end(&records);
+        let spooled = self.spool_records(&records, true)?;
+        let inserted_lines = spooled.lines.len();
         self.lines.extend(spooled.lines);
         self.records.extend(spooled.records);
+        let removed_lines = if reached_older_end {
+            self.older_end = true;
+            self.finish_reset_reconciliation()?.1
+        } else {
+            0
+        };
         Ok(ViewFileChange {
-            appended_lines: self.lines.len().saturating_sub(old_len),
+            appended_lines: inserted_lines.saturating_sub(removed_lines),
             reset: true,
             ..ViewFileChange::default()
         })
@@ -394,56 +395,71 @@ impl TimelineViewState {
         Ok((refs, record_ref))
     }
 
-    fn reset_tail_overlap(&self, records: &[TimelineRecord]) -> Result<usize> {
-        let max = bounded_prefix_len(records);
-        self.longest_suffix_overlap(self.records.len(), &records[..max], false)
+    fn reached_older_end(&self, records: &[TimelineRecord]) -> bool {
+        let snapshot = self.timeline.snapshot();
+        records.first().is_some_and(|record| {
+            record.id.epoch == snapshot.epoch && record.id.start_offset == snapshot.committed_start
+        })
     }
 
-    fn reset_older_overlap(&self, records: &[TimelineRecord]) -> Result<usize> {
-        let max = bounded_suffix_len(records).min(self.older_record_insert_at);
-        self.longest_suffix_overlap(
-            self.older_record_insert_at,
-            &records[records.len().saturating_sub(max)..],
-            true,
-        )
-    }
-
-    fn longest_suffix_overlap(
-        &self,
-        old_end: usize,
-        new: &[TimelineRecord],
-        new_from_end: bool,
-    ) -> Result<usize> {
-        let max = old_end.min(new.len());
-        let new_hashes = new
-            .iter()
-            .map(|record| hash_raw(&record.raw))
-            .collect::<Vec<_>>();
-        let mut spool =
+    fn finish_reset_reconciliation(&mut self) -> Result<(usize, usize)> {
+        let Some(boundary) = self.reset_boundary else {
+            return Ok((0, 0));
+        };
+        let new = &self.records[boundary.old_records..];
+        let old = &self.records[..boundary.old_records];
+        let max = bounded_prefix_len(new).min(bounded_suffix_len(old));
+        let mut old_spool =
+            File::open(self.raw_spool.path()).context("failed to open raw timeline spool")?;
+        let mut new_spool =
             File::open(self.raw_spool.path()).context("failed to open raw timeline spool")?;
         let mut scratch = vec![0_u8; RESET_COMPARE_CHUNK_BYTES];
+        let mut other = vec![0_u8; RESET_COMPARE_CHUNK_BYTES];
+        let mut overlap = 0;
         for count in (1..=max).rev() {
-            let old_start = old_end - count;
-            let new_start = if new_from_end { new.len() - count } else { 0 };
+            let old_start = old.len() - count;
             let mut matches = true;
             for index in 0..count {
-                if !record_ref_matches(
-                    &mut spool,
+                if !record_refs_match(
+                    &mut old_spool,
+                    &mut new_spool,
                     &mut scratch,
-                    &self.records[old_start + index],
-                    &new[new_start + index],
-                    new_hashes[new_start + index],
+                    &mut other,
+                    &old[old_start + index],
+                    &new[index],
                 )? {
                     matches = false;
                     break;
                 }
             }
             if matches {
-                return Ok(count);
+                overlap = count;
+                break;
             }
         }
-        Ok(0)
+        if overlap == 0 {
+            self.reset_boundary = None;
+            return Ok((0, 0));
+        }
+
+        let removed_lines = self.records
+            [boundary.old_records..boundary.old_records.saturating_add(overlap)]
+            .iter()
+            .map(|record| record.line_count)
+            .sum::<usize>();
+        self.records
+            .drain(boundary.old_records..boundary.old_records.saturating_add(overlap));
+        self.lines
+            .drain(boundary.old_lines..boundary.old_lines.saturating_add(removed_lines));
+        self.reset_boundary = None;
+        Ok((boundary.old_lines, removed_lines))
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResetBoundary {
+    old_lines: usize,
+    old_records: usize,
 }
 
 struct SpooledRecords {
@@ -467,30 +483,41 @@ struct TimelineLine {
     source_offset: u64,
 }
 
-fn record_ref_matches(
-    spool: &mut File,
+fn record_refs_match(
+    old_spool: &mut File,
+    new_spool: &mut File,
     scratch: &mut [u8],
+    other: &mut [u8],
     old: &TimelineRecordRef,
-    new: &TimelineRecord,
-    new_hash: u64,
+    new: &TimelineRecordRef,
 ) -> Result<bool> {
     if old.id == new.id {
         return Ok(true);
     }
-    if old.raw_len != new.raw.len() || old.raw_hash != new_hash {
+    if old.raw_len != new.raw_len || old.raw_hash != new.raw_hash {
         return Ok(false);
     }
-    spool
+    old_spool
         .seek(SeekFrom::Start(old.raw_offset))
         .context("failed to seek raw timeline spool")?;
-    for expected in new.raw.chunks(scratch.len()) {
-        let actual = &mut scratch[..expected.len()];
-        spool
-            .read_exact(actual)
+    new_spool
+        .seek(SeekFrom::Start(new.raw_offset))
+        .context("failed to seek raw timeline spool")?;
+    let mut remaining = old.raw_len;
+    while remaining > 0 {
+        let count = remaining.min(scratch.len());
+        let old_bytes = &mut scratch[..count];
+        let new_bytes = &mut other[..count];
+        old_spool
+            .read_exact(old_bytes)
             .context("failed to compare raw timeline spool")?;
-        if actual != expected {
+        new_spool
+            .read_exact(new_bytes)
+            .context("failed to compare raw timeline spool")?;
+        if old_bytes != new_bytes {
             return Ok(false);
         }
+        remaining -= count;
     }
     Ok(true)
 }
@@ -501,25 +528,41 @@ fn hash_raw(raw: &[u8]) -> u64 {
     hasher.finish()
 }
 
-fn bounded_prefix_len(records: &[TimelineRecord]) -> usize {
+trait RawRecordLen {
+    fn raw_len(&self) -> usize;
+}
+
+impl RawRecordLen for TimelineRecord {
+    fn raw_len(&self) -> usize {
+        self.raw.len()
+    }
+}
+
+impl RawRecordLen for TimelineRecordRef {
+    fn raw_len(&self) -> usize {
+        self.raw_len
+    }
+}
+
+fn bounded_prefix_len<T: RawRecordLen>(records: &[T]) -> usize {
     let mut bytes = 0_usize;
     for (index, record) in records.iter().take(RESET_OVERLAP_RECORDS).enumerate() {
-        if index > 0 && bytes.saturating_add(record.raw.len()) > RESET_OVERLAP_BYTES {
+        if index > 0 && bytes.saturating_add(record.raw_len()) > RESET_OVERLAP_BYTES {
             return index;
         }
-        bytes = bytes.saturating_add(record.raw.len());
+        bytes = bytes.saturating_add(record.raw_len());
     }
     records.len().min(RESET_OVERLAP_RECORDS)
 }
 
-fn bounded_suffix_len(records: &[TimelineRecord]) -> usize {
+fn bounded_suffix_len<T: RawRecordLen>(records: &[T]) -> usize {
     let mut bytes = 0_usize;
     let mut count = 0_usize;
     for record in records.iter().rev().take(RESET_OVERLAP_RECORDS) {
-        if count > 0 && bytes.saturating_add(record.raw.len()) > RESET_OVERLAP_BYTES {
+        if count > 0 && bytes.saturating_add(record.raw_len()) > RESET_OVERLAP_BYTES {
             break;
         }
-        bytes = bytes.saturating_add(record.raw.len());
+        bytes = bytes.saturating_add(record.raw_len());
         count += 1;
     }
     count

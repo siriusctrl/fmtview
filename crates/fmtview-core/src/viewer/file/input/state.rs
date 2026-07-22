@@ -256,6 +256,45 @@ impl ViewState {
         self.search_match_ordinal = None;
         self.clear_tool_navigation();
     }
+
+    pub(in crate::viewer) fn shift_for_overlap_removal(&mut self, at: usize, lines: usize) {
+        if lines == 0 {
+            return;
+        }
+        shift_index_for_removal(&mut self.top, at, lines);
+        shift_optional_index_for_removal(&mut self.search_cursor, at, lines);
+        shift_optional_index_for_removal(&mut self.structure_cursor, at, lines);
+        shift_optional_index_for_removal(&mut self.tool_context_line, at, lines);
+        shift_optional_index_for_removal(&mut self.tool_target, at, lines);
+        shift_target_for_removal(&mut self.search_match_target, at, lines);
+        shift_target_for_removal(&mut self.search_target, at, lines);
+        shift_target_for_removal(&mut self.structure_target, at, lines);
+        if let Some(task) = self.search_task.as_mut() {
+            shift_index_for_removal(&mut task.next_line, at, lines);
+            task.remaining = task.remaining.saturating_sub(lines);
+        }
+        if let Some(index) = self.search_index.as_mut() {
+            index.counted_lines = 0;
+            index.matches = 0;
+            index.line_match_totals.clear();
+            index.exact = false;
+        }
+        if let Some(task) = self.structure_task.as_mut() {
+            if task.next_line != usize::MAX {
+                shift_index_for_removal(&mut task.next_line, at, lines);
+            }
+            if let Some(viewport) = task.viewport.as_mut() {
+                shift_index_for_removal(&mut viewport.top, at, lines);
+                shift_index_for_removal(&mut viewport.bottom, at, lines);
+            }
+        }
+        if let Some(viewport) = self.structure_viewport.as_mut() {
+            shift_index_for_removal(&mut viewport.top, at, lines);
+            shift_index_for_removal(&mut viewport.bottom, at, lines);
+        }
+        self.search_match_ordinal = None;
+        self.clear_tool_navigation();
+    }
 }
 
 fn shift_index(value: &mut usize, at: usize, lines: usize) {
@@ -273,5 +312,27 @@ fn shift_optional_index(value: &mut Option<usize>, at: usize, lines: usize) {
 fn shift_target(target: &mut Option<super::search::SearchTarget>, at: usize, lines: usize) {
     if let Some(target) = target.as_mut() {
         shift_index(&mut target.line, at, lines);
+    }
+}
+
+fn shift_index_for_removal(value: &mut usize, at: usize, lines: usize) {
+    if *value >= at {
+        *value = value.saturating_sub(lines);
+    }
+}
+
+fn shift_optional_index_for_removal(value: &mut Option<usize>, at: usize, lines: usize) {
+    if let Some(value) = value.as_mut() {
+        shift_index_for_removal(value, at, lines);
+    }
+}
+
+fn shift_target_for_removal(
+    target: &mut Option<super::search::SearchTarget>,
+    at: usize,
+    lines: usize,
+) {
+    if let Some(target) = target.as_mut() {
+        shift_index_for_removal(&mut target.line, at, lines);
     }
 }
