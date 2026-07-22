@@ -411,6 +411,103 @@ fn backward_search_targets_last_match_on_matching_line() {
 }
 
 #[test]
+fn backward_search_preserves_order_across_short_read_windows() {
+    struct ShortReadFile {
+        lines: Vec<String>,
+        max_window: usize,
+    }
+
+    impl ViewFile for ShortReadFile {
+        fn label(&self) -> &str {
+            "short-read"
+        }
+
+        fn line_count(&self) -> usize {
+            self.lines.len()
+        }
+
+        fn byte_len(&self) -> u64 {
+            0
+        }
+
+        fn byte_offset_for_line(&self, _line: usize) -> u64 {
+            0
+        }
+
+        fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>> {
+            Ok(self
+                .lines
+                .iter()
+                .skip(start)
+                .take(count.min(self.max_window))
+                .cloned()
+                .collect())
+        }
+    }
+
+    let mut lines = (0..10)
+        .map(|line| format!("line-{line}"))
+        .collect::<Vec<_>>();
+    lines[2] = "needle-short-read-old".to_owned();
+    lines[9] = "needle-short-read-new".to_owned();
+    let file = ShortReadFile {
+        lines,
+        max_window: 3,
+    };
+    let mut state = ViewState::default();
+    start_search(
+        &mut state,
+        "needle-short-read".to_owned(),
+        SearchDirection::Backward,
+        9,
+        file.line_count(),
+    );
+
+    assert!(process_search_step(&file, &mut state).unwrap());
+    assert_eq!(state.search_cursor, Some(9));
+}
+
+#[test]
+fn search_rejects_an_empty_read_inside_a_reported_window() {
+    struct EmptyReadFile;
+
+    impl ViewFile for EmptyReadFile {
+        fn label(&self) -> &str {
+            "empty-read"
+        }
+
+        fn line_count(&self) -> usize {
+            1
+        }
+
+        fn byte_len(&self) -> u64 {
+            0
+        }
+
+        fn byte_offset_for_line(&self, _line: usize) -> u64 {
+            0
+        }
+
+        fn read_window(&self, _start: usize, _count: usize) -> Result<Vec<String>> {
+            Ok(Vec::new())
+        }
+    }
+
+    let file = EmptyReadFile;
+    let mut state = ViewState::default();
+    start_search(
+        &mut state,
+        "needle".to_owned(),
+        SearchDirection::Forward,
+        0,
+        file.line_count(),
+    );
+
+    let error = process_search_step(&file, &mut state).unwrap_err();
+    assert!(error.to_string().contains("empty search window"));
+}
+
+#[test]
 fn search_reports_not_found_and_can_clear_message() {
     let file = indexed_lines(&["alpha", "beta"]);
     let mut state = ViewState::default();
@@ -751,6 +848,13 @@ impl MutableSearchFile {
         (start, current.len())
     }
 
+    fn insert(&self, at: usize, lines: impl IntoIterator<Item = String>) -> usize {
+        let inserted = lines.into_iter().collect::<Vec<_>>();
+        let count = inserted.len();
+        self.lines.borrow_mut().splice(at..at, inserted);
+        count
+    }
+
     fn read_counts(&self) -> Vec<usize> {
         let line_count = self.line_count();
         let mut counts = vec![0_usize; line_count];
@@ -855,6 +959,61 @@ fn backward_search_does_not_rescan_wrapped_history_before_append_delta() {
 }
 
 #[test]
+fn backward_search_prioritizes_a_new_append_over_a_partially_scanned_append() {
+    let original_len = 8;
+    let file = MutableSearchFile::with_len(original_len);
+    let mut state = ViewState::default();
+    start_search(
+        &mut state,
+        "needle-backward-multi-append".to_owned(),
+        SearchDirection::Backward,
+        0,
+        original_len,
+    );
+
+    assert!(!process_search_step(&file, &mut state).unwrap());
+    let first_append = std::iter::once("needle-backward-multi-append-old".to_owned())
+        .chain(
+            (0..crate::viewer::file::SEARCH_CHUNK_LINES + 9)
+                .map(|line| format!("first-append-{line}")),
+        )
+        .collect::<Vec<_>>();
+    let (first_start, first_end) = file.append(first_append);
+    state.extend_for_append(first_start, first_end);
+
+    assert!(!process_search_step(&file, &mut state).unwrap());
+    let (second_start, second_end) = file.append(["needle-backward-multi-append-new".to_owned()]);
+    state.extend_for_append(second_start, second_end);
+    assert!(process_search_step(&file, &mut state).unwrap());
+
+    assert_eq!(state.search_cursor, Some(second_end - 1));
+}
+
+#[test]
+fn backward_search_visits_an_insert_at_the_current_span_end_before_that_span() {
+    let original_len = crate::viewer::file::SEARCH_CHUNK_LINES + 10;
+    let file = MutableSearchFile::with_len(original_len);
+    let mut state = ViewState::default();
+    start_search(
+        &mut state,
+        "needle-backward-boundary-insert".to_owned(),
+        SearchDirection::Backward,
+        0,
+        original_len,
+    );
+
+    assert!(!process_search_step(&file, &mut state).unwrap());
+    assert!(!process_search_step(&file, &mut state).unwrap());
+    let at = 10;
+    file.lines.borrow_mut()[at - 1] = "needle-backward-boundary-insert-old".to_owned();
+    let inserted = file.insert(at, ["needle-backward-boundary-insert-new".to_owned()]);
+    state.shift_for_insert(at, inserted);
+    assert!(process_search_step(&file, &mut state).unwrap());
+
+    assert_eq!(state.search_cursor, Some(at));
+}
+
+#[test]
 fn append_invalidates_and_recounts_an_exact_search_index() {
     let file = MutableSearchFile::with_len(3);
     let mut state = ViewState::default();
@@ -875,4 +1034,35 @@ fn append_invalidates_and_recounts_an_exact_search_index() {
     assert!(process_search_index_step(&file, &mut state).unwrap());
     assert!(state.search_index.as_ref().unwrap().exact);
     assert_eq!(state.search_index.as_ref().unwrap().matches, 1);
+}
+
+#[test]
+fn insert_rebuilds_the_search_index_and_shifted_match_ordinal() {
+    let file = MutableSearchFile::with_len(3);
+    file.lines.borrow_mut()[1] = "needle-index-original".to_owned();
+    let mut state = ViewState::default();
+    start_search(
+        &mut state,
+        "needle-index".to_owned(),
+        SearchDirection::Forward,
+        0,
+        file.line_count(),
+    );
+    assert!(process_search_step(&file, &mut state).unwrap());
+    assert!(process_search_index_step(&file, &mut state).unwrap());
+    assert_eq!(state.search_match_ordinal, Some(1));
+
+    let inserted = file.insert(0, ["needle-index needle-index".to_owned()]);
+    state.shift_for_insert(0, inserted);
+    let index = state.search_index.as_ref().unwrap();
+    assert_eq!(index.counted_lines, 0);
+    assert_eq!(index.matches, 0);
+    assert!(!index.exact);
+
+    assert!(process_search_index_step(&file, &mut state).unwrap());
+    let index = state.search_index.as_ref().unwrap();
+    assert_eq!(index.matches, 3);
+    assert_eq!(index.counted_lines, 4);
+    assert!(index.exact);
+    assert_eq!(state.search_match_ordinal, Some(3));
 }
