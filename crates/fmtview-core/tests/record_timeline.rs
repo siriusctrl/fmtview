@@ -134,6 +134,80 @@ fn an_open_raw_record_view_remains_a_stable_snapshot_across_source_changes() {
 }
 
 #[test]
+fn follow_raw_overlay_keeps_its_snapshot_until_returning_to_updated_structure() {
+    let (handle, timeline) = fake_timeline([record(5)]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(4, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 10);
+    viewer.render(size, None).unwrap();
+
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    let raw = viewer.render(size, None).unwrap();
+    assert!(raw.title.contains("raw record"));
+    assert!(frame_text(raw).contains("record-5"));
+
+    handle.append(record(6));
+    viewer.preload().unwrap();
+    let stable_after_append = viewer.render(size, None).unwrap();
+    assert!(frame_text(stable_after_append).contains("record-5"));
+
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    let appended = viewer.render(size, None).unwrap();
+    assert!(appended.footer_text.contains("follow:on"));
+    assert!(frame_text(appended).contains("record-6"));
+
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    handle.replace([record(20)]);
+    viewer.preload().unwrap();
+    let stable_raw = viewer.render(size, None).unwrap();
+    let stable_raw_text = frame_text(stable_raw);
+    assert!(stable_raw_text.contains("record-5"));
+    assert!(!stable_raw_text.contains("record-20"));
+
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    let updated = viewer.render(size, None).unwrap();
+    assert!(!updated.title.contains("raw record"));
+    assert!(frame_text(updated).contains("record-20"));
+}
+
+#[test]
+fn detached_follow_keeps_receiving_records_behind_a_raw_overlay() {
+    let (handle, timeline) = fake_timeline((0..12).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+    viewer.render(size, None).unwrap();
+    viewer.handle_event(key(KeyCode::Up), FileViewer::page_for_size(size));
+    let detached = viewer.render(size, None).unwrap();
+    let detached_top = detached.position.top;
+    assert!(detached.footer_text.contains("follow:detached"));
+
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    handle.append(record(12));
+    viewer.preload().unwrap();
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    let returned = viewer.render(size, None).unwrap();
+
+    assert!(returned.footer_text.contains("follow:detached"));
+    assert_eq!(returned.position.top, detached_top);
+    viewer.handle_event(
+        InputEvent::Command(ViewerCommand::FollowTail),
+        FileViewer::page_for_size(size),
+    );
+    assert!(frame_text(viewer.render(size, None).unwrap()).contains("record-12"));
+}
+
+#[test]
 fn follow_tail_advances_detaches_and_reattaches_headlessly() {
     let (handle, timeline) = fake_timeline((0..6).map(record));
     let file = RecordTimelineViewFile::with_initial_limit(

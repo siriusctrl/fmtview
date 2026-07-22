@@ -84,6 +84,10 @@ impl ViewFile for LazyTransformedRecordsFile {
     fn open_raw_record(&self, line: usize) -> Result<Option<Box<dyn ViewFile>>> {
         self.inner.open_raw_record(line)
     }
+
+    fn supports_raw_records(&self) -> bool {
+        true
+    }
 }
 
 struct RecordTransformProducer {
@@ -278,7 +282,11 @@ mod tests {
 
     #[test]
     fn lazy_view_opens_the_exact_source_record_for_a_formatted_line() {
-        let input = br#"{"role":"assistant","content":[{"type":"tool_call","arguments":"{\"cmd\":\"cargo  test\"}"}]}\n"#;
+        let input = concat!(
+            r#"{"role":"assistant","content":[{"type":"tool_call","arguments":"{\"cmd\":\"cargo  test\"}"}]}"#,
+            "\n"
+        )
+        .as_bytes();
         let (_temp, source) = temp_source(input);
         let options = FormatOptions {
             kind: FormatKind::Jsonl,

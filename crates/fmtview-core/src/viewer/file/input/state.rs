@@ -56,6 +56,8 @@ pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) follow: Option<FollowState>,
     pub(in crate::viewer) follow_reattach_pending: bool,
     pub(in crate::viewer) mouse_capture: bool,
+    pub(in crate::viewer) raw_record: bool,
+    pub(in crate::viewer) raw_record_available: bool,
 }
 
 impl Default for ViewState {
@@ -91,6 +93,8 @@ impl Default for ViewState {
             follow: None,
             follow_reattach_pending: false,
             mouse_capture: true,
+            raw_record: false,
+            raw_record_available: false,
         }
     }
 }

@@ -31,6 +31,7 @@ fn file_engine_renders_and_searches_without_a_terminal() {
 
     let first = viewer.render(size, None).unwrap();
     assert!(first.title.contains("headless.json"));
+    assert!(!first.footer_text.contains("raw record"));
     assert!(buffer_text(first).contains("alpha"));
 
     for code in [
@@ -86,6 +87,79 @@ fn file_engine_navigation_changes_backend_neutral_frame_position() {
 }
 
 #[test]
+fn record_engine_toggles_bounded_raw_view_and_keeps_core_interactions() {
+    let source = source(
+        "conversation.jsonl",
+        "{\"role\":\"assistant\",\"content\":[{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"iVBORw0KGgo=\"}}]}\n",
+    );
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let profile = TypeProfile::resolve(&source, &options).unwrap();
+    let opened = open_view_file(&source, &options, profile).unwrap();
+    let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
+    let size = Size::new(72, 12);
+
+    let structured = viewer.render(size, None).unwrap();
+    let structured_text = buffer_text(structured);
+    assert!(structured_text.contains("<media image/png; 8 decoded bytes>"));
+    assert!(!structured_text.contains("iVBORw0KGgo="));
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('r')).dirty);
+    let raw = viewer.render(size, None).unwrap();
+    assert!(raw.title.contains("raw record"), "{}", raw.title);
+    assert!(
+        raw.footer_text.contains("r structured"),
+        "{}",
+        raw.footer_text
+    );
+    assert!(buffer_text(raw).contains("iVBORw0KGgo="));
+
+    assert!(
+        viewer
+            .handle_event(InputEvent::Resize, FileViewer::page_for_size(size))
+            .dirty
+    );
+    assert!(send_key(&mut viewer, size, KeyCode::Char('w')).dirty);
+    assert!(viewer.render(size, None).unwrap().title.contains("nowrap"));
+
+    for code in [
+        KeyCode::Char('/'),
+        KeyCode::Char('i'),
+        KeyCode::Char('V'),
+        KeyCode::Char('B'),
+        KeyCode::Enter,
+    ] {
+        send_key(&mut viewer, size, code);
+    }
+    while viewer.advance(std::time::Instant::now()).unwrap() {}
+    let searched = viewer.render(size, None).unwrap();
+    assert!(
+        searched.footer_text.contains("1/1 match"),
+        "{}",
+        searched.footer_text
+    );
+
+    let selection = send_key(&mut viewer, size, KeyCode::Char('m'));
+    assert_eq!(selection.mouse_capture, Some(false));
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('r')).dirty);
+    let structured = viewer.render(size, None).unwrap();
+    assert!(!structured.title.contains("raw record"));
+    assert!(structured.title.contains("nowrap"));
+    assert!(structured.footer_text.contains("selection mode"));
+    assert_eq!(structured.position.row_offset, 0);
+    assert!(buffer_text(structured).contains("<media image/png; 8 decoded bytes>"));
+
+    let restored = send_key(&mut viewer, size, KeyCode::Char('m'));
+    assert_eq!(restored.mouse_capture, Some(true));
+
+    send_key(&mut viewer, size, KeyCode::Char('r'));
+    assert!(send_key(&mut viewer, size, KeyCode::Char('q')).quit);
+}
+
+#[test]
 fn diff_engine_renders_and_navigates_without_a_terminal() {
     let left = source("left.json", "{\"value\":1}\n");
     let right = source("right.json", "{\"value\":2}\n");
@@ -117,6 +191,16 @@ fn source(label: &str, text: &str) -> InputSource {
     temp.write_all(text.as_bytes()).unwrap();
     temp.flush().unwrap();
     InputSource::from_temp(temp, label)
+}
+
+fn send_key(viewer: &mut FileViewer, size: Size, code: KeyCode) -> fmtview_core::ViewerAction {
+    viewer.handle_event(
+        InputEvent::Key {
+            code,
+            modifiers: KeyModifiers::NONE,
+        },
+        FileViewer::page_for_size(size),
+    )
 }
 
 fn buffer_text(frame: fmtview_core::RenderFrame) -> String {

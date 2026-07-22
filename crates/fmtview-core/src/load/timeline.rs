@@ -151,6 +151,10 @@ impl ViewFile for RecordTimelineViewFile {
         )?;
         Ok(Some(Box::new(raw)))
     }
+
+    fn supports_raw_records(&self) -> bool {
+        true
+    }
 }
 
 struct TimelineViewState {

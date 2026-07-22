@@ -47,7 +47,7 @@ use crate::tui::screen::{RenderFrame, ScrollHint, ScrollPosition};
 use crate::viewer::{InputEvent, KeyCode, ViewerAction, ViewerCommand};
 use input::{
     FollowState, SearchDirection, ViewState, handle_event_with_count, process_search_index_step,
-    process_search_step, set_file_end,
+    process_search_step, reset_top_row_offset, set_file_end,
 };
 use position::resolve_targets_from_view;
 use render::{
@@ -66,6 +66,14 @@ pub struct FileViewer {
     state: ViewState,
     caches: ViewerCaches,
     pending_prewarm: Option<(ViewPosition, usize, RenderRequest)>,
+    raw_record: Option<RawRecordOverlay>,
+}
+
+struct RawRecordOverlay {
+    file: Box<dyn ViewFile>,
+    state: ViewState,
+    caches: ViewerCaches,
+    pending_prewarm: Option<(ViewPosition, usize, RenderRequest)>,
 }
 
 impl FileViewer {
@@ -76,6 +84,7 @@ impl FileViewer {
             state.viewport_at_tail = true;
             set_file_end(&mut state, file.line_count());
         }
+        state.raw_record_available = file.supports_raw_records();
         if let Some(message) = notice {
             state.set_notice(message, Instant::now(), NOTICE_DURATION);
         }
@@ -85,10 +94,14 @@ impl FileViewer {
             state,
             caches: ViewerCaches::default(),
             pending_prewarm: None,
+            raw_record: None,
         }
     }
 
     pub fn advance(&mut self, now: Instant) -> Result<bool> {
+        if let Some(raw) = self.raw_record.as_mut() {
+            return advance_overlay(raw, now);
+        }
         let mut dirty = false;
         if self.file.has_older_records()
             && self
@@ -148,6 +161,9 @@ impl FileViewer {
 
     /// Whether the engine has a search or navigation task ready to advance.
     pub fn needs_immediate_advance(&self) -> bool {
+        if let Some(raw) = self.raw_record.as_ref() {
+            return raw.state.search_task.is_some() || raw.state.structure_task.is_some();
+        }
         self.state.search_task.is_some() || self.state.structure_task.is_some()
     }
 
@@ -178,7 +194,55 @@ impl FileViewer {
     }
 
     pub fn handle_event(&mut self, event: InputEvent, page: usize) -> ViewerAction {
+        if self.raw_record.is_some() {
+            let close_raw = self
+                .raw_record
+                .as_ref()
+                .is_some_and(|raw| !raw.state.has_active_prompt())
+                && matches!(
+                        event,
+                        InputEvent::Key {
+                            code: KeyCode::Char('r'),
+                            modifiers
+                        } if modifiers.is_empty()
+                );
+            if close_raw {
+                let raw = self.raw_record.take().expect("raw overlay checked above");
+                self.state.mouse_capture = raw.state.mouse_capture;
+                if self.state.wrap != raw.state.wrap {
+                    self.state.wrap = raw.state.wrap;
+                    reset_top_row_offset(&mut self.state);
+                    self.state.wrap_bounds_stale = true;
+                    self.caches = ViewerCaches::default();
+                    self.pending_prewarm = None;
+                }
+                return ViewerAction {
+                    dirty: true,
+                    ..ViewerAction::default()
+                };
+            }
+            let raw = self.raw_record.as_mut().expect("raw overlay checked above");
+            return handle_event_with_count(
+                event,
+                &mut raw.state,
+                raw.file.line_count(),
+                true,
+                page,
+            );
+        }
+
         let had_active_prompt = self.state.has_active_prompt();
+        if !had_active_prompt
+            && matches!(
+                event,
+                InputEvent::Key {
+                    code: KeyCode::Char('r'),
+                    modifiers
+                } if modifiers.is_empty()
+            )
+        {
+            return self.open_raw_record();
+        }
         if self.file.is_follow_source() {
             if matches!(event, InputEvent::Command(ViewerCommand::FollowTail)) {
                 return self.enable_follow_tail();
@@ -243,6 +307,9 @@ impl FileViewer {
     }
 
     pub fn needs_layout(&self) -> bool {
+        if let Some(raw) = self.raw_record.as_ref() {
+            return raw.state.wrap_bounds_stale;
+        }
         self.state.wrap_bounds_stale
     }
 
@@ -251,6 +318,18 @@ impl FileViewer {
         size: Size,
         previous_position: Option<ScrollPosition>,
     ) -> Result<RenderFrame> {
+        if let Some(raw) = self.raw_record.as_mut() {
+            let (frame, pending_prewarm) = draw_view(
+                raw.file.as_ref(),
+                FormatKind::Plain,
+                &mut raw.state,
+                &mut raw.caches,
+                size,
+                previous_position,
+            )?;
+            raw.pending_prewarm = Some(pending_prewarm);
+            return Ok(frame);
+        }
         let (frame, pending_prewarm) = draw_view(
             self.file.as_ref(),
             self.mode,
@@ -264,6 +343,21 @@ impl FileViewer {
     }
 
     pub fn prewarm(&mut self) {
+        if let Some(raw) = self.raw_record.as_mut() {
+            let Some((position, visible_height, request)) = raw.pending_prewarm.take() else {
+                return;
+            };
+            prewarm_render_cache(
+                raw.file.as_ref(),
+                &mut raw.caches.line,
+                &mut raw.caches.render,
+                &mut raw.caches.markdown,
+                position,
+                visible_height,
+                request,
+            );
+            return;
+        }
         let Some((position, visible_height, request)) = self.pending_prewarm.take() else {
             return;
         };
@@ -317,6 +411,58 @@ impl FileViewer {
             }
         }
     }
+
+    fn open_raw_record(&mut self) -> ViewerAction {
+        match self.file.open_raw_record(self.state.top) {
+            Ok(Some(file)) => {
+                let mut state = ViewState {
+                    wrap: self.state.wrap,
+                    mouse_capture: self.state.mouse_capture,
+                    raw_record: true,
+                    ..ViewState::default()
+                };
+                state.viewport_at_tail = false;
+                self.raw_record = Some(RawRecordOverlay {
+                    file,
+                    state,
+                    caches: ViewerCaches::default(),
+                    pending_prewarm: None,
+                });
+            }
+            Ok(None) => self.state.set_footer_message(
+                "raw view is available for record-stream inputs",
+                input::FooterMessageKind::Warning,
+            ),
+            Err(error) => self.state.set_footer_message(
+                format!("failed to open raw record: {error:#}"),
+                input::FooterMessageKind::Error,
+            ),
+        }
+        ViewerAction {
+            dirty: true,
+            ..ViewerAction::default()
+        }
+    }
+}
+
+fn advance_overlay(raw: &mut RawRecordOverlay, now: Instant) -> Result<bool> {
+    let mut dirty = absorb_file_notice(raw.file.as_ref(), &mut raw.state, now);
+    dirty |= raw.state.expire_footer_message(now);
+    if raw.state.search_task.is_some() {
+        dirty |= process_search_step(raw.file.as_ref(), &mut raw.state)?;
+    }
+    if raw.state.structure_task.is_some() {
+        dirty |= process_structure_step(raw.file.as_ref(), &mut raw.state, FormatKind::Plain)?;
+    }
+    if raw
+        .state
+        .search_index
+        .as_ref()
+        .is_some_and(|index| !index.exact)
+    {
+        dirty |= process_search_index_step(raw.file.as_ref(), &mut raw.state)?;
+    }
+    Ok(dirty)
 }
 
 fn event_moves_away_from_tail(event: InputEvent, wrap: bool) -> bool {
