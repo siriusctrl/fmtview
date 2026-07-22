@@ -4,7 +4,7 @@ mod input;
 
 pub use diff::DiffViewer;
 pub use file::FileViewer;
-pub use input::{InputEvent, KeyCode, KeyModifiers, MouseEventKind, ViewerAction};
+pub use input::{InputEvent, KeyCode, KeyModifiers, MouseEventKind, ViewerAction, ViewerCommand};
 
 #[cfg(test)]
 use crate::load::IndexedTempFile;

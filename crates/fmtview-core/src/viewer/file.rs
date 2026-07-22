@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use ratatui::layout::Size;
 
-use crate::load::ViewFile;
+use crate::load::{ViewFile, ViewFileChange};
 use crate::transform::FormatKind;
 
 pub(in crate::viewer) const MOUSE_SCROLL_LINES: usize = 1;
@@ -21,6 +21,8 @@ pub(in crate::viewer) const PREWARM_BUDGET: Duration = Duration::from_millis(4);
 pub(in crate::viewer) const LAZY_PRELOAD_LINES: usize = 4096;
 pub(in crate::viewer) const LAZY_PRELOAD_RECORDS: usize = 64;
 pub(in crate::viewer) const LAZY_PRELOAD_BUDGET: Duration = Duration::from_millis(6);
+pub(in crate::viewer) const TIMELINE_PRELOAD_BYTES: usize = 4 * 1024 * 1024;
+pub(in crate::viewer) const TIMELINE_OLDER_THRESHOLD_LINES: usize = 64;
 pub(in crate::viewer) const JUMP_BUFFER_MAX_DIGITS: usize = 20;
 pub(in crate::viewer) const SEARCH_CHUNK_LINES: usize = 4096;
 pub(in crate::viewer) const TAIL_ROW_OFFSET: usize = usize::MAX;
@@ -42,8 +44,11 @@ use cache::ViewerCaches;
 pub(super) use cache::ViewerCaches as TestViewerCaches;
 
 use crate::tui::screen::{RenderFrame, ScrollHint, ScrollPosition};
-use crate::viewer::{InputEvent, ViewerAction};
-use input::{ViewState, handle_event_with_count, process_search_index_step, process_search_step};
+use crate::viewer::{InputEvent, KeyCode, ViewerAction, ViewerCommand};
+use input::{
+    FollowState, SearchDirection, ViewState, handle_event_with_count, process_search_index_step,
+    process_search_step, set_file_end,
+};
 use position::resolve_targets_from_view;
 use render::{
     RenderRequest, RenderedLineCache, ViewPosition, ViewportRenderOptions, draw_layout,
@@ -52,7 +57,7 @@ use render::{
     refresh_sticky_after_position_change, render_row_limit, render_viewport, sync_sticky_layout,
     viewer_progress_percent,
 };
-use structure::{StructureViewport, process_structure_step};
+use structure::{StructureDirection, StructureViewport, process_structure_step};
 
 /// Headless file-viewer state machine and renderer.
 pub struct FileViewer {
@@ -66,6 +71,11 @@ pub struct FileViewer {
 impl FileViewer {
     pub fn new(file: Box<dyn ViewFile>, mode: FormatKind, notice: Option<String>) -> Self {
         let mut state = ViewState::default();
+        if file.is_follow_source() {
+            state.follow = Some(FollowState::Following);
+            state.viewport_at_tail = true;
+            set_file_end(&mut state, file.line_count());
+        }
         if let Some(message) = notice {
             state.set_notice(message, Instant::now(), NOTICE_DURATION);
         }
@@ -79,8 +89,34 @@ impl FileViewer {
     }
 
     pub fn advance(&mut self, now: Instant) -> Result<bool> {
+        let mut dirty = false;
+        if self.file.has_older_records()
+            && self
+                .state
+                .structure_task
+                .as_ref()
+                .is_some_and(|task| task.direction == StructureDirection::Backward)
+        {
+            let change = self
+                .file
+                .load_older_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
+            dirty |= self.apply_file_change(change);
+        }
+        if self.file.has_older_records()
+            && self
+                .state
+                .search_task
+                .as_ref()
+                .is_some_and(|task| task.direction == SearchDirection::Backward)
+        {
+            let change = self
+                .file
+                .load_older_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
+            dirty |= self.apply_file_change(change);
+        }
+
         let file = self.file.as_ref();
-        let mut dirty = absorb_file_notice(file, &mut self.state, now);
+        dirty |= absorb_file_notice(file, &mut self.state, now);
         dirty |= self.state.expire_footer_message(now);
         if self.state.search_task.is_some() {
             dirty |= process_search_step(file, &mut self.state)?;
@@ -96,6 +132,12 @@ impl FileViewer {
         {
             dirty |= process_search_index_step(file, &mut self.state)?;
         }
+        if self.file.has_older_records() && self.state.search_task.is_some() {
+            let change = self
+                .file
+                .load_older_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
+            dirty |= self.apply_file_change(change);
+        }
         Ok(dirty)
     }
 
@@ -104,12 +146,26 @@ impl FileViewer {
         self.state.search_task.is_some() || self.state.structure_task.is_some()
     }
 
-    pub fn preload(&self) -> Result<bool> {
-        self.file.preload(
-            LAZY_PRELOAD_LINES,
-            LAZY_PRELOAD_RECORDS,
-            LAZY_PRELOAD_BUDGET,
-        )
+    pub fn preload(&mut self) -> Result<bool> {
+        if !self.file.is_follow_source() {
+            return self.file.preload(
+                LAZY_PRELOAD_LINES,
+                LAZY_PRELOAD_RECORDS,
+                LAZY_PRELOAD_BUDGET,
+            );
+        }
+
+        let refresh = self
+            .file
+            .refresh_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
+        let mut dirty = self.apply_file_change(refresh);
+        if self.state.top <= TIMELINE_OLDER_THRESHOLD_LINES && self.file.has_older_records() {
+            let older = self
+                .file
+                .load_older_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
+            dirty |= self.apply_file_change(older);
+        }
+        Ok(dirty)
     }
 
     pub fn page_for_size(size: Size) -> usize {
@@ -117,13 +173,65 @@ impl FileViewer {
     }
 
     pub fn handle_event(&mut self, event: InputEvent, page: usize) -> ViewerAction {
-        handle_event_with_count(
+        if self.file.is_follow_source() {
+            if matches!(event, InputEvent::Command(ViewerCommand::FollowTail)) {
+                return self.enable_follow_tail();
+            }
+            if matches!(event, InputEvent::Command(ViewerCommand::ToggleFollowTail))
+                || matches!(
+                    event,
+                    InputEvent::Key {
+                        code: KeyCode::Char('f'),
+                        modifiers
+                    } if modifiers.is_empty()
+                )
+            {
+                return self.toggle_follow_tail();
+            }
+        }
+
+        let mut action = handle_event_with_count(
             event,
             &mut self.state,
             self.file.line_count(),
-            self.file.line_count_exact(),
+            self.file.at_newer_boundary(),
             page,
-        )
+        );
+        if self.file.is_follow_source() {
+            if action.dirty && event_moves_away_from_tail(event) {
+                if self.state.follow == Some(FollowState::Following) {
+                    self.state.follow = Some(FollowState::Detached);
+                }
+                self.state.viewport_at_tail = false;
+                self.state.follow_reattach_pending = false;
+            } else if event_forces_tail(event)
+                && (action.dirty
+                    || matches!(
+                        event,
+                        InputEvent::Key {
+                            code: KeyCode::End | KeyCode::Char('G'),
+                            ..
+                        }
+                    ))
+            {
+                self.state.follow = Some(FollowState::Following);
+                self.state.viewport_at_tail = true;
+                self.state.follow_reattach_pending = false;
+            } else if event_moves_toward_tail(event)
+                && self.state.follow == Some(FollowState::Detached)
+            {
+                if !action.dirty || self.state.top >= self.file.line_count().saturating_sub(1) {
+                    self.state.follow = Some(FollowState::Following);
+                    self.state.viewport_at_tail = true;
+                    self.state.follow_reattach_pending = false;
+                    set_file_end(&mut self.state, self.file.line_count());
+                    action.dirty = true;
+                } else {
+                    self.state.follow_reattach_pending = true;
+                }
+            }
+        }
+        action
     }
 
     pub fn needs_layout(&self) -> bool {
@@ -161,6 +269,82 @@ impl FileViewer {
             request,
         );
     }
+
+    fn apply_file_change(&mut self, change: ViewFileChange) -> bool {
+        if change.inserted_lines > 0 {
+            self.state
+                .shift_for_insert(change.inserted_at, change.inserted_lines);
+        }
+        if change.appended_lines > 0 && self.state.follow == Some(FollowState::Following) {
+            set_file_end(&mut self.state, self.file.line_count());
+        }
+        if change.changed() {
+            self.caches = ViewerCaches::default();
+            self.pending_prewarm = None;
+        }
+        change.changed()
+    }
+
+    fn enable_follow_tail(&mut self) -> ViewerAction {
+        self.state.follow = Some(FollowState::Following);
+        self.state.viewport_at_tail = true;
+        self.state.follow_reattach_pending = false;
+        set_file_end(&mut self.state, self.file.line_count());
+        ViewerAction {
+            dirty: true,
+            ..ViewerAction::default()
+        }
+    }
+
+    fn toggle_follow_tail(&mut self) -> ViewerAction {
+        if self.state.follow == Some(FollowState::Paused) {
+            self.enable_follow_tail()
+        } else {
+            self.state.preserve_tail_on_next_draw = self.state.viewport_at_tail;
+            self.state.follow = Some(FollowState::Paused);
+            self.state.follow_reattach_pending = false;
+            ViewerAction {
+                dirty: true,
+                ..ViewerAction::default()
+            }
+        }
+    }
+}
+
+fn event_moves_away_from_tail(event: InputEvent) -> bool {
+    matches!(
+        event,
+        InputEvent::Key {
+            code: KeyCode::Up | KeyCode::PageUp | KeyCode::Home | KeyCode::Char('k' | 'b' | 'g'),
+            ..
+        } | InputEvent::Mouse {
+            kind: crate::viewer::MouseEventKind::ScrollUp,
+            ..
+        }
+    )
+}
+
+fn event_forces_tail(event: InputEvent) -> bool {
+    matches!(
+        event,
+        InputEvent::Key {
+            code: KeyCode::End | KeyCode::Char('G'),
+            ..
+        }
+    )
+}
+
+fn event_moves_toward_tail(event: InputEvent) -> bool {
+    matches!(
+        event,
+        InputEvent::Key {
+            code: KeyCode::Down | KeyCode::PageDown | KeyCode::Char('j' | ' '),
+            ..
+        } | InputEvent::Mouse {
+            kind: crate::viewer::MouseEventKind::ScrollDown,
+            ..
+        }
+    )
 }
 
 fn draw_view(
@@ -353,13 +537,30 @@ fn draw_view(
         width: layout.context.width,
         wrap: state.wrap,
     });
-    state.viewport_at_tail = file.line_count_exact()
+    let position_is_tail = sticky
+        .tail
+        .is_some_and(|tail| state.top == tail.top && state.top_row_offset == tail.row_offset);
+    state.viewport_at_tail = file.at_newer_boundary()
         && file.line_count() > 0
-        && bottom == file.line_count()
-        && viewport
-            .bottom
-            .as_ref()
-            .is_none_or(|bottom| bottom.line_end);
+        && (position_is_tail
+            || (bottom == file.line_count()
+                && viewport
+                    .bottom
+                    .as_ref()
+                    .is_none_or(|bottom| bottom.line_end)));
+    if state.follow == Some(FollowState::Following)
+        && file.at_newer_boundary()
+        && file.line_count() > 0
+        && !state.viewport_at_tail
+    {
+        state.follow = Some(FollowState::Detached);
+    }
+    if state.follow == Some(FollowState::Detached) && state.follow_reattach_pending {
+        if state.viewport_at_tail {
+            state.follow = Some(FollowState::Following);
+        }
+        state.follow_reattach_pending = false;
+    }
     let progress = viewer_progress_percent(file, layout.context, bottom, viewport.bottom);
     let styled = viewport.lines;
     absorb_file_notice(file, state, Instant::now());

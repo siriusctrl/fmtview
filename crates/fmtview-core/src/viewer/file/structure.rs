@@ -127,7 +127,7 @@ fn structure_start_line(
 fn reached_structure_scan_end(file: &dyn ViewFile, task: &StructureTask) -> bool {
     match task.direction {
         StructureDirection::Forward => {
-            file.line_count_exact() && task.next_line >= file.line_count()
+            file.at_newer_boundary() && task.next_line >= file.line_count()
         }
         StructureDirection::Backward => task.next_line == usize::MAX,
     }

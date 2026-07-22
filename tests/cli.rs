@@ -4,6 +4,42 @@ use std::{fs, io::Write};
 use tempfile::{Builder as TempFileBuilder, NamedTempFile, tempdir};
 
 #[test]
+fn help_documents_follow_mode() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("-F, --follow"))
+        .stdout(predicate::str::contains(
+            "Open a JSONL/NDJSON file at its tail",
+        ));
+}
+
+#[test]
+fn follow_rejects_redirected_stdout() {
+    let mut input = TempFileBuilder::new().suffix(".jsonl").tempfile().unwrap();
+    input.write_all(b"{\"id\":1}\n").unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["--follow", input.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "--follow requires an interactive terminal on stdout",
+        ));
+}
+
+#[test]
+fn follow_requires_a_file_source() {
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["--follow", "-"])
+        .write_stdin("{\"id\":1}\n")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--follow requires a file path"));
+}
+
+#[test]
 fn formats_json_from_stdin() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
     cmd.args(["--type", "json"])

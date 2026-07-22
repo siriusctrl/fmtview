@@ -284,7 +284,7 @@ pub(in crate::viewer) fn process_search_step(
     }
 
     task.next_line = step.next_line;
-    let incomplete_index = !file.line_count_exact();
+    let incomplete_index = !file.at_newer_boundary();
     task.remaining = task.remaining.saturating_sub(step.scanned);
     if incomplete_index
         && task.direction == SearchDirection::Forward
@@ -292,6 +292,11 @@ pub(in crate::viewer) fn process_search_step(
         && step.scanned > 0
     {
         task.remaining = SEARCH_CHUNK_LINES;
+    }
+    if (task.remaining == 0 || step.scanned == 0) && file.has_older_records() {
+        task.remaining = SEARCH_CHUNK_LINES;
+        state.search_task = Some(task);
+        return Ok(false);
     }
     if task.remaining == 0 || step.scanned == 0 {
         state.search_target = None;
@@ -383,7 +388,7 @@ pub(in crate::viewer) fn scan_search_forward(
     task: &SearchTask,
 ) -> Result<SearchStep> {
     let line_count = file.line_count();
-    let exact_line_count = file.line_count_exact();
+    let exact_line_count = file.at_newer_boundary();
     if line_count == 0 || task.remaining == 0 {
         return Ok(SearchStep {
             found: None,

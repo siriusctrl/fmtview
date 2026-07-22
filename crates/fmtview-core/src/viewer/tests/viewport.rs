@@ -493,6 +493,35 @@ fn tail_position_keeps_nowrap_last_page_full() {
 }
 
 #[test]
+fn non_follow_wrapped_tail_gate_remains_exact() {
+    let mut temp = NamedTempFile::new().unwrap();
+    for index in 0..10 {
+        writeln!(temp, "line-{index}").unwrap();
+    }
+    let file = IndexedTempFile::new("test".to_owned(), temp).unwrap();
+    let mut state = ViewState {
+        top: 5,
+        wrap: true,
+        ..ViewState::default()
+    };
+    let context = RenderContext {
+        gutter: GutterLayout::new(1, false),
+        x: 0,
+        width: 4,
+        wrap: true,
+        mode: FormatKind::Json,
+    };
+    let mut tail_cache = TailPositionCache::default();
+
+    let tail =
+        adjust_state_for_visible_height(&file, &mut state, 3, context, &mut tail_cache).unwrap();
+
+    assert_eq!(last_full_logical_page_top(file.line_count(), 3), 7);
+    assert_eq!(state.top, 5);
+    assert!(tail.is_none());
+}
+
+#[test]
 fn wrapped_tail_position_can_start_inside_last_line() {
     let mut temp = NamedTempFile::new().unwrap();
     writeln!(temp, "prev").unwrap();

@@ -3,8 +3,8 @@ use std::io::{self, IsTerminal, Write};
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use fmtview_core::{
-    FormatKind, FormatOptions, TypeProfile, diff_sources, diff_view, open_view_file,
-    open_view_file_with_fallback, transform_source_to_temp,
+    ContentShape, FormatKind, FormatOptions, TypeProfile, diff_sources, diff_view,
+    open_follow_view_file, open_view_file, open_view_file_with_fallback, transform_source_to_temp,
 };
 
 use crate::{
@@ -46,6 +46,10 @@ struct FormatCommand {
     /// Number of spaces used when pretty-printing JSON, XML, and HTML.
     #[arg(long, default_value_t = 2)]
     indent: usize,
+
+    /// Open a JSONL/NDJSON file at its tail and follow committed appended records.
+    #[arg(short = 'F', long)]
+    follow: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -114,6 +118,13 @@ fn run_alias(command: AliasCommand) -> Result<()> {
 fn run_format(command: FormatCommand) -> Result<()> {
     validate_indent(command.indent)?;
 
+    if command.follow && (command.literal.is_some() || command.input == "-") {
+        bail!("--follow requires a file path; stdin and --literal are not live sources");
+    }
+    if command.follow && !should_view() {
+        bail!("--follow requires an interactive terminal on stdout");
+    }
+
     let input = input::from_arg(&command.input, command.literal.as_deref())
         .context("failed to open input")?;
     let kind = FormatKind::from(command.kind);
@@ -123,6 +134,16 @@ fn run_format(command: FormatCommand) -> Result<()> {
     };
     let profile = TypeProfile::resolve(&input, &options)?;
     let resolved_options = profile.format_options(command.indent);
+
+    if command.follow {
+        if profile.content_shape() != ContentShape::RecordStream
+            || profile.content_kind() != FormatKind::Jsonl
+        {
+            bail!("--follow currently supports JSONL/NDJSON record streams only");
+        }
+        let opened = open_follow_view_file(&input, &resolved_options)?;
+        return viewer::run(opened.file, opened.content, opened.notice);
+    }
 
     if should_view() {
         let opened = if kind == FormatKind::Auto {

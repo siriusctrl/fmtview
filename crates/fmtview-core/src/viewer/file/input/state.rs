@@ -11,6 +11,13 @@ pub(in crate::viewer) enum FooterMessageKind {
     Error,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::viewer) enum FollowState {
+    Following,
+    Detached,
+    Paused,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::viewer) struct FooterMessage {
     pub(in crate::viewer) text: String,
@@ -46,6 +53,8 @@ pub(in crate::viewer) struct ViewState {
     pub(in crate::viewer) tool_target: Option<usize>,
     pub(in crate::viewer) viewport_at_tail: bool,
     pub(in crate::viewer) preserve_tail_on_next_draw: bool,
+    pub(in crate::viewer) follow: Option<FollowState>,
+    pub(in crate::viewer) follow_reattach_pending: bool,
     pub(in crate::viewer) mouse_capture: bool,
 }
 
@@ -79,6 +88,8 @@ impl Default for ViewState {
             tool_target: None,
             viewport_at_tail: false,
             preserve_tail_on_next_draw: false,
+            follow: None,
+            follow_reattach_pending: false,
             mouse_capture: true,
         }
     }
@@ -203,5 +214,62 @@ impl ViewState {
         self.tool_context_line = None;
         self.tool_selection = None;
         self.tool_target = None;
+    }
+
+    pub(in crate::viewer) fn shift_for_insert(&mut self, at: usize, lines: usize) {
+        if lines == 0 {
+            return;
+        }
+        shift_index(&mut self.top, at, lines);
+        shift_optional_index(&mut self.search_cursor, at, lines);
+        shift_optional_index(&mut self.structure_cursor, at, lines);
+        shift_optional_index(&mut self.tool_context_line, at, lines);
+        shift_optional_index(&mut self.tool_target, at, lines);
+        shift_target(&mut self.search_match_target, at, lines);
+        shift_target(&mut self.search_target, at, lines);
+        shift_target(&mut self.structure_target, at, lines);
+        if let Some(task) = self.search_task.as_mut() {
+            shift_index(&mut task.next_line, at, lines);
+            task.remaining = task.remaining.saturating_add(lines);
+        }
+        if let Some(index) = self.search_index.as_mut() {
+            index.counted_lines = 0;
+            index.matches = 0;
+            index.line_match_totals.clear();
+            index.exact = false;
+        }
+        if let Some(task) = self.structure_task.as_mut() {
+            if task.next_line != usize::MAX {
+                shift_index(&mut task.next_line, at, lines);
+            }
+            if let Some(viewport) = task.viewport.as_mut() {
+                shift_index(&mut viewport.top, at, lines);
+                shift_index(&mut viewport.bottom, at, lines);
+            }
+        }
+        if let Some(viewport) = self.structure_viewport.as_mut() {
+            shift_index(&mut viewport.top, at, lines);
+            shift_index(&mut viewport.bottom, at, lines);
+        }
+        self.search_match_ordinal = None;
+        self.clear_tool_navigation();
+    }
+}
+
+fn shift_index(value: &mut usize, at: usize, lines: usize) {
+    if *value >= at {
+        *value = value.saturating_add(lines);
+    }
+}
+
+fn shift_optional_index(value: &mut Option<usize>, at: usize, lines: usize) {
+    if let Some(value) = value.as_mut() {
+        shift_index(value, at, lines);
+    }
+}
+
+fn shift_target(target: &mut Option<super::search::SearchTarget>, at: usize, lines: usize) {
+    if let Some(target) = target.as_mut() {
+        shift_index(&mut target.line, at, lines);
     }
 }

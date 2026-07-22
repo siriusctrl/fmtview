@@ -7,9 +7,13 @@ use ratatui::{
 use crate::{load::ViewFile, transform::FormatKind};
 
 use super::super::{
-    breadcrumb::JsonBreadcrumbCache, input::ViewState, position::adjust_state_for_visible_height,
+    breadcrumb::{JsonBreadcrumbCache, MAX_BREADCRUMB_ROWS},
+    input::{FollowState, ViewState},
+    position::adjust_state_for_visible_height,
 };
-use super::{GutterLayout, RenderContext, TailPositionCache, ViewPosition};
+use super::{
+    GutterLayout, RenderContext, TailPositionCache, ViewPosition, last_full_logical_page_top,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub(in crate::viewer) struct DrawLayout {
@@ -77,6 +81,11 @@ pub(in crate::viewer) fn sync_sticky_layout(
     let mut visible_height = layout.base_visible_height;
     let mut tail = None;
     let preserve_tail = state.preserve_tail_on_next_draw;
+    let pin_follow_tail = state.follow == Some(FollowState::Following);
+    let pin_requested_tail = state.follow == Some(FollowState::Detached)
+        && state.follow_reattach_pending
+        && file.at_newer_boundary()
+        && state.top >= last_full_logical_page_top(file.line_count(), layout.base_visible_height);
     let preserved_tail_position = preserve_tail.then_some(ViewPosition {
         top: state.top,
         row_offset: state.top_row_offset,
@@ -91,8 +100,18 @@ pub(in crate::viewer) fn sync_sticky_layout(
             layout.context,
             tail_cache,
         )?;
-        if preserve_tail {
+        if tail.is_none()
+            && (pin_follow_tail || pin_requested_tail)
+            && file.at_newer_boundary()
+            && state.top.saturating_add(MAX_BREADCRUMB_ROWS)
+                >= last_full_logical_page_top(file.line_count(), visible_height)
+        {
+            tail = Some(tail_cache.position(file, visible_height, layout.context)?);
+        }
+        if preserve_tail || pin_follow_tail || pin_requested_tail {
             pin_state_to_tail(state, tail);
+        }
+        if preserve_tail {
             keep_preserved_tail_position(state, preserved_tail_position);
         }
         let next_lines = sticky_lines(

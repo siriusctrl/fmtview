@@ -2,7 +2,7 @@ use crate::formats::json::tool_links::ToolLinkStatus;
 use crate::load::ViewFile;
 use crate::tui::palette::{error_style, gutter_style, warning_style};
 
-use super::super::input::{FooterMessageKind, ViewState};
+use super::super::input::{FollowState, FooterMessageKind, ViewState};
 use super::{format_count, line_number_digits};
 use ratatui::style::Style;
 
@@ -69,18 +69,33 @@ pub(in crate::viewer) fn idle_footer_text(state: &ViewState) -> String {
     }
 
     let wrap_hint = if state.wrap { "w unwrap" } else { "w wrap" };
+    let follow_hint = follow_hint(state);
+    let page_hint = if state.follow.is_some() {
+        "Space,b"
+    } else {
+        "Space/f,b"
+    };
     let position = wrap_position_text(state)
         .map(|position| format!("{position} | "))
         .unwrap_or_default();
     if let Some(count) = search_count_text(state) {
         return format!(
-            " {position}search: {count} | n/N next/prev | Esc clear search | / new search | {wrap_hint} | ]/[ structure "
+            " {position}{follow_hint}search: {count} | n/N next/prev | Esc clear search | / new search | {wrap_hint} | ]/[ structure "
         );
     }
 
     format!(
-        " {position}{wrap_hint} | / search | ]/[ structure | t tool pair | 123 Enter line | m select | Space/f,b "
+        " {position}{follow_hint}{wrap_hint} | / search | ]/[ structure | t tool pair | 123 Enter line | m select | {page_hint} "
     )
+}
+
+fn follow_hint(state: &ViewState) -> &'static str {
+    match state.follow {
+        Some(FollowState::Following) => "follow:on | f pause | ",
+        Some(FollowState::Detached) => "follow:detached | f pause | ",
+        Some(FollowState::Paused) => "follow:off | f follow | ",
+        None => "",
+    }
 }
 
 fn tool_context_footer_text(state: &ViewState) -> String {

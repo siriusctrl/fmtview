@@ -45,7 +45,9 @@ pub(in crate::viewer) fn handle_event_with_count(
             dirty: true,
             ..ViewerAction::default()
         },
-        InputEvent::Mouse { .. } | InputEvent::Ignore => ViewerAction::default(),
+        InputEvent::Mouse { .. } | InputEvent::Command(_) | InputEvent::Ignore => {
+            ViewerAction::default()
+        }
     }
 }
 
