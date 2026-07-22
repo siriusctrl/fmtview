@@ -55,6 +55,7 @@ struct ToolContainer {
     role_tool: bool,
     toolish_type: bool,
     tool_result_type: bool,
+    contains_typed_result: bool,
     ids: Vec<IdCandidate>,
     provisional_link: Option<ToolLink>,
     pending_child: Option<ContainerContext>,
@@ -89,7 +90,7 @@ struct PendingCall {
 #[derive(Debug, Clone)]
 struct ToolDiscovery {
     start_line: usize,
-    link: ToolLink,
+    link: Option<ToolLink>,
 }
 
 #[derive(Debug)]
@@ -109,7 +110,7 @@ enum ToolMatchDecision {
 
 impl ToolLinkTracker {
     pub(crate) fn apply_line(&mut self, line: &str, line_number: usize) {
-        self.scan_line(line, line_number);
+        let _ = self.scan_line(line, line_number);
     }
 
     #[cfg(test)]
@@ -129,7 +130,11 @@ impl ToolLinkTracker {
         for (offset, line) in visible_lines.iter().chain(lookahead_lines).enumerate() {
             let line_number = first_line.saturating_add(offset);
             for ToolDiscovery { start_line, link } in self.scan_line(line, line_number) {
-                results.insert(start_line, (offset, link));
+                if let Some(link) = link {
+                    results.insert(start_line, (offset, link));
+                } else {
+                    results.remove(&start_line);
+                }
             }
             if let Some((start_line, link)) = self.active_result() {
                 results.insert(start_line, (offset, link.clone()));
@@ -190,12 +195,10 @@ impl ToolLinkTracker {
                 '{' => self.push_container(ContainerKind::Object, line_number),
                 '[' => self.push_container(ContainerKind::Array, line_number),
                 '}' => {
-                    if let Some(discovery) = self.pop_container(ContainerKind::Object) {
-                        discoveries.push(discovery);
-                    }
+                    discoveries.extend(self.pop_container(ContainerKind::Object));
                 }
                 ']' => {
-                    self.pop_container(ContainerKind::Array);
+                    discoveries.extend(self.pop_container(ContainerKind::Array));
                 }
                 _ => {}
             }
@@ -225,24 +228,48 @@ impl ToolLinkTracker {
             role_tool: false,
             toolish_type: false,
             tool_result_type: false,
+            contains_typed_result: false,
             ids: Vec::new(),
             provisional_link: None,
             pending_child: None,
         });
     }
 
-    fn pop_container(&mut self, expected: ContainerKind) -> Option<ToolDiscovery> {
+    fn pop_container(&mut self, expected: ContainerKind) -> Vec<ToolDiscovery> {
+        let mut discoveries = Vec::new();
         while let Some(container) = self.containers.pop() {
             if container.kind != expected {
                 continue;
             }
             if expected == ContainerKind::Object {
-                if container.role_tool || container.tool_result_type {
+                if (container.role_tool || container.tool_result_type)
+                    && !container.contains_typed_result
+                {
                     let link = self.link_result(container.start_line, &container.ids);
-                    return link.map(|link| ToolDiscovery {
-                        start_line: container.start_line,
-                        link,
-                    });
+                    let mut preserved_ancestor_fallback = false;
+                    if container.tool_result_type {
+                        let authoritative_child_id = container
+                            .ids
+                            .iter()
+                            .any(|candidate| result_id_rank(&candidate.key) >= 3);
+                        let preserve_explicit_fallback = !authoritative_child_id
+                            && link
+                                .as_ref()
+                                .is_none_or(|link| link.status != ToolLinkStatus::Matched);
+                        preserved_ancestor_fallback = self.suppress_ancestor_results(
+                            &mut discoveries,
+                            preserve_explicit_fallback,
+                        );
+                    }
+                    if let Some(link) = link
+                        && !(preserved_ancestor_fallback && link.status != ToolLinkStatus::Matched)
+                    {
+                        discoveries.push(ToolDiscovery {
+                            start_line: container.start_line,
+                            link: Some(link),
+                        });
+                    }
+                    return discoveries;
                 }
                 if (container.context == ContainerContext::ToolCallObject || container.toolish_type)
                     && !container.ids.is_empty()
@@ -254,12 +281,40 @@ impl ToolLinkTracker {
                     while self.pending_calls.len() > MAX_PENDING_CALLS {
                         self.pending_calls.pop_front();
                     }
-                    return None;
+                    return discoveries;
                 }
             }
             break;
         }
-        None
+        discoveries
+    }
+
+    fn suppress_ancestor_results(
+        &mut self,
+        discoveries: &mut Vec<ToolDiscovery>,
+        preserve_explicit_fallback: bool,
+    ) -> bool {
+        let mut preserved = false;
+        for parent in &mut self.containers {
+            if preserve_explicit_fallback
+                && (parent.role_tool || parent.tool_result_type)
+                && parent
+                    .ids
+                    .iter()
+                    .any(|candidate| result_id_rank(&candidate.key) >= 3)
+            {
+                preserved = true;
+                continue;
+            }
+            parent.contains_typed_result = true;
+            if parent.provisional_link.take().is_some() {
+                discoveries.push(ToolDiscovery {
+                    start_line: parent.start_line,
+                    link: None,
+                });
+            }
+        }
+        preserved
     }
 
     fn apply_property(&mut self, property: JsonProperty) {
@@ -302,7 +357,8 @@ impl ToolLinkTracker {
         let Some(container) = self.containers.last() else {
             return;
         };
-        let link = (container.role_tool || container.tool_result_type)
+        let link = ((container.role_tool || container.tool_result_type)
+            && !container.contains_typed_result)
             .then(|| self.preview_result(container.start_line, &container.ids))
             .flatten();
         if let Some(container) = self.containers.last_mut() {

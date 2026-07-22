@@ -254,12 +254,16 @@ fixed schema. Typed `tool_call`/`tool_use` and `tool_result`/`tool_response`
 objects can link by exact IDs even when they are nested in `content` arrays.
 Embedded argument strings keep their original JSON token spelling and escapes.
 
-In the interactive JSONL viewer, a `data:<media-type>;base64,...` string is
-shown as a compact media summary. A same-object `type: base64` plus
-`media_type`/`mime_type` and later `data` field is handled too. Metadata must
-precede that sibling `data` field for streaming recognition. Valid payloads
-show the decoded byte size; recognized invalid payloads say `invalid base64`
-instead of claiming a size. Redirected output never collapses these strings.
+In the interactive JSONL viewer, an unescaped-ASCII
+`data:<media-type>;base64,...` string is shown as a compact media summary. A
+same-object `type: base64` or `type: base64url` plus
+`media_type`/`mime_type` and later `data` field is handled too, as is a direct
+`attachment` object under a typed image item. Standard and URL-safe alphabets
+are validated separately. Metadata must precede that sibling `data` field for
+streaming recognition, and arbitrary `media_type` plus `data` objects are not
+guessed to be base64. Valid payloads show the decoded byte size; recognized
+invalid payloads say `invalid base64` instead of claiming a size. Redirected
+output never collapses these strings.
 
 ### Following growing JSONL files
 
@@ -452,11 +456,11 @@ older records backward when needed, and extends forward after source refreshes.
 The footer shows `follow:on`, `follow:detached`, or `follow:off`.
 
 Press `r` on a JSONL/NDJSON record to open a bounded raw snapshot backed by its
-exact source or spool range. An active search match selects its containing
+exact immutable raw-spool range. An active search match selects its containing
 record; otherwise the viewport's top record is used. The snapshot stays on that
-record while a followed source appends or resets in the background; returning
-to structured mode shows the updated stream without changing an existing
-detached anchor. Raw display
+record even if the source is appended, truncated, or replaced in the
+background; returning to structured mode shows the updated stream without
+changing an existing detached anchor. Raw display
 uses 32 KiB visual chunks so a huge record is never copied wholesale into the
 viewer frame. Search works within those chunks, but a query spanning an
 artificial chunk boundary is not matched. Invalid UTF-8 is displayed lossily;
@@ -582,6 +586,8 @@ rendered output in memory for browsing.
 - Lazy preview writes transformed records into a temporary spool and keeps compact
   offsets, not formatted strings, in memory. The title shows `N+` lines while
   the session index is still incomplete and idle time extends the index.
+- JSONL raw toggles write only ingested source records to a separate immutable
+  temporary spool, so an open snapshot cannot change after source replacement.
 - Viewer-only JSONL formatting scans recognized base64 payloads in buffered
   slices, validates padding/alphabet, and writes only the media summary. It does
   not allocate a decoded buffer or a payload-sized formatted output buffer.

@@ -371,14 +371,17 @@ anchor. The viewer synchronizes wrap and mouse-capture state when returning to
 the structured view. The terminal package only forwards backend-neutral input
 and draws the resulting frame.
 
-Record streams also have a viewer-only JSON display formatter for
-high-confidence inline base64 media. Data URIs are self-describing; sibling
-`data` fields require earlier media-type and base64-encoding metadata in the
-same object. The formatter validates the payload and computes decoded size by
-scanning buffered input without allocating a decoded buffer or copying the
-payload into the formatted spool. The ordinary transform path remains
-token-preserving, so redirected output, diffs, tool arguments, and unknown
-fields are unchanged.
+Record streams also have a viewer-only JSON display formatter for explicitly
+typed inline base64 media. Unescaped-ASCII data URI headers are
+self-describing; sibling `data` fields require earlier media-type and
+base64-encoding metadata in the same object. A typed image item's direct
+`attachment` object inherits standard base64 unless that object supplies an
+explicit encoding. Standard and URL-safe alphabets are validated separately;
+arbitrary media-type/data siblings are not inferred from payload characters.
+The formatter validates the payload and computes decoded size by scanning
+buffered input without allocating a decoded buffer or copying the payload into
+the formatted spool. The ordinary transform path remains token-preserving, so
+redirected output, diffs, tool arguments, and unknown fields are unchanged.
 
 `probe_prefix` is source-neutral rather than a filesystem seek. It returns
 committed records from the source's true beginning under the same count/byte

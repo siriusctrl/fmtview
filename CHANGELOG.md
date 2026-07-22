@@ -28,8 +28,8 @@ for GitHub Release notes, so every published version must have a matching
 
 - Collapse high-confidence inline base64 media in interactive JSONL/NDJSON
   views to media type and validated decoded size without decoding or copying it
-  into the formatted display spool. Redirected output, tool arguments, media
-  bytes, and unknown fields remain token-preserving.
+  into the formatted display spool. Source records, redirected output, diffs,
+  tool arguments, media bytes, and unknown fields remain token-preserving.
 - Split the publishable, terminal-independent viewer engine into the new
   `fmtview-core` workspace crate. Format profiles and transforms, load/index
   models, file and diff viewer state, search/navigation, highlighting, layout,

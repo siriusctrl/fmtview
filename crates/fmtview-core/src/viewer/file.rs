@@ -67,6 +67,7 @@ pub struct FileViewer {
     caches: ViewerCaches,
     pending_prewarm: Option<(ViewPosition, usize, RenderRequest)>,
     raw_record: Option<RawRecordOverlay>,
+    content_space_changed: bool,
 }
 
 struct RawRecordOverlay {
@@ -95,6 +96,7 @@ impl FileViewer {
             caches: ViewerCaches::default(),
             pending_prewarm: None,
             raw_record: None,
+            content_space_changed: false,
         }
     }
 
@@ -216,6 +218,7 @@ impl FileViewer {
                     self.caches = ViewerCaches::default();
                     self.pending_prewarm = None;
                 }
+                self.content_space_changed = true;
                 return ViewerAction {
                     dirty: true,
                     ..ViewerAction::default()
@@ -318,6 +321,11 @@ impl FileViewer {
         size: Size,
         previous_position: Option<ScrollPosition>,
     ) -> Result<RenderFrame> {
+        let previous_position = if std::mem::take(&mut self.content_space_changed) {
+            None
+        } else {
+            previous_position
+        };
         if let Some(raw) = self.raw_record.as_mut() {
             let (frame, pending_prewarm) = draw_view(
                 raw.file.as_ref(),
@@ -433,6 +441,7 @@ impl FileViewer {
                     caches: ViewerCaches::default(),
                     pending_prewarm: None,
                 });
+                self.content_space_changed = true;
             }
             Ok(None) => self.state.set_footer_message(
                 "raw view is available for record-stream inputs",

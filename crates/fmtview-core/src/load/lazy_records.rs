@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fs::File, rc::Rc, time::Duration};
+use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::Duration};
 
 use anyhow::{Context, Result};
 
@@ -27,11 +27,11 @@ impl LazyTransformedRecordsFile {
             .with_context(|| format!("failed to stat {}", source.label()))?
             .len();
         Ok(Self {
-            inner: LazyFile::with_raw_source(
+            inner: LazyFile::with_raw_records(
                 label.clone(),
                 len,
                 RecordTransformProducer::new(label, file, options, Rc::clone(&notices)),
-                Some(source.open()?),
+                true,
             )?,
             notices,
         })
@@ -123,6 +123,14 @@ impl LazyProducer for RecordTransformProducer {
             bytes: record.bytes,
         })
     }
+
+    fn write_last_raw_record(&self, output: &mut dyn Write) -> Result<Option<u64>> {
+        let raw = self.reader.last_raw_record();
+        output
+            .write_all(raw)
+            .context("failed to write lazy raw record spool")?;
+        Ok(Some(raw.len() as u64))
+    }
 }
 
 #[derive(Default)]
@@ -157,7 +165,10 @@ impl RecordRecoveryNotices {
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Write, time::Duration};
+    use std::{
+        io::{Seek, SeekFrom, Write},
+        time::Duration,
+    };
 
     use tempfile::NamedTempFile;
 
@@ -303,6 +314,42 @@ mod tests {
         let raw = raw.read_window(0, raw.line_count()).unwrap().concat();
 
         assert_eq!(raw.as_bytes(), input.strip_suffix(b"\n").unwrap());
+    }
+
+    #[test]
+    fn lazy_raw_record_uses_the_ingested_snapshot_after_source_rewrites() {
+        let input = b"{\"value\":\"ORIGINAL\"}\n";
+        let (mut temp, source) = temp_source(input);
+        let options = FormatOptions {
+            kind: FormatKind::Jsonl,
+            indent: 2,
+        };
+        let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
+        let lines = file.read_window(0, 16).unwrap();
+        let value_line = lines
+            .iter()
+            .position(|line| line.contains("ORIGINAL"))
+            .unwrap();
+
+        temp.as_file_mut().seek(SeekFrom::Start(0)).unwrap();
+        temp.as_file_mut()
+            .write_all(b"{\"value\":\"MUTATED!\"}\n")
+            .unwrap();
+        temp.as_file_mut().flush().unwrap();
+
+        let raw = file.open_raw_record(value_line).unwrap().unwrap();
+        assert_eq!(
+            raw.read_window(0, raw.line_count()).unwrap().concat(),
+            "{\"value\":\"ORIGINAL\"}"
+        );
+
+        temp.as_file_mut().set_len(0).unwrap();
+        temp.as_file_mut().write_all(b"replacement\n").unwrap();
+        temp.as_file_mut().flush().unwrap();
+        assert_eq!(
+            raw.read_window(0, raw.line_count()).unwrap().concat(),
+            "{\"value\":\"ORIGINAL\"}"
+        );
     }
 
     #[test]

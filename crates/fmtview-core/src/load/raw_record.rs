@@ -64,6 +64,7 @@ impl RawRecordViewFile {
         let advance = lookahead[..read]
             .iter()
             .take_while(|byte| is_utf8_continuation(**byte))
+            .take(3)
             .count();
         Ok(nominal.saturating_add(advance as u64).min(self.len))
     }
@@ -160,5 +161,41 @@ mod tests {
         assert_eq!(chunks.concat(), text.trim_end());
         assert!(chunks.iter().all(|chunk| chunk.len() <= 32 * 1024 + 3));
         assert!(view.label().contains("raw record at line 13"));
+    }
+
+    #[test]
+    fn invalid_utf8_continuations_adjust_a_chunk_boundary_by_at_most_three_bytes() {
+        let mut spool = NamedTempFile::new().unwrap();
+        let mut bytes = vec![b'a'; RAW_VIEW_CHUNK_BYTES as usize];
+        bytes.extend_from_slice(&[0x80; 4]);
+        bytes.push(b'\n');
+        spool.write_all(&bytes).unwrap();
+        spool.flush().unwrap();
+        let view = RawRecordViewFile::new(
+            spool.reopen().unwrap(),
+            "invalid.jsonl",
+            0,
+            bytes.len() as u64,
+            0,
+        )
+        .unwrap();
+        let mut file = spool.reopen().unwrap();
+
+        assert_eq!(
+            view.boundary(1, &mut file).unwrap(),
+            RAW_VIEW_CHUNK_BYTES + 3
+        );
+        assert_eq!(view.read_window(0, 1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn empty_raw_record_still_has_one_empty_virtual_line() {
+        let mut spool = NamedTempFile::new().unwrap();
+        spool.write_all(b"\n").unwrap();
+        spool.flush().unwrap();
+        let view = RawRecordViewFile::new(spool.reopen().unwrap(), "empty.jsonl", 0, 1, 0).unwrap();
+
+        assert_eq!(view.line_count(), 1);
+        assert_eq!(view.read_window(0, 1).unwrap(), vec![""]);
     }
 }
