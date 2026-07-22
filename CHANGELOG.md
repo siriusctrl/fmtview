@@ -43,6 +43,15 @@ for GitHub Release notes, so every published version must have a matching
   in the initial or lazily loaded older follow window.
 - Require the release workflow to resolve an exact version tag and validate its
   changelog entry before any crates.io or npm publishing job can start.
+- Reconcile replacement epochs only after lazy backward loading reaches the
+  true committed prefix, preserving legitimate tail duplicates and overlaps
+  that span more than one load batch.
+- Keep `f` available as search text while the search prompt is active, keep
+  `End`/`G` from resuming an explicitly paused follow session, and avoid treating
+  shifted horizontal wheel input as tail detach/reattach navigation.
+- Include records appended after an active forward search began, keep newer
+  source cursors retry-safe on read errors, and wrap terminal frame commits in
+  synchronized updates so supporting emulators can defer partial redraws.
 
 ## [0.5.4] - 2026-07-17
 

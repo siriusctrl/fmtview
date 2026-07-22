@@ -249,10 +249,12 @@ committed tail:
 fmtview --follow service.jsonl
 ```
 
-The first frame reverse-scans only enough source data to build the last
-viewport; it does not format or index the file from the beginning. A final
-record is committed only after its newline arrives, so a writer's partial EOF
-record is never displayed early. While the viewport remains at the bottom,
+The first frame reverse-scans from EOF to the newest committed record boundary;
+it does not format or index earlier committed records from the beginning. The
+scan work is proportional to the incomplete EOF suffix, so a newline-free file
+is the intentional worst case. A final record is committed only after its
+newline arrives, so a writer's partial EOF record is never displayed early.
+While the viewport remains at the bottom,
 committed appends advance it automatically. Scrolling up changes the footer to
 `follow:detached`; scrolling back to the physical bottom reattaches. Press `f`
 to pause or resume follow explicitly. Search plus structure, chat-role, and tool
@@ -261,7 +263,11 @@ after opening.
 
 Follow mode requires a real file and an interactive stdout terminal. Ordinary
 viewing and redirected output are unchanged; `--follow` never turns redirected
-stdout into an endless stream.
+stdout into an endless stream. The built-in file source is intended for
+append-oriented logs and detects normal truncation, rotation, replacement, and
+copytruncate signals. A producer that performs arbitrary in-place rewrites
+without a distinguishable identity or metadata change should provide its own
+`RecordTimeline` implementation.
 
 Format a literal string:
 
@@ -537,9 +543,11 @@ rendered output in memory for browsing.
 - Record-like TTY previews, such as JSONL logs, use a lazy path: `fmtview`
   sniffs a small prefix to confirm that the input is independent records, then
   formats only the records needed for the visible window.
-- Follow-mode JSONL opens from a bounded reverse tail scan. Refresh locates the
+- Follow-mode JSONL opens from a chunked reverse tail scan. Refresh locates the
   newest committed delimiter from EOF, and record/byte budgets bound subsequent
-  older and newer loads; no persistent full-file index is required.
+  older and newer loads; no persistent full-file index is required. Total open
+  scan work is bounded by the incomplete EOF record rather than by the full
+  committed history.
 - Lazy preview writes transformed records into a temporary spool and keeps compact
   offsets, not formatted strings, in memory. The title shows `N+` lines while
   the session index is still incomplete and idle time extends the index.
