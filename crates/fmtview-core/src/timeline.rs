@@ -466,30 +466,23 @@ impl RecordTimeline for FileRecordTimeline {
             return Ok(TimelineRead::Pending);
         }
         let limit = limit.normalized();
-        let mut records = Vec::new();
-        let mut bytes = 0_usize;
-        while self.newer_cursor < self.committed_end && records.len() < limit.max_records {
-            let (end, raw) = read_next_record(
-                &mut self.file,
-                self.newer_cursor,
-                self.committed_end,
-                &mut self.instrumentation,
-                &self.label,
-            )?;
-            bytes = bytes.saturating_add(raw.len());
-            records.push(TimelineRecord {
-                id: RecordId {
-                    epoch: self.epoch,
-                    start_offset: self.newer_cursor,
-                    end_offset: end,
-                },
-                raw,
-            });
-            self.newer_cursor = end;
-            if bytes >= limit.max_bytes {
-                break;
-            }
-        }
+        let start = self.newer_cursor;
+        let committed_end = self.committed_end;
+        let epoch = self.epoch;
+        let (records, next_cursor) =
+            read_newer_batch(epoch, start, committed_end, limit, |cursor| {
+                read_next_record(
+                    &mut self.file,
+                    cursor,
+                    committed_end,
+                    &mut self.instrumentation,
+                    &self.label,
+                )
+            })?;
+        // Publish cursor progress only after the complete batch has been read.
+        // A later-record failure therefore leaves the caller able to retry
+        // from the same first record instead of silently skipping it.
+        self.newer_cursor = next_cursor;
         self.instrumentation.records_yielded = self
             .instrumentation
             .records_yielded
@@ -520,6 +513,35 @@ impl RecordTimeline for FileRecordTimeline {
         }
         unreachable!("refresh retry loop always returns")
     }
+}
+
+fn read_newer_batch(
+    epoch: u64,
+    start: u64,
+    committed_end: u64,
+    limit: RecordLoadLimit,
+    mut read_next: impl FnMut(u64) -> Result<(u64, Vec<u8>)>,
+) -> Result<(Vec<TimelineRecord>, u64)> {
+    let mut cursor = start;
+    let mut records = Vec::new();
+    let mut bytes = 0_usize;
+    while cursor < committed_end && records.len() < limit.max_records {
+        let (end, raw) = read_next(cursor)?;
+        bytes = bytes.saturating_add(raw.len());
+        records.push(TimelineRecord {
+            id: RecordId {
+                epoch,
+                start_offset: cursor,
+                end_offset: end,
+            },
+            raw,
+        });
+        cursor = end;
+        if bytes >= limit.max_bytes {
+            break;
+        }
+    }
+    Ok((records, cursor))
 }
 
 fn find_committed_end(
@@ -788,5 +810,35 @@ impl FileIdentity {
             first: created,
             second: 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn newer_batch_failure_does_not_publish_partial_cursor_progress() {
+        let limit = RecordLoadLimit::new(8, 4096).normalized();
+        let error = read_newer_batch(7, 0, 4, limit, |cursor| match cursor {
+            0 => Ok((2, b"a\n".to_vec())),
+            2 => bail!("injected later-record read failure"),
+            _ => unreachable!(),
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("later-record read failure"));
+
+        let (records, cursor) = read_newer_batch(7, 0, 4, limit, |cursor| match cursor {
+            0 => Ok((2, b"a\n".to_vec())),
+            2 => Ok((4, b"b\n".to_vec())),
+            _ => unreachable!(),
+        })
+        .unwrap();
+        assert_eq!(cursor, 4);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].id.start_offset, 0);
+        assert_eq!(records[0].raw, b"a\n");
+        assert_eq!(records[1].id.start_offset, 2);
+        assert_eq!(records[1].raw, b"b\n");
     }
 }
