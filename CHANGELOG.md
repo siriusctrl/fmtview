@@ -48,6 +48,8 @@ for GitHub Release notes, so every published version must have a matching
 - Revalidate bounded pending tails before scanning appended bytes, so an
   in-place delimiter rewrite followed by growth is not missed, and publish
   newer-read cursor progress only after the complete batch succeeds.
+- Keep an in-progress forward search open to committed records appended after
+  the search began, including a match that arrives at the previous tail.
 
 ## [0.5.4] - 2026-07-17
 

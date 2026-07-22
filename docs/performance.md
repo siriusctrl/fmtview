@@ -135,8 +135,11 @@ Load metrics:
   Shape: `record-stream/huge-record`.
 - `timeline tail-first open+format` measures reverse tail discovery, formatting
   the initial bounded record batch, spooling/indexing it, and reading the last
-  viewport. Fixture generation is outside the timed region, and correctness
-  tests separately assert bounded source bytes with instrumentation.
+  viewport. Fixture generation is outside the timed region. Correctness tests
+  separately assert bounded work for a normally delimited million-record file;
+  a newline-free EOF suffix remains proportional to that single incomplete
+  record because no source can prove the absence of an earlier delimiter
+  without reading it.
 - `timeline older prepend+format` measures one bounded backward record load,
   formatting/spooling, and insertion into the session indexes.
 - `timeline append refresh+format` measures reverse committed-boundary refresh,

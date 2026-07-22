@@ -320,10 +320,13 @@ The contract has these invariants:
   fixed epoch boundary and cannot interleave ahead of stale old-epoch history.
 
 `FileRecordTimeline` implements the seam for growing newline-delimited files.
-It locates committed EOF from bounded reverse chunks, never exposes an
+It locates committed EOF with fixed-size reverse-read buffers, never exposes an
 incomplete final line, and lets bounded forward loads do the record work after
-a refresh. Refresh validates bounded start/middle/end samples of committed
-history independently of file timestamps, catching same-identity rewrites when
+a refresh. The total initial scan is proportional to the incomplete EOF suffix,
+so a newline-free file can require reading back to offset zero even though the
+scanner's memory stays bounded. Refresh validates bounded start/middle/end
+samples of committed history independently of file timestamps, catching
+same-identity rewrites when
 one of those windows changes without indexing the whole file. Inode/device
 identity is used on Unix; portable fallbacks never treat file length as
 identity.
