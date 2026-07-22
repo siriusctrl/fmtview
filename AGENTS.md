@@ -47,6 +47,10 @@ workflow-specific docs.
 
 - Keep stdout output valid and scriptable.
 - Keep interactive behavior behind TTY detection.
+- Keep `fmtview-core` terminal-backend independent. Crossterm event adaptation,
+  polling, raw mode, frame commit, and cleanup belong in the root package.
+- Keep the root `fmtview`, `fmtview-core`, and npm package versions aligned;
+  publish `fmtview-core` before `fmtview` as documented in `docs/releasing.md`.
 - Preserve JSON string values. The viewer may highlight embedded XML, but formatted output must not rewrite string contents.
 - Update `README.md` when CLI flags, install steps, or user-visible behavior changes.
 - Update `CHANGELOG.md` when user-facing behavior, packaging, or release process changes.

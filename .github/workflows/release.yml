@@ -45,10 +45,12 @@ jobs:
         run: |
           set -euo pipefail
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          core_version="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/fmtview-core/Cargo.toml | head -n 1)"
           npm_version="$(node -p "require('./npm/fmtview/package.json').version")"
           tag="${RELEASE_TAG#v}"
 
           test "$version" = "$tag"
+          test "$core_version" = "$version"
           test "$npm_version" = "$version"
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -164,46 +166,75 @@ jobs:
           ref: ${{ needs.build-linux-x64.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Check crates.io package version
+      - name: Check crates.io package versions
         id: crates-published
         env:
           VERSION: ${{ needs.build-linux-x64.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
-          status="$(
-            curl -sS -o /tmp/crate-version.json -w '%{http_code}' \
-              -H "User-Agent: fmtview-release (https://github.com/siriusctrl/fmtview)" \
-              "https://crates.io/api/v1/crates/fmtview/$VERSION"
-          )"
-          case "$status" in
-            200)
-              echo "published=true" >> "$GITHUB_OUTPUT"
-              ;;
-            404)
-              echo "published=false" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "crates.io version check failed with HTTP $status"
-              sed -n '1,120p' /tmp/crate-version.json
-              exit 1
-              ;;
-          esac
+          check_version() {
+            local crate="$1"
+            local output="$2"
+            local response="/tmp/${crate}-version.json"
+            local status
+            status="$(
+              curl -sS -o "$response" -w '%{http_code}' \
+                -H "User-Agent: fmtview-release (https://github.com/siriusctrl/fmtview)" \
+                "https://crates.io/api/v1/crates/$crate/$VERSION"
+            )"
+            case "$status" in
+              200) echo "$output=true" >> "$GITHUB_OUTPUT" ;;
+              404) echo "$output=false" >> "$GITHUB_OUTPUT" ;;
+              *)
+                echo "crates.io version check for $crate failed with HTTP $status"
+                sed -n '1,120p' "$response"
+                exit 1
+                ;;
+            esac
+          }
+          check_version fmtview-core core_published
+          check_version fmtview cli_published
 
-      - name: Dry-run crates.io package
-        run: cargo publish --dry-run --locked
+      - name: Dry-run fmtview-core package
+        run: cargo publish -p fmtview-core --dry-run --locked
 
-      - name: Publish to crates.io
-        if: env.CARGO_REGISTRY_TOKEN != '' && steps.crates-published.outputs.published != 'true'
-        run: cargo publish --locked --token "$CARGO_REGISTRY_TOKEN"
+      - name: Publish fmtview-core to crates.io
+        if: env.CARGO_REGISTRY_TOKEN != '' && steps.crates-published.outputs.core_published != 'true'
+        run: cargo publish -p fmtview-core --locked --token "$CARGO_REGISTRY_TOKEN"
 
-      - name: Skip already published crates.io version
-        if: steps.crates-published.outputs.published == 'true'
-        run: echo "fmtview ${{ needs.build-linux-x64.outputs.version }} is already published on crates.io."
+      - name: Wait for fmtview-core registry availability
+        if: env.CARGO_REGISTRY_TOKEN != '' && steps.crates-published.outputs.core_published != 'true'
+        env:
+          VERSION: ${{ needs.build-linux-x64.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            status="$(
+              curl -sS -o /tmp/fmtview-core-version.json -w '%{http_code}' \
+                -H "User-Agent: fmtview-release (https://github.com/siriusctrl/fmtview)" \
+                "https://crates.io/api/v1/crates/fmtview-core/$VERSION"
+            )"
+            if [ "$status" = "200" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "fmtview-core $VERSION did not become available before the timeout." >&2
+          exit 1
 
-      - name: Skip crates.io publish
-        if: env.CARGO_REGISTRY_TOKEN == '' && steps.crates-published.outputs.published != 'true'
-        run: echo "CARGO_REGISTRY_TOKEN is not configured; skipped crates.io publish."
+      - name: Dry-run fmtview package
+        if: steps.crates-published.outputs.core_published == 'true' || env.CARGO_REGISTRY_TOKEN != ''
+        run: cargo publish -p fmtview --dry-run --locked
+
+      - name: Publish fmtview to crates.io
+        if: env.CARGO_REGISTRY_TOKEN != '' && steps.crates-published.outputs.cli_published != 'true'
+        run: cargo publish -p fmtview --locked --token "$CARGO_REGISTRY_TOKEN"
+
+      - name: Skip crates.io publish without credentials
+        if: env.CARGO_REGISTRY_TOKEN == ''
+        run: echo "CARGO_REGISTRY_TOKEN is not configured; verified fmtview-core packaging and skipped registry publishing."
 
   npm:
     runs-on: ubuntu-latest

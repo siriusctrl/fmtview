@@ -27,6 +27,36 @@ The core boundary is:
                   +-------------+  +---------------+  +---------------+  +-----------+
 ```
 
+## Crate Boundary
+
+The workspace has a one-way application-to-engine dependency:
+
+```text
+fmtview application package
+  clap CLI, stdin/file/literal assembly, redirected stdout
+  crossterm event adapter and terminal lifecycle
+  raw mode, alternate screen, mouse capture, polling, frame commit, cleanup
+                         |
+                         v
+fmtview-core library package
+  format profiles and transforms, load/index models, diff models
+  file/diff viewer state, viewport, wrap, search, navigation, highlight
+  chat/tool relations, layout and render caches
+  backend-neutral InputEvent -> state transition -> RenderFrame
+```
+
+`fmtview-core` has no `crossterm` dependency. It can reuse backend-neutral
+ratatui types such as `Size`, `Rect`, `Line`, `Style`, and `Buffer`, but it does
+not enable ratatui's crossterm feature or create a terminal backend. The root
+`fmtview` package maps crossterm key, mouse, and resize events into core
+`InputEvent` values. `FileViewer` and `DiffViewer` update engine state and
+return a `RenderFrame`; the application owns when that frame is committed and
+how terminal state is restored.
+
+This is a product boundary, not only a package boundary. Core tests render
+file and diff frames, drive search and navigation, and paint frames into an
+in-memory ratatui buffer without raw mode, a PTY, or a terminal backend.
+
 `TypeProfile` selects the format package and shared runtime behavior for the
 current input. It answers four questions:
 
@@ -36,7 +66,8 @@ current input. It answers four questions:
   produced transformed lines?
 - Which transform should redirected stdout and diff input use?
 
-Format-specific behavior lives under `src/formats/<format>/`. The viewer,
+Format-specific behavior lives under
+`crates/fmtview-core/src/formats/<format>/`. The viewer,
 loader, transformer, and diff code remain runtime layers: they ask the active
 format package how to highlight visible text, format records/documents, resolve
 Markdown fenced-code line modes, or classify structure-jump candidates.
@@ -171,25 +202,25 @@ their own JSON parsers when they need format-aware context.
 The implementation mirrors that split:
 
 ```text
-  viewer/file/structure.rs
+  crates/fmtview-core/src/viewer/file/structure.rs
     task lifecycle, no-result messages, and ViewState handoff
 
-  viewer/file/structure/scan.rs
+  crates/fmtview-core/src/viewer/file/structure/scan.rs
     bounded lazy chunk reads and forward/backward scan progress
 
-  viewer/file/structure/candidate.rs
+  crates/fmtview-core/src/viewer/file/structure/candidate.rs
     viewer-side candidate ranking policy
 
-  viewer/file/structure/visibility.rs
+  crates/fmtview-core/src/viewer/file/structure/visibility.rs
     viewport observation rules shared by all formats
 
-  formats/<format>/structure.rs
+  crates/fmtview-core/src/formats/<format>/structure.rs
     JSON, XML/HTML, Markdown, TOML, Jinja, and plain-text structure rules
 
-  formats/<format>/highlight.rs
+  crates/fmtview-core/src/formats/<format>/highlight.rs
     visible-window highlighting for each format
 
-  formats/<format>/transform.rs
+  crates/fmtview-core/src/formats/<format>/transform.rs
     formatter implementations for formats that rewrite output
 ```
 
@@ -199,46 +230,59 @@ The interactive surface is split by responsibility rather than by every file
 that happens to draw terminal text:
 
 ```text
-  viewer.rs
-    raw mode, alternate screen, mouse capture, and dispatch
+  src/viewer.rs
+    crossterm event translation, raw mode, alternate screen, mouse capture,
+    polling, engine-loop scheduling, and cleanup
 
-  tui/
-    reusable terminal primitives: color palette, screen repainting,
-    display-width wrapping, styled text slicing, and wrap checkpoints
+  src/tui/
+    terminal frame commit, buffer delta writes, and scroll-region escape output
 
-  viewer/
-    terminal-facing viewer modes and their orchestration
+  crates/fmtview-core/src/viewer/file.rs
+    FileViewer state machine: background work, input transitions, viewport
+    positioning, render orchestration, and cache prewarming
 
-  viewer/file/
-    normal file viewer mode: input/search, structure navigation, sticky
-    breadcrumbs, checkpointed conversation scopes/tool links, Markdown line
-    modes, viewport positioning, and render caches
+  crates/fmtview-core/src/viewer/file/
+    search, structure navigation, sticky breadcrumbs, checkpointed
+    conversation scopes/tool links, Markdown line modes, viewport models,
+    layout, highlighting, and render caches
 
-  viewer/file/render/
-    normal-file render output: gutter layout, line windows, visual rows,
-    caches, progress, prewarming, and search highlight overlays
+  crates/fmtview-core/src/viewer/diff.rs
+    DiffViewer state machine: diff layout, navigation, preload, and frame output
 
-  viewer/diff/
-    diff viewer mode: diff-specific input, visual-row scrolling,
-    change-block navigation, and render orchestration
+  crates/fmtview-core/src/viewer/diff/
+    diff-specific state transitions, visual-row scrolling, change navigation,
+    unified/side-by-side rows, wrapped cells, and inline styling
 
-  viewer/diff/render/
-    diff render output: styled diff rows, title/footer text, unified and
-    side-by-side layout, wrapped diff cells, and inline diff styling
+  crates/fmtview-core/src/diff/
+    comparison and diff data: redirected unified patches, eager/lazy model
+    selection, record-stream comparison, inline annotation, and row models
 
-  diff/
-    comparison and diff data: redirected unified patch output, eager/lazy TTY
-    diff model selection, record-stream comparison, inline change annotation,
-    and side-by-side row models
+  crates/fmtview-core/src/tui/
+    backend-neutral palette, styled text slicing, display-width wrapping,
+    frame data, and in-memory buffer painting
 ```
 
-This keeps all terminal-facing experiences under `viewer`, keeps comparison
-data under `diff`, and prevents low-level terminal repaint or text wrapping
-from becoming file-viewer-specific code. Normal viewing and diff viewing share
-small primitives where their models genuinely match: terminal frame repainting,
-display-width wrapping, palette/text helpers, and format highlighters. Their
-row models stay separate because normal files render indexed document lines,
-while diffs render unified or side-by-side comparison rows with change metadata.
+This keeps terminal ownership in the application package and display decisions
+in the core package. Normal viewing and diff viewing share primitives where
+their models genuinely match: backend-neutral frames, display-width wrapping,
+palette/text helpers, and format highlighters. Their row models stay separate
+because normal files render indexed document lines, while diffs render unified
+or side-by-side comparison rows with change metadata.
+
+## Next-stage Timeline Seam
+
+This extraction intentionally does not add a record timeline, tail-first
+loading, or follow behavior. The next stage should attach a bidirectional
+record source behind the core viewer model and preserve the existing outer
+contract: terminal events enter as `InputEvent`, state and loading decisions
+remain in core, and display leaves as `RenderFrame`. `ViewFile` remains the
+current indexed-line access boundary; timeline work should evolve or wrap that
+model inside `fmtview-core` rather than introducing terminal polling or a
+backend protocol into the data source.
+
+That seam lets future timeline tests drive older/newer loading, anchor
+preservation, search, and navigation headlessly. The application adapter should
+only schedule engine work and commit the resulting frames.
 
 ## Load Plans
 
@@ -283,7 +327,7 @@ is the `ViewFile` contract plus `open_view_file`, which turns the active profile
 into either an eagerly indexed temp file or a lazy view file:
 
 ```text
-  load/open.rs
+  crates/fmtview-core/src/load/open.rs
     InputSource + TypeProfile + FormatOptions
              |
              v
@@ -294,10 +338,10 @@ into either an eagerly indexed temp file or a lazy view file:
              v
     Box<dyn ViewFile>
 
-  load/indexed.rs
+  crates/fmtview-core/src/load/indexed.rs
     eager temp-file line offsets + read_window
 
-  load/lines.rs
+  crates/fmtview-core/src/load/lines.rs
     shared line-offset and line-ending helpers
 ```
 

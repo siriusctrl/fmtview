@@ -8,6 +8,14 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Changed
+
+- Split the publishable, terminal-independent viewer engine into the new
+  `fmtview-core` workspace crate. Format profiles and transforms, load/index
+  models, file and diff viewer state, search/navigation, highlighting, layout,
+  render caches, and backend-neutral frames can now be tested without a real
+  terminal, while the `fmtview` package keeps the same install and binary name.
+
 ## [0.5.4] - 2026-07-17
 
 ### Added
