@@ -356,6 +356,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "fmtview-core"
+version = "0.5.4"
+
+[[package]]
 name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

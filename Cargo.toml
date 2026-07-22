@@ -1,3 +1,7 @@
+[workspace]
+members = ["crates/fmtview-core"]
+resolver = "3"
+
 [package]
 name = "fmtview"
 version = "0.5.4"
