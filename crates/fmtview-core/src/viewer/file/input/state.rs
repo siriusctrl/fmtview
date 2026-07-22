@@ -256,6 +256,17 @@ impl ViewState {
         self.search_match_ordinal = None;
         self.clear_tool_navigation();
     }
+    pub(in crate::viewer) fn extend_for_append(&mut self, lines: usize) {
+        if lines == 0 {
+            return;
+        }
+        if let Some(task) = self.search_task.as_mut() {
+            task.remaining = task.remaining.saturating_add(lines);
+        }
+        if let Some(index) = self.search_index.as_mut() {
+            index.exact = false;
+        }
+    }
 }
 
 fn shift_index(value: &mut usize, at: usize, lines: usize) {

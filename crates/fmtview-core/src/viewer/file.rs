@@ -283,6 +283,9 @@ impl FileViewer {
             self.state
                 .shift_for_insert(change.inserted_at, change.inserted_lines);
         }
+        if change.appended_lines > 0 {
+            self.state.extend_for_append(change.appended_lines);
+        }
         if change.appended_lines > 0 && self.state.follow == Some(FollowState::Following) {
             set_file_end(&mut self.state, self.file.line_count());
         }
