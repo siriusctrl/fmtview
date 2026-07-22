@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 
+use fmtview_core::{ScrollDirection, ScrollHint};
 use ratatui::{
     buffer::{Buffer, Cell},
     layout::{Constraint, Layout, Rect},
@@ -7,34 +8,6 @@ use ratatui::{
 };
 
 use super::terminal_writer::draw_cells_with_buffer;
-
-#[derive(Debug, Clone, Copy)]
-pub(super) enum ScrollDirection {
-    Up,
-    Down,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ScrollHint {
-    pub(super) amount: u16,
-    pub(super) direction: ScrollDirection,
-}
-
-impl ScrollHint {
-    pub(crate) fn up(amount: u16) -> Self {
-        Self {
-            amount,
-            direction: ScrollDirection::Up,
-        }
-    }
-
-    pub(crate) fn down(amount: u16) -> Self {
-        Self {
-            amount,
-            direction: ScrollDirection::Down,
-        }
-    }
-}
 
 pub(super) fn draw_buffer_delta<B>(
     backend: &mut B,

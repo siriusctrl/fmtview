@@ -22,8 +22,11 @@ jobs:
           set -euo pipefail
           test -n "$CARGO_REGISTRY_TOKEN"
 
-      - name: Dry-run crates.io package
-        run: cargo publish --dry-run --locked
+      - name: Dry-run fmtview-core package
+        run: cargo publish -p fmtview-core --dry-run --locked
+
+      - name: Validate workspace package metadata
+        run: cargo metadata --locked --no-deps >/dev/null
 
   npm:
     runs-on: ubuntu-latest

@@ -4,157 +4,107 @@ Read in this order when getting oriented:
 
 1. `README.md`
 2. `AGENTS.md`
+3. `docs/architecture.md`
 
 Read these when the task matches:
 
 - `docs/releasing.md`
-  - release checklist
-  - version and tag policy
+  - workspace version and tag policy
+  - `fmtview-core` before `fmtview` crates.io publishing order
   - changelog and release notes policy
-  - GitHub Release artifacts
-  - crates.io publishing
-  - npm wrapper and platform package strategy
+  - GitHub Release artifacts and npm packaging
 - `docs/performance.md`
-  - viewer rendering benchmark smoke tests
-  - formatter and lazy-preview benchmark smoke tests
+  - viewer, load, syntax, formatter, and diff benchmark smoke tests
   - complete-output formatter algorithm comparison
   - terminal draw byte-count checks
-  - comparing performance changes outside CI
 - `docs/visual-verification.md`
   - Xvfb/Kitty/ffmpeg real-terminal recording workflow
   - MP4, frame, keyframe, contact-sheet, and inspection artifacts
-  - final visual smoke checks for viewer-facing changes
 - `docs/architecture.md`
-  - viewer-first product model
-  - type profile boundaries
-  - format packages plus load, transform, viewer, and diff runtime boundaries
-  - lazy runtime and producer design
-  - benchmark-first direction for future inline parallel work
+  - application versus headless engine crate boundary
+  - type profiles, load/index, transform, viewer, and diff ownership
+  - backend-neutral input and render frames
+  - the next-stage bidirectional timeline seam
 
-Code orientation:
+## Workspace Entry Points
 
+- `Cargo.toml` is both the `fmtview` package manifest and the workspace root.
+  The user-facing package and binary name remain `fmtview`.
+- `crates/fmtview-core/Cargo.toml` is the publishable headless engine package.
+  It is versioned with the root package and has no crossterm dependency.
 - `src/bin/fmtview.rs` is the thin binary entry point.
-- `src/lib.rs` exposes the internal crate modules used by the binary and tests.
-- `src/cli.rs` wires CLI arguments to transforms, diff, load planning, and
-  viewer paths.
+- `src/lib.rs` exposes only application-layer modules used by the binary and
+  black-box tests.
+- `crates/fmtview-core/src/lib.rs` is the library boundary for profiles,
+  loading, viewer/diff engines, backend-neutral input, and render frames.
+
+## Application Package: `src/`
+
+- `src/cli.rs` owns clap types and wires commands to core transforms, loading,
+  diff models, and viewer engines. Redirected stdout stays here.
+- `src/input.rs` materializes file, stdin, and literal inputs, then hands a
+  reopenable `InputSource` to core.
 - `src/shell_alias.rs` owns `fmtview alias <bash|zsh|fish>` snippet generation
   and managed startup-file installation.
-- `src/input.rs` owns input materialization from files, stdin, and literals.
-- `src/profile.rs` resolves `--type` and auto-detection into a concrete content
-  kind, input shape, load strategy, and transform strategy.
-- `src/profile/` keeps bounded content sniffing and profile behavior tests out
-  of the resolver entry point.
-- `src/formats.rs` owns the format-capability entry point. Each folder under
-  `src/formats/` groups one format's behavior:
-  - `json/` owns JSON formatting, highlighting, chat-role and tool-link
-    detection, and structure-jump rules, plus JSON path tracking used by sticky
-    breadcrumbs.
-  - `jsonl/` owns the JSONL profile while reusing JSON record behavior.
-  - `xml/` owns XML-compatible formatting, highlighting, and structure rules.
-  - `html/` owns tolerant HTML5-style formatting that preserves markup and
-    text-node content while normalizing formatting whitespace. Highlighting and
-    `]`/`[` structure rules reuse `formats/xml`.
-  - `markdown/` owns Markdown highlighting, fenced-code line modes, and
-    heading structure rules.
-  - `toml/`, `jinja/`, and `plain/` own their respective highlighting and
-    structure rules.
-  - `markup.rs`, `spans.rs`, `indent.rs`, and `structure.rs` keep focused
-    helpers reused by multiple format packages: markup sniffing and void tags,
-    styled-span slicing, indent/window traversal, and shared structure-candidate
-    types.
-- `src/load.rs` owns the load-module entry point and exports the load-facing
-  API.
-- `src/load/` owns single-input view-file construction, indexing, lazy-load
-  runtimes, and load planning helpers:
-  - `view_file.rs` defines the `ViewFile` contract consumed by viewer code.
-  - `open.rs` converts a resolved `TypeProfile` into the right `ViewFile`.
-  - `indexed.rs` owns eager temp-file line indexing and read-window access.
-  - `lines.rs` owns shared line-offset and line-ending helpers.
-  - lazy loaders share spool/index/view-window mechanics and keep
-    format-specific record or document reading behind producer boundaries.
-  - `record_stream.rs` owns newline-delimited record access shared by lazy
-    viewing and lazy diffing: raw record reads, source offsets, per-record
-    formatting, lookahead windows, and unread buffers.
-- `src/transform.rs` owns the transform-module entry point.
-- `src/transform/` owns content transforms that can produce scriptable output:
-  - `engine.rs` orchestrates whole-source and record formatting.
-  - `detect.rs` handles formatter candidates after profile resolution.
-  - Format-specific formatter implementations live under `src/formats/<type>/`.
-- `src/diff.rs` owns the diff-module entry point.
-- `src/diff/` owns unified patch generation plus the structured diff model used
-  by redirected output and the interactive diff viewer:
-  - `external.rs` formats both sides and shells out to the platform diff tool.
-  - `stdout.rs` keeps redirected diff output on the unified patch path.
-  - `view.rs` selects the eager or lazy TTY diff model.
-  - `record_stream.rs` incrementally formats record streams for large TTY diffs.
-    It consumes `load::record_stream` readers and owns only two-sided
-    comparison, resynchronization, context omission, and diff row generation.
-  - `model/` parses unified patch rows, annotates inline changes, and builds
-    the side-by-side row model.
-- `src/tui.rs` owns shared terminal UI primitives that are not specific to the
-  normal file viewer or diff viewer:
-  - `screen.rs` owns terminal draw state and the public viewer terminal facade.
-    `buffer_frame.rs`, `terminal_writer.rs`, and `scroll.rs` split buffer
-    frame rendering, compact terminal writes, scroll regions, and buffer-delta
-    repainting.
-  - `palette.rs` owns terminal colors used by format highlighting, viewer, and diff output.
-  - `text.rs` and `wrap.rs` own shared character-counting, styled text slicing,
-    display-width wrapping, and wrap checkpoint helpers.
-- `src/viewer.rs` owns the shared TTY lifecycle: raw mode, alternate screen,
-  mouse capture setup, cleanup, and dispatch to file or diff viewer loops.
-- `src/viewer/` owns viewer submodules:
-  - `file.rs` and `file/` own the normal file viewer mode for indexed/lazy file
-    windows.
-    - `file/input.rs` and `file/input/` handle key/mouse state, scrolling, line
-      jumps, and search.
-    - `file/render.rs` and `file/render/` handle line windows, visual rows,
-      layout/sticky coordination, title/footer text, viewer gutter layout,
-      caches, progress, prewarming, and the search highlight overlay. Shared
-      text wrapping lives in `src/tui/`.
-    - `file/structure.rs` and `file/structure/` own the `]`/`[` smart structure
-      jump: task state, lazy scans, candidate ranking, and viewport visibility.
-      Format-specific structure rules live under
-      `src/formats/<type>/structure.rs`.
-    - `file/breadcrumb.rs` renders compact sticky JSON key breadcrumbs; JSON
-      path tracking lives under `src/formats/json/`.
-    - `file/chat_roles.rs` checkpoints and caches JSON conversation windows so
-      the sidebar can recover role scopes and tool-call/result relations when a
-      viewport starts deep inside an object. JSON direct-role and contextual
-      ID-matching rules live under `src/formats/json/`.
-    - `file/markdown_modes.rs` owns viewer-time Markdown fenced-code
-      checkpointing. The per-line mode rules live with Markdown under
-      `src/formats/markdown/`.
-    - `file/position.rs` resolves search, structure, and tool-pair targets to
-      visible viewport positions and clamps tail positions.
-  - `diff.rs` and `diff/` own the interactive diff viewer mode. They consume
-    `src/diff/` models but keep terminal-facing behavior in the viewer layer.
-    - `diff/input.rs` handles diff-viewer keys and mouse events.
-    - `diff/navigation.rs` handles change-block jumps and visual-row scrolling.
-    - `diff/render.rs` and `diff/render/` own all diff TTY rows, title/footer
-      text, unified and side-by-side layout, and inline diff styling.
-  - `tests/` keeps white-box viewer regression and performance smoke coverage
-    close to private TUI internals, split by input, navigation, search, render,
-    screen, cache, highlighting, and viewport responsibility. These tests stay under
-    `src/` because they intentionally exercise private render caches,
-    terminal-buffer reuse, viewer state, and jump helpers without widening the
-    public API. Structure-navigation tests live under `tests/structure/` and
-    mirror the implementation split: detection, format behavior, interaction
-    state, JSON ranking/visibility, and target clamping.
-- `tests/cli.rs` covers black-box CLI behavior through the compiled binary and
-  should be the home for public command/output contracts.
-- `scripts/record-emulator-demo.sh` runs fmtview inside a real Kitty terminal
-  on Xvfb, records the visible window, and writes visual smoke artifacts under
-  `target/fmtview-emulator-recordings/`.
-- `src/perf/` owns the Rust load/format performance harness used by the shell
-  wrappers:
-  - `runner.rs` owns sample counts, filtering, timing summaries, and output.
-  - `load.rs` and `format.rs` own benchmark case definitions.
-  - `fixtures.rs` owns generated benchmark input data.
-- `benches/` contains local performance entry points:
-  - load and format wrappers call the Rust harness in `src/perf/`.
-  - highlighter, viewer, diff, and algorithm checks still use focused shell-driven
-    smoke harnesses because they exercise private TUI internals, terminal
-    writers, release binaries, or alternate external formatter paths.
+- `src/viewer.rs` owns crossterm key/mouse/resize translation, terminal polling,
+  raw mode, alternate screen, mouse capture, engine-loop scheduling, and cleanup.
+- `src/tui/screen.rs` commits a core `RenderFrame` through a ratatui crossterm
+  backend and tracks previous buffers for compact redraws.
+- `src/tui/scroll.rs` and `src/tui/terminal_writer.rs` own terminal-specific
+  scroll-region and ANSI write mechanics.
 
-Keep README user-facing. Keep maintainer-only workflows in docs and link them
-from `AGENTS.md`.
+No application module decides which lines, styles, title, footer, search state,
+or navigation target should be displayed. Those decisions belong to core.
+
+## Headless Engine: `crates/fmtview-core/src/`
+
+- `input.rs` defines a reopenable, application-prepared `InputSource`; it does
+  not read stdin or inspect whether a process stream is a TTY.
+- `profile.rs` and `profile/` resolve explicit types, extensions, and bounded
+  sniffing into content shape, load strategy, and transform strategy.
+- `formats.rs` and `formats/` own terminal-independent format capabilities:
+  transforms, visible-window highlighting, structure candidates, JSON paths,
+  chat roles, tool relations, and Markdown fenced-code modes.
+- `transform.rs` and `transform/` own whole-source and record transforms used by
+  redirected output, eager viewing, lazy record viewing, and diff input.
+- `load.rs` and `load/` own `ViewFile`, eager temp-file indexing, lazy record
+  spooling, read windows, progress, notices, and preload mechanics.
+- `diff.rs` and `diff/` own redirected unified patches, eager/lazy interactive
+  models, record-stream comparison, inline changes, and unified/side-by-side rows.
+- `viewer/input.rs` defines backend-neutral key, pointer, resize, modifier, and
+  action types. The root package translates crossterm events into this vocabulary.
+- `viewer/file.rs` owns `FileViewer`: background search/structure work, lazy
+  preload scheduling, viewer state transitions, frame rendering, and prewarming.
+- `viewer/file/` owns search, navigation, sticky breadcrumbs, conversation/tool
+  context, Markdown checkpoints, viewport positioning, layout, gutters,
+  highlighting, render caches, and tail clamping.
+- `viewer/diff.rs` owns `DiffViewer`: preload, layout state, navigation, and
+  backend-neutral diff frames.
+- `viewer/diff/` owns diff input transitions, visual-row navigation, unified and
+  side-by-side render models, wrapped cells, and inline styles.
+- `tui/screen.rs` defines `RenderFrame`, `ScrollPosition`, and optional compact
+  repaint hints without committing them to a terminal.
+- `tui/buffer_frame.rs` paints a `RenderFrame` into an in-memory ratatui buffer.
+- `tui/palette.rs`, `tui/text.rs`, and `tui/wrap.rs` own shared styles,
+  display-width slicing, wrapping, and checkpoints.
+- `perf/` owns generated load/format benchmark cases and the Rust harness used
+  by the shell wrappers.
+
+## Tests And Performance
+
+- `crates/fmtview-core/tests/headless_viewer.rs` proves file rendering, search,
+  navigation, diff rendering, and buffer painting without a PTY or real terminal.
+- Unit tests under `crates/fmtview-core/src/viewer/tests/` remain close to private
+  engine state, render caches, search, viewport, and structure-navigation logic.
+- Root `src/tui/tests.rs` covers the actual terminal writer and frame-commit
+  adapter, including terminal draw byte-count performance cases.
+- `tests/cli.rs` covers public binary contracts and redirected output.
+- `benches/load-performance.sh`, `benches/syntax-performance.sh`,
+  `benches/viewer-performance.sh`, and `benches/format-performance.sh` are the
+  required smoke entry points for the corresponding migrated areas.
+- `scripts/record-emulator-demo.sh` runs the built CLI in a real Kitty terminal
+  on Xvfb and writes visual artifacts under
+  `target/fmtview-emulator-recordings/`.
+
+Keep README user-facing. Keep maintainer-only workflows and durable boundaries
+in docs, and link them from `AGENTS.md` when they become required reading.

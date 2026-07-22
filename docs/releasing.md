@@ -15,6 +15,11 @@ Current stable channels:
 - GitHub Releases with a static Linux x64 binary archive and checksums.
 - Git install: `cargo install --git https://github.com/siriusctrl/fmtview --locked`
 
+The workspace and release workflow are prepared to publish `fmtview-core`
+before `fmtview`, but the library is not a stable channel until the first
+release containing the extraction is available on crates.io. End users should
+continue to install the `fmtview` binary.
+
 Current binary coverage:
 
 - `x86_64-unknown-linux-musl` for GitHub Release artifacts and npm.
@@ -28,7 +33,8 @@ Add a channel to README only after it is actually published and verified.
 
 ## Version Policy
 
-- Keep the Cargo package version as the source of truth.
+- Keep the root Cargo package version as the source of truth.
+- Keep `crates/fmtview-core/Cargo.toml` at the same version as the root package.
 - Use semver.
 - Release tags should be `vX.Y.Z`.
 - The tag version must match `Cargo.toml` exactly.
@@ -41,6 +47,7 @@ cargo fmt --check
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo build --release --locked
+cargo publish -p fmtview-core --dry-run --locked
 git status -sb
 ```
 
@@ -50,7 +57,8 @@ crates.io package dry-run, and validates the npm package manifest. The crates.io
 token itself is fully validated only by the real publish step because Cargo
 dry-runs do not upload.
 
-Then update `Cargo.toml`, commit, tag, and push:
+Then update the root `Cargo.toml`, `crates/fmtview-core/Cargo.toml`, and
+`npm/fmtview/package.json` together, commit, tag, and push:
 
 ```sh
 git commit -am "chore: release vX.Y.Z"
@@ -90,20 +98,27 @@ on:
 The workflow should:
 
 - Check out the tagged commit.
+- Reject branch names, commit SHAs, and unprefixed versions: the release ref must
+  resolve to the exact existing `vX.Y.Z` tag for the checked-out commit.
 - Verify the tag version matches `Cargo.toml`.
-- Verify the npm package version matches `Cargo.toml`.
-- Verify `CHANGELOG.md` has a non-empty section for the tag.
+- Verify the `fmtview-core` and npm package versions match the root `Cargo.toml`.
+- Verify `CHANGELOG.md` has a non-empty section for the tag before any
+  publish-capable job can start.
 - Run `cargo fmt --check`, `cargo test`, and `cargo clippy --all-targets -- -D warnings`.
 - Build the Linux x64 release binary as a static musl binary.
 - Package the binary as `fmtview-linux-x64.tar.gz`.
 - Generate `sha256sums.txt`.
 - Create or update a GitHub Release for the tag.
 - Upload the binary archive and checksums as release assets.
-- Publish to crates.io if `CARGO_REGISTRY_TOKEN` is configured.
+- Publish `fmtview-core` to crates.io first, wait until that exact version is
+  available, then publish `fmtview` if `CARGO_REGISTRY_TOKEN` is configured.
 - Publish to npm using a publish-capable `NPM_TOKEN`, or through Trusted
   Publishing after it is configured.
 - Support manual reruns for an existing tag and skip registry versions that are
   already published.
+
+Manual dispatches must name an existing release tag. They are reruns of the
+tagged release path, not a way to publish from a branch or arbitrary commit.
 
 If the crates.io or npm secret is missing, the workflow still builds the GitHub
 Release artifact and skips that registry publish step.
@@ -133,7 +148,24 @@ Keep `Cargo.toml` package metadata complete:
 - `keywords`
 - `categories`
 
-Use `cargo publish --dry-run` before publishing.
+Use `cargo publish -p fmtview-core --dry-run --locked` before publishing. The
+root `fmtview` dry-run can resolve a release version only after the matching
+`fmtview-core` version exists on crates.io.
+
+The two crates are released from the same tag and use the same version, but the
+registry order is strict:
+
+```sh
+cargo publish -p fmtview-core --locked
+# Wait for fmtview-core X.Y.Z to become available from crates.io.
+cargo publish -p fmtview --dry-run --locked
+cargo publish -p fmtview --locked
+```
+
+Do not publish the root package with a path-only or mismatched core dependency.
+Its manifest must keep both `version = "X.Y.Z"` and
+`path = "crates/fmtview-core"`: workspace builds use the path, while the
+packaged crate resolves the published version.
 
 Publish only from a release tag or an approved release workflow. The release
 workflow uses the `CARGO_REGISTRY_TOKEN` GitHub secret when it is configured:
@@ -199,7 +231,8 @@ automatically detects the GitHub Actions OIDC environment during
 
 Before tagging:
 
-- Version updated in `Cargo.toml`.
+- Version updated in the root `Cargo.toml`.
+- Matching version updated in `crates/fmtview-core/Cargo.toml`.
 - Version updated in `npm/fmtview/package.json`.
 - `CHANGELOG.md` has a section for the release version.
 - `cargo fmt --check` passes.

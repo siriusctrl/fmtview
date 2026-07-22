@@ -347,8 +347,18 @@ dependencies = [
  "assert_cmd",
  "clap",
  "crossterm",
- "memchr",
+ "fmtview-core",
  "predicates",
+ "ratatui",
+ "tempfile",
+]
+
+[[package]]
+name = "fmtview-core"
+version = "0.5.4"
+dependencies = [
+ "anyhow",
+ "memchr",
  "quick-xml",
  "ratatui",
  "tempfile",
