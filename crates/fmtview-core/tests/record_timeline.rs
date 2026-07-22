@@ -43,6 +43,97 @@ fn fake_timeline_distinguishes_pending_from_terminal_end() {
 }
 
 #[test]
+fn raw_record_mapping_survives_older_prepend() {
+    let (_handle, timeline) = fake_timeline((0..6).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(2, 4096),
+    )
+    .unwrap();
+    let newest_line = find_line(&file, "record-5");
+
+    assert_eq!(
+        raw_record_text(&file, newest_line),
+        String::from_utf8(record(5)).unwrap().trim_end()
+    );
+    file.load_older_records(2, 4096).unwrap();
+
+    assert_eq!(
+        raw_record_text(&file, find_line(&file, "record-5")),
+        String::from_utf8(record(5)).unwrap().trim_end()
+    );
+    assert_eq!(
+        raw_record_text(&file, find_line(&file, "record-2")),
+        String::from_utf8(record(2)).unwrap().trim_end()
+    );
+}
+
+#[test]
+fn raw_record_mapping_tracks_newer_append() {
+    let (handle, timeline) = fake_timeline((0..3).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(4, 4096),
+    )
+    .unwrap();
+
+    handle.append(record(3));
+    file.refresh_records(4, 4096).unwrap();
+
+    assert_eq!(
+        raw_record_text(&file, find_line(&file, "record-3")),
+        String::from_utf8(record(3)).unwrap().trim_end()
+    );
+}
+
+#[test]
+fn raw_record_mapping_uses_the_replacement_epoch_after_reset() {
+    let (handle, timeline) = fake_timeline((0..3).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(4, 4096),
+    )
+    .unwrap();
+
+    handle.replace([record(20), record(21)]);
+    file.refresh_records(4, 4096).unwrap();
+
+    assert_eq!(
+        raw_record_text(&file, find_line(&file, "record-21")),
+        String::from_utf8(record(21)).unwrap().trim_end()
+    );
+}
+
+#[test]
+fn an_open_raw_record_view_remains_a_stable_snapshot_across_source_changes() {
+    let (handle, timeline) = fake_timeline((0..6).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(2, 4096),
+    )
+    .unwrap();
+    let raw = file
+        .open_raw_record(find_line(&file, "record-5"))
+        .unwrap()
+        .unwrap();
+
+    file.load_older_records(2, 4096).unwrap();
+    handle.append(record(6));
+    file.refresh_records(4, 4096).unwrap();
+    handle.replace([record(20), record(21)]);
+    file.refresh_records(4, 4096).unwrap();
+
+    assert_eq!(
+        raw.read_window(0, raw.line_count()).unwrap().concat(),
+        String::from_utf8(record(5)).unwrap().trim_end()
+    );
+}
+
+#[test]
 fn follow_tail_advances_detaches_and_reattaches_headlessly() {
     let (handle, timeline) = fake_timeline((0..6).map(record));
     let file = RecordTimelineViewFile::with_initial_limit(
@@ -1134,6 +1225,22 @@ fn frame_text(frame: fmtview_core::RenderFrame) -> String {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>()
+}
+
+fn find_line(file: &dyn ViewFile, needle: &str) -> usize {
+    (0..file.line_count())
+        .find(|line| {
+            file.read_window(*line, 1)
+                .unwrap()
+                .first()
+                .is_some_and(|text| text.contains(needle))
+        })
+        .unwrap_or_else(|| panic!("missing formatted line containing {needle:?}"))
+}
+
+fn raw_record_text(file: &dyn ViewFile, line: usize) -> String {
+    let raw = file.open_raw_record(line).unwrap().unwrap();
+    raw.read_window(0, raw.line_count()).unwrap().join("")
 }
 
 #[derive(Clone)]

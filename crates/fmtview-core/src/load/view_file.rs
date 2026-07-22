@@ -46,4 +46,7 @@ pub trait ViewFile {
     fn take_notice(&self) -> Option<String> {
         None
     }
+    fn open_raw_record(&self, _line: usize) -> Result<Option<Box<dyn ViewFile>>> {
+        Ok(None)
+    }
 }

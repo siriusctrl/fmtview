@@ -10,7 +10,7 @@ use memchr::memchr_iter;
 use tempfile::NamedTempFile;
 
 use super::{
-    ViewFile,
+    RawRecordViewFile, ViewFile,
     lines::{strip_byte_line_end, strip_line_end},
 };
 
@@ -36,7 +36,17 @@ pub(crate) struct LazyFile<P> {
 }
 
 impl<P: LazyProducer> LazyFile<P> {
+    #[cfg(test)]
     pub(crate) fn new(label: String, len: u64, producer: P) -> Result<Self> {
+        Self::with_raw_source(label, len, producer, None)
+    }
+
+    pub(crate) fn with_raw_source(
+        label: String,
+        len: u64,
+        producer: P,
+        raw_source: Option<File>,
+    ) -> Result<Self> {
         Ok(Self {
             label,
             len,
@@ -49,6 +59,8 @@ impl<P: LazyProducer> LazyFile<P> {
                 source_line_offsets: Vec::new(),
                 complete: len == 0,
                 units_produced: 0,
+                raw_source,
+                raw_records: Vec::new(),
             }),
         })
     }
@@ -174,6 +186,28 @@ impl<P: LazyProducer> ViewFile for LazyFile<P> {
 
         Ok(state.line_offsets.len() != start_lines || state.complete)
     }
+
+    fn open_raw_record(&self, line: usize) -> Result<Option<Box<dyn ViewFile>>> {
+        let state = self.state.borrow();
+        let Some(record) = state.raw_records.iter().find(|record| {
+            line >= record.first_line && line < record.first_line.saturating_add(record.line_count)
+        }) else {
+            return Ok(None);
+        };
+        let Some(source) = state.raw_source.as_ref() else {
+            return Ok(None);
+        };
+        let raw = RawRecordViewFile::new(
+            source
+                .try_clone()
+                .context("failed to clone raw record source")?,
+            &self.label,
+            record.source_offset,
+            record.source_bytes,
+            line,
+        )?;
+        Ok(Some(Box::new(raw)))
+    }
 }
 
 struct LazyState<P> {
@@ -185,6 +219,15 @@ struct LazyState<P> {
     source_line_offsets: Vec<u64>,
     complete: bool,
     units_produced: usize,
+    raw_source: Option<File>,
+    raw_records: Vec<LazyRawRecordRef>,
+}
+
+struct LazyRawRecordRef {
+    first_line: usize,
+    line_count: usize,
+    source_offset: u64,
+    source_bytes: u64,
 }
 
 impl<P: LazyProducer> LazyState<P> {
@@ -203,7 +246,16 @@ impl<P: LazyProducer> LazyState<P> {
                 if source_bytes == 0 && bytes.is_empty() {
                     bail!("lazy producer returned no progress");
                 }
+                let first_line = self.line_offsets.len();
                 self.append_bytes(source_offset, &bytes)?;
+                if self.raw_source.is_some() {
+                    self.raw_records.push(LazyRawRecordRef {
+                        first_line,
+                        line_count: self.line_offsets.len().saturating_sub(first_line),
+                        source_offset,
+                        source_bytes,
+                    });
+                }
                 source_bytes
             }
         };

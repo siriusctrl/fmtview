@@ -17,7 +17,7 @@ use crate::{
     transform::{self, FormatOptions},
 };
 
-use super::{ViewFile, ViewFileChange};
+use super::{RawRecordViewFile, ViewFile, ViewFileChange};
 
 const INITIAL_TAIL_RECORDS: usize = 128;
 const INITIAL_TAIL_BYTES: usize = 4 * 1024 * 1024;
@@ -132,6 +132,24 @@ impl ViewFile for RecordTimelineViewFile {
 
     fn take_notice(&self) -> Option<String> {
         self.state.borrow_mut().notices.pop_front()
+    }
+
+    fn open_raw_record(&self, line_index: usize) -> Result<Option<Box<dyn ViewFile>>> {
+        let state = self.state.borrow();
+        let Some(line) = state.lines.get(line_index) else {
+            return Ok(None);
+        };
+        let raw = RawRecordViewFile::new(
+            state
+                .raw_spool
+                .reopen()
+                .context("failed to reopen raw timeline spool")?,
+            &self.label,
+            line.raw_offset,
+            u64::try_from(line.raw_len).context("raw timeline record was too large")?,
+            line_index,
+        )?;
+        Ok(Some(Box::new(raw)))
     }
 }
 
@@ -389,6 +407,8 @@ impl TimelineViewState {
                 spool_offset: record_start + start as u64,
                 len: newline.saturating_sub(start),
                 source_offset: record.id.start_offset,
+                raw_offset,
+                raw_len: record.raw.len(),
             });
             start = newline + 1;
         }
@@ -397,6 +417,8 @@ impl TimelineViewState {
                 spool_offset: record_start + start as u64,
                 len: bytes.len().saturating_sub(start),
                 source_offset: record.id.start_offset,
+                raw_offset,
+                raw_len: record.raw.len(),
             });
         }
         let record_ref = TimelineRecordRef {
@@ -464,6 +486,8 @@ struct TimelineLine {
     spool_offset: u64,
     len: usize,
     source_offset: u64,
+    raw_offset: u64,
+    raw_len: usize,
 }
 
 fn record_ref_matches(

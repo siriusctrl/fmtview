@@ -27,10 +27,11 @@ impl LazyTransformedRecordsFile {
             .with_context(|| format!("failed to stat {}", source.label()))?
             .len();
         Ok(Self {
-            inner: LazyFile::new(
+            inner: LazyFile::with_raw_source(
                 label.clone(),
                 len,
                 RecordTransformProducer::new(label, file, options, Rc::clone(&notices)),
+                Some(source.open()?),
             )?,
             notices,
         })
@@ -78,6 +79,10 @@ impl ViewFile for LazyTransformedRecordsFile {
 
     fn take_notice(&self) -> Option<String> {
         self.notices.borrow_mut().take_notice()
+    }
+
+    fn open_raw_record(&self, line: usize) -> Result<Option<Box<dyn ViewFile>>> {
+        self.inner.open_raw_record(line)
     }
 }
 
@@ -269,6 +274,27 @@ mod tests {
                 .any(|line| { line.contains("<media image/png; 786432 decoded bytes>") })
         );
         assert!(lines.iter().map(String::len).sum::<usize>() < 1024);
+    }
+
+    #[test]
+    fn lazy_view_opens_the_exact_source_record_for_a_formatted_line() {
+        let input = br#"{"role":"assistant","content":[{"type":"tool_call","arguments":"{\"cmd\":\"cargo  test\"}"}]}\n"#;
+        let (_temp, source) = temp_source(input);
+        let options = FormatOptions {
+            kind: FormatKind::Jsonl,
+            indent: 2,
+        };
+        let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
+        let lines = file.read_window(0, 32).unwrap();
+        let arguments_line = lines
+            .iter()
+            .position(|line| line.contains("arguments"))
+            .unwrap();
+
+        let raw = file.open_raw_record(arguments_line).unwrap().unwrap();
+        let raw = raw.read_window(0, raw.line_count()).unwrap().concat();
+
+        assert_eq!(raw.as_bytes(), input.strip_suffix(b"\n").unwrap());
     }
 
     #[test]
