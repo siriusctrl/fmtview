@@ -31,6 +31,7 @@ fn file_engine_renders_and_searches_without_a_terminal() {
 
     let first = viewer.render(size, None).unwrap();
     assert!(first.title.contains("headless.json"));
+    assert!(!first.footer_text.contains("raw record"));
     assert!(buffer_text(first).contains("alpha"));
 
     for code in [
@@ -86,6 +87,249 @@ fn file_engine_navigation_changes_backend_neutral_frame_position() {
 }
 
 #[test]
+fn record_engine_toggles_bounded_raw_view_and_keeps_core_interactions() {
+    let source = source(
+        "conversation.jsonl",
+        "{\"role\":\"assistant\",\"content\":[{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"iVBORw0KGgo=\"}}]}\n",
+    );
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let profile = TypeProfile::resolve(&source, &options).unwrap();
+    let opened = open_view_file(&source, &options, profile).unwrap();
+    let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
+    let size = Size::new(72, 12);
+
+    let structured = viewer.render(size, None).unwrap();
+    let structured_text = buffer_text(structured);
+    assert!(structured_text.contains("<media image/png; 8 decoded bytes>"));
+    assert!(!structured_text.contains("iVBORw0KGgo="));
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('r')).dirty);
+    let raw = viewer.render(size, None).unwrap();
+    assert!(raw.title.contains("raw record"), "{}", raw.title);
+    assert!(
+        raw.footer_text.contains("r structured"),
+        "{}",
+        raw.footer_text
+    );
+    assert!(buffer_text(raw).contains("iVBORw0KGgo="));
+
+    assert!(
+        viewer
+            .handle_event(InputEvent::Resize, FileViewer::page_for_size(size))
+            .dirty
+    );
+    assert!(send_key(&mut viewer, size, KeyCode::Char('w')).dirty);
+    assert!(viewer.render(size, None).unwrap().title.contains("nowrap"));
+
+    for code in [
+        KeyCode::Char('/'),
+        KeyCode::Char('i'),
+        KeyCode::Char('V'),
+        KeyCode::Char('B'),
+        KeyCode::Enter,
+    ] {
+        send_key(&mut viewer, size, code);
+    }
+    while viewer.advance(std::time::Instant::now()).unwrap() {}
+    let searched = viewer.render(size, None).unwrap();
+    assert!(
+        searched.footer_text.contains("1/1 match"),
+        "{}",
+        searched.footer_text
+    );
+
+    let selection = send_key(&mut viewer, size, KeyCode::Char('m'));
+    assert_eq!(selection.mouse_capture, Some(false));
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('r')).dirty);
+    let structured = viewer.render(size, None).unwrap();
+    assert!(!structured.title.contains("raw record"));
+    assert!(structured.title.contains("nowrap"));
+    assert!(structured.footer_text.contains("selection mode"));
+    assert_eq!(structured.position.row_offset, 0);
+    assert!(buffer_text(structured).contains("<media image/png; 8 decoded bytes>"));
+
+    let restored = send_key(&mut viewer, size, KeyCode::Char('m'));
+    assert_eq!(restored.mouse_capture, Some(true));
+
+    send_key(&mut viewer, size, KeyCode::Char('r'));
+    assert!(send_key(&mut viewer, size, KeyCode::Char('q')).quit);
+}
+
+#[test]
+fn raw_toggle_prefers_the_active_search_match_record_over_the_viewport_top() {
+    let source = source(
+        "search-focus.jsonl",
+        concat!(
+            r#"{"ref":"first","role":"assistant","content":[{"type":"text","text":"before"}]}"#,
+            "\n",
+            r#"{"ref":"second","role":"assistant","content":[{"type":"text","text":"after"}]}"#,
+            "\n"
+        ),
+    );
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let profile = TypeProfile::resolve(&source, &options).unwrap();
+    let opened = open_view_file(&source, &options, profile).unwrap();
+    let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
+    let size = Size::new(72, 30);
+    viewer.render(size, None).unwrap();
+
+    send_key(&mut viewer, size, KeyCode::Char('/'));
+    for ch in "second".chars() {
+        send_key(&mut viewer, size, KeyCode::Char(ch));
+    }
+    send_key(&mut viewer, size, KeyCode::Enter);
+    while viewer.advance(std::time::Instant::now()).unwrap() {}
+    let matched = viewer.render(size, None).unwrap();
+    assert_eq!(matched.position.top, 0);
+    assert!(buffer_text(matched).contains("second"));
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('r')).dirty);
+    let raw = viewer.render(size, None).unwrap();
+    assert!(raw.title.contains("raw record"), "{}", raw.title);
+    let raw_text = buffer_text(raw);
+    assert!(raw_text.contains(r#""ref":"second""#), "{raw_text}");
+    assert!(!raw_text.contains(r#""ref":"first""#), "{raw_text}");
+}
+
+#[test]
+fn raw_content_space_transitions_never_reuse_terminal_scroll_hints() {
+    let record = format!(r#"{{"text":"{}"}}\n"#, "payload ".repeat(2_000));
+    let source = source("long-raw.jsonl", &record);
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let profile = TypeProfile::resolve(&source, &options).unwrap();
+    let opened = open_view_file(&source, &options, profile).unwrap();
+    let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
+    let size = Size::new(48, 8);
+    viewer.render(size, None).unwrap();
+
+    send_key(&mut viewer, size, KeyCode::Char('r'));
+    let raw = viewer
+        .render(
+            size,
+            Some(fmtview_core::ScrollPosition {
+                top: 0,
+                row_offset: 1,
+            }),
+        )
+        .unwrap();
+    assert!(raw.title.contains("raw record"));
+    assert_eq!(raw.scroll_hint, None);
+
+    send_key(&mut viewer, size, KeyCode::Char('j'));
+    let raw_scrolled = viewer.render(size, Some(raw.position)).unwrap();
+    assert!(raw_scrolled.position.row_offset > raw.position.row_offset);
+
+    send_key(&mut viewer, size, KeyCode::Char('r'));
+    let structured = viewer
+        .render(
+            size,
+            Some(fmtview_core::ScrollPosition {
+                top: 0,
+                row_offset: 1,
+            }),
+        )
+        .unwrap();
+    assert!(!structured.title.contains("raw record"));
+    assert_eq!(structured.scroll_hint, None);
+    assert!(buffer_text(structured).contains("payload"));
+}
+
+#[test]
+fn pretty_nested_tool_pair_navigation_round_trips_between_records() {
+    let source = source(
+        "conversation.jsonl",
+        concat!(
+            r#"{"ref":"m2","role":"assistant","content":[{"type":"tool_call","id":"call_1","name":"shell","arguments":"{\"cmd\":\"cargo test\"}"}]}"#,
+            "\n",
+            r#"{"ref":"m3","role":"tool","content":[{"type":"tool_result","call_id":"call_1","content":"ok"}]}"#,
+            "\n"
+        ),
+    );
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let profile = TypeProfile::resolve(&source, &options).unwrap();
+    let opened = open_view_file(&source, &options, profile).unwrap();
+    let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
+    let size = Size::new(72, 8);
+    viewer.render(size, None).unwrap();
+
+    send_key(&mut viewer, size, KeyCode::Char('/'));
+    for ch in "tool_call".chars() {
+        send_key(&mut viewer, size, KeyCode::Char(ch));
+    }
+    send_key(&mut viewer, size, KeyCode::Enter);
+    while viewer.advance(std::time::Instant::now()).unwrap() {}
+    let call = viewer.render(size, None).unwrap();
+    let call_top = call.position.top;
+    assert!(buffer_text(call).contains("tool_call"));
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('t')).dirty);
+    let result = viewer.render(size, None).unwrap();
+    let result_top = result.position.top;
+    assert!(result_top > call_top, "call={call_top} result={result_top}");
+    assert!(buffer_text(result).contains("tool_result"));
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('t')).dirty);
+    let returned = viewer.render(size, None).unwrap();
+    assert!(returned.position.top < result_top);
+    assert!(buffer_text(returned).contains("tool_call"));
+}
+
+#[test]
+fn nested_tool_navigation_ignores_the_role_tool_envelope_message_id() {
+    let source = source(
+        "tool-envelope.jsonl",
+        concat!(
+            r#"{"role":"assistant","content":[{"type":"tool_call","id":"c1","name":"first"}]}"#,
+            "\n",
+            r#"{"role":"assistant","content":[{"type":"tool_call","id":"m3","name":"second"}]}"#,
+            "\n",
+            r#"{"id":"m3","role":"tool","content":[{"type":"tool_result","call_id":"c1","content":"ok"}]}"#,
+            "\n"
+        ),
+    );
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let profile = TypeProfile::resolve(&source, &options).unwrap();
+    let opened = open_view_file(&source, &options, profile).unwrap();
+    let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
+    let size = Size::new(72, 9);
+    viewer.render(size, None).unwrap();
+
+    send_key(&mut viewer, size, KeyCode::Char('/'));
+    for ch in "tool_result".chars() {
+        send_key(&mut viewer, size, KeyCode::Char(ch));
+    }
+    send_key(&mut viewer, size, KeyCode::Enter);
+    while viewer.advance(std::time::Instant::now()).unwrap() {}
+    let searched = viewer.render(size, None).unwrap();
+    send_key(&mut viewer, size, KeyCode::Esc);
+    let result = viewer.render(size, Some(searched.position)).unwrap();
+    assert!(result.footer_text.contains("c1"), "{}", result.footer_text);
+    assert!(!result.footer_text.contains("m3"), "{}", result.footer_text);
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('t')).dirty);
+    let call = viewer.render(size, Some(result.position)).unwrap();
+    let call_text = buffer_text(call);
+    assert!(call_text.contains("first"), "{call_text}");
+    assert!(!call_text.contains("second"), "{call_text}");
+}
+
+#[test]
 fn diff_engine_renders_and_navigates_without_a_terminal() {
     let left = source("left.json", "{\"value\":1}\n");
     let right = source("right.json", "{\"value\":2}\n");
@@ -117,6 +361,16 @@ fn source(label: &str, text: &str) -> InputSource {
     temp.write_all(text.as_bytes()).unwrap();
     temp.flush().unwrap();
     InputSource::from_temp(temp, label)
+}
+
+fn send_key(viewer: &mut FileViewer, size: Size, code: KeyCode) -> fmtview_core::ViewerAction {
+    viewer.handle_event(
+        InputEvent::Key {
+            code,
+            modifiers: KeyModifiers::NONE,
+        },
+        FileViewer::page_for_size(size),
+    )
 }
 
 fn buffer_text(frame: fmtview_core::RenderFrame) -> String {

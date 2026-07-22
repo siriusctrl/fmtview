@@ -79,14 +79,21 @@ pub(in crate::viewer) fn idle_footer_text(state: &ViewState) -> String {
     let position = wrap_position_text(state)
         .map(|position| format!("{position} | "))
         .unwrap_or_default();
+    let record_hint = if state.raw_record {
+        "r structured | "
+    } else if state.raw_record_available {
+        "r raw record | "
+    } else {
+        ""
+    };
     if let Some(count) = search_count_text(state) {
         return format!(
-            " {position}{follow_hint}search: {count} | n/N next/prev | Esc clear search | / new search | {wrap_hint} | ]/[ structure "
+            " {position}{follow_hint}{record_hint}search: {count} | n/N next/prev | Esc clear search | / new search | {wrap_hint} | ]/[ structure "
         );
     }
 
     format!(
-        " {position}{follow_hint}{wrap_hint} | / search | ]/[ structure | t tool pair | 123 Enter line | m select | {page_hint} "
+        " {position}{follow_hint}{record_hint}{wrap_hint} | / search | ]/[ structure | t tool pair | 123 Enter line | m select | {page_hint} "
     )
 }
 

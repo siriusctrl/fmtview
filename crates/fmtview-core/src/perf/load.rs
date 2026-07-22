@@ -15,8 +15,9 @@ use ratatui::layout::Size;
 
 use super::{
     fixtures::{
-        HUGE_STRING_FRAGMENT, generated_huge_string_jsonl_source, generated_json_document_source,
-        generated_jsonl_source, generated_xml_document_source,
+        HUGE_STRING_FRAGMENT, generated_huge_media_jsonl_source,
+        generated_huge_string_jsonl_source, generated_json_document_source, generated_jsonl_source,
+        generated_xml_document_source,
     },
     runner::{BenchCase, BenchSample},
 };
@@ -51,6 +52,12 @@ pub(super) const CASES: &[BenchCase] = &[
         shape: "record-stream/huge-record",
         layer: "transform+spool",
         run: bench_lazy_huge_string_preload_format,
+    },
+    BenchCase {
+        label: "lazy huge media first-window collapse",
+        shape: "record-stream/huge-media",
+        layer: "scan+collapse+spool+readback",
+        run: bench_lazy_huge_media_first_window,
     },
     BenchCase {
         label: "timeline tail-first open+format",
@@ -240,6 +247,39 @@ fn bench_lazy_huge_string_preload_format() -> BenchSample {
         window_lines: 0,
         input_bytes,
         output_bytes: 0,
+    }
+}
+
+fn bench_lazy_huge_media_first_window() -> BenchSample {
+    const PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
+    let (_temp, source, input_bytes) = generated_huge_media_jsonl_source(PAYLOAD_BYTES, ".jsonl");
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+
+    let started = Instant::now();
+    let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
+    let lines = file.read_window(0, 8).unwrap();
+    let elapsed = started.elapsed();
+
+    assert_eq!(file.loaded_record_count(), 1);
+    assert!(
+        lines
+            .iter()
+            .any(|line| { line.contains("<media image/png; 12582912 decoded bytes>") })
+    );
+    assert!(lines.iter().map(String::len).sum::<usize>() < 1024);
+    BenchSample {
+        elapsed,
+        records: 1,
+        items: 0,
+        string_bytes: PAYLOAD_BYTES,
+        lines: lines.len(),
+        indexed_lines: file.indexed_line_count(),
+        window_lines: lines.len(),
+        input_bytes,
+        output_bytes: lines.iter().map(String::len).sum(),
     }
 }
 

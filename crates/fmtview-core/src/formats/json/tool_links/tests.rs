@@ -35,6 +35,21 @@ fn links_tool_use_by_shared_id() {
 }
 
 #[test]
+fn links_nested_typed_tool_call_to_nested_typed_result() {
+    let marks = marks(&[
+        r#"{"ref":"m2","role":"assistant","content":[{"type":"tool_call","id":"call_1","name":"shell","arguments":"{\"cmd\":\"cargo test\"}"}]}"#,
+        r#"{"ref":"m3","role":"tool","content":[{"type":"tool_result","call_id":"call_1","content":"ok"}]}"#,
+    ]);
+
+    assert_eq!(marks[0].relation, ToolRelationMark::MatchedCall);
+    assert_eq!(marks[1].relation, ToolRelationMark::MatchedResult);
+    let link = marks[1].link.as_ref().unwrap();
+    assert_eq!(link.id.as_ref(), "call_1");
+    assert_eq!(link.call_line, Some(0));
+    assert_eq!(link.result_line, 1);
+}
+
+#[test]
 fn supports_custom_shared_id_field_without_matching_unrelated_objects() {
     let marks = marks(&[
         r#"{"request_id":"outside"}"#,
@@ -268,4 +283,192 @@ fn provisional_result_context_matches_a_plain_id() {
 
     assert_eq!(marks[0].link.as_ref().unwrap().call_line, Some(0));
     assert_eq!(marks[0].link.as_ref().unwrap().id.as_ref(), "call_1");
+}
+
+#[test]
+fn nested_typed_result_suppresses_a_role_tool_envelope_plain_id() {
+    let lines = [
+        r#"{"type":"tool_call","id":"c1"}"#,
+        r#"{"type":"tool_call","id":"m3"}"#,
+        "{",
+        r#"  "id": "m3","#,
+        r#"  "role": "tool","#,
+        r#"  "content": ["#,
+        "    {",
+        r#"      "type": "tool_result","#,
+        r#"      "call_id": "c1","#,
+        r#"      "content": "ok""#,
+        "    }",
+        "  ]",
+        "}",
+    ];
+    let owned = lines.map(str::to_owned);
+    let mut tracker = ToolLinkTracker::default();
+
+    let marks = tracker.mark_lines(&owned, 0);
+
+    assert_eq!(marks[0].relation, ToolRelationMark::MatchedCall);
+    assert_eq!(marks[1].relation, ToolRelationMark::None);
+    assert!(marks[2].link.is_none(), "envelope must not retain a link");
+    assert_eq!(marks[6].relation, ToolRelationMark::MatchedResult);
+    assert_eq!(marks[6].link.as_ref().unwrap().call_line, Some(0));
+    assert_eq!(tracker.pending_calls.len(), 1);
+    assert_eq!(tracker.pending_calls[0].line, 1);
+}
+
+#[test]
+fn typed_child_in_lookahead_retracts_visible_envelope_provisional_link() {
+    let prefix = [
+        r#"{"type":"tool_call","id":"c1"}"#,
+        r#"{"type":"tool_call","id":"m3"}"#,
+    ];
+    let mut tracker = ToolLinkTracker::default();
+    for (line, text) in prefix.iter().enumerate() {
+        tracker.apply_line(text, line);
+    }
+    let visible = [
+        "{".to_owned(),
+        r#"  "id": "m3","#.to_owned(),
+        r#"  "role": "tool","#.to_owned(),
+        r#"  "content": ["#.to_owned(),
+    ];
+    let lookahead = [
+        "    {".to_owned(),
+        r#"      "type": "tool_result","#.to_owned(),
+        r#"      "call_id": "c1""#.to_owned(),
+        "    }".to_owned(),
+        "  ]".to_owned(),
+        "}".to_owned(),
+    ];
+
+    let marks = tracker.mark_lines_with_lookahead(&visible, &lookahead, prefix.len());
+
+    assert!(marks.iter().all(|mark| mark.link.is_none()));
+}
+
+#[test]
+fn explicit_envelope_call_id_is_a_fallback_for_an_unmatched_typed_child() {
+    let lines = [
+        r#"{"type":"tool_call","id":"c1"}"#,
+        "{",
+        r#"  "role": "tool","#,
+        r#"  "tool_call_id": "c1","#,
+        r#"  "content": ["#,
+        "    {",
+        r#"      "type": "tool_result","#,
+        r#"      "id": "result-123","#,
+        r#"      "content": "ok""#,
+        "    }",
+        "  ]",
+        "}",
+    ];
+
+    let marks = marks(&lines);
+
+    assert_eq!(marks[0].relation, ToolRelationMark::MatchedCall);
+    assert_eq!(marks[1].relation, ToolRelationMark::MatchedResult);
+    assert!(marks[5..10].iter().all(|mark| {
+        mark.link
+            .as_ref()
+            .is_none_or(|link| link.status == ToolLinkStatus::Matched)
+    }));
+}
+
+#[test]
+fn authoritative_unmatched_child_id_does_not_fall_back_to_the_envelope() {
+    let lines = [
+        r#"{"type":"tool_call","id":"c1"}"#,
+        "{",
+        r#"  "role": "tool","#,
+        r#"  "tool_call_id": "c1","#,
+        r#"  "content": ["#,
+        r#"    {"type":"tool_result","call_id":"bad"}"#,
+        "  ]",
+        "}",
+    ];
+    let owned = lines.map(str::to_owned);
+    let mut tracker = ToolLinkTracker::default();
+
+    let marks = tracker.mark_lines(&owned, 0);
+
+    assert_eq!(marks[0].relation, ToolRelationMark::None);
+    assert!(marks[1].link.is_none());
+    assert_eq!(marks[5].link.as_ref().unwrap().id.as_ref(), "bad");
+    assert_eq!(
+        marks[5].link.as_ref().unwrap().status,
+        ToolLinkStatus::Unmatched
+    );
+    assert_eq!(tracker.pending_calls.len(), 1);
+}
+
+#[test]
+fn ordinary_intermediate_toolish_ids_are_not_envelope_fallbacks() {
+    let lines = [
+        r#"{"type":"tool_call","id":"message-7"}"#,
+        "{",
+        r#"  "id": "message-7","#,
+        r#"  "role": "tool","#,
+        r#"  "content": [{"#,
+        r#"    "call_id": "message-7","#,
+        r#"    "result": {"type":"tool_result","id":"result-123"}"#,
+        "  }]",
+        "}",
+    ];
+    let owned = lines.map(str::to_owned);
+    let mut tracker = ToolLinkTracker::default();
+
+    let marks = tracker.mark_lines(&owned, 0);
+
+    assert_eq!(marks[0].relation, ToolRelationMark::None);
+    assert!(marks[1].link.is_none());
+    assert_eq!(tracker.pending_calls.len(), 1);
+}
+
+#[test]
+fn idless_typed_child_still_suppresses_an_envelope_plain_id() {
+    let lines = [
+        r#"{"type":"tool_call","id":"message-7"}"#,
+        "{",
+        r#"  "id": "message-7","#,
+        r#"  "role": "tool","#,
+        r#"  "content": [{"type":"tool_result","content":"ok"}]"#,
+        "}",
+    ];
+    let owned = lines.map(str::to_owned);
+    let mut tracker = ToolLinkTracker::default();
+
+    let marks = tracker.mark_lines(&owned, 0);
+
+    assert!(marks.iter().all(|mark| mark.link.is_none()));
+    assert_eq!(tracker.pending_calls.len(), 1);
+}
+
+#[test]
+fn multiple_typed_children_consume_only_their_exact_calls() {
+    let lines = [
+        r#"{"type":"tool_call","id":"c1"}"#,
+        r#"{"type":"tool_call","id":"c2"}"#,
+        r#"{"type":"tool_call","id":"message-7"}"#,
+        "{",
+        r#"  "id": "message-7","#,
+        r#"  "role": "tool","#,
+        r#"  "content": ["#,
+        r#"    {"type":"tool_result","call_id":"c1"},"#,
+        r#"    {"type":"tool_result","call_id":"c2"}"#,
+        "  ]",
+        "}",
+    ];
+    let owned = lines.map(str::to_owned);
+    let mut tracker = ToolLinkTracker::default();
+
+    let marks = tracker.mark_lines(&owned, 0);
+
+    assert_eq!(marks[0].relation, ToolRelationMark::MatchedCall);
+    assert_eq!(marks[1].relation, ToolRelationMark::MatchedCall);
+    assert_eq!(marks[2].relation, ToolRelationMark::None);
+    assert_eq!(marks[7].relation, ToolRelationMark::MatchedResult);
+    assert_eq!(marks[8].relation, ToolRelationMark::MatchedResult);
+    assert!(marks[3].link.is_none());
+    assert_eq!(tracker.pending_calls.len(), 1);
+    assert_eq!(tracker.pending_calls[0].line, 2);
 }

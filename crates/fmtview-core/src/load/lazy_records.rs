@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fs::File, rc::Rc, time::Duration};
+use std::{cell::RefCell, fs::File, io::Write, rc::Rc, time::Duration};
 
 use anyhow::{Context, Result};
 
@@ -27,10 +27,11 @@ impl LazyTransformedRecordsFile {
             .with_context(|| format!("failed to stat {}", source.label()))?
             .len();
         Ok(Self {
-            inner: LazyFile::new(
+            inner: LazyFile::with_raw_records(
                 label.clone(),
                 len,
                 RecordTransformProducer::new(label, file, options, Rc::clone(&notices)),
+                true,
             )?,
             notices,
         })
@@ -79,6 +80,14 @@ impl ViewFile for LazyTransformedRecordsFile {
     fn take_notice(&self) -> Option<String> {
         self.notices.borrow_mut().take_notice()
     }
+
+    fn open_raw_record(&self, line: usize) -> Result<Option<Box<dyn ViewFile>>> {
+        self.inner.open_raw_record(line)
+    }
+
+    fn supports_raw_records(&self) -> bool {
+        true
+    }
 }
 
 struct RecordTransformProducer {
@@ -114,6 +123,14 @@ impl LazyProducer for RecordTransformProducer {
             bytes: record.bytes,
         })
     }
+
+    fn write_last_raw_record(&self, output: &mut dyn Write) -> Result<Option<u64>> {
+        let raw = self.reader.last_raw_record();
+        output
+            .write_all(raw)
+            .context("failed to write lazy raw record spool")?;
+        Ok(Some(raw.len() as u64))
+    }
 }
 
 #[derive(Default)]
@@ -148,7 +165,10 @@ impl RecordRecoveryNotices {
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Write, time::Duration};
+    use std::{
+        io::{Seek, SeekFrom, Write},
+        time::Duration,
+    };
 
     use tempfile::NamedTempFile;
 
@@ -246,6 +266,90 @@ mod tests {
 
         assert!(notice.contains("2 JSONL records failed"));
         assert!(notice.contains("record 1"));
+    }
+
+    #[test]
+    fn lazy_view_collapses_large_data_uri_before_spooling_formatted_lines() {
+        let mut input = Vec::with_capacity(1024 * 1024 + 64);
+        input.extend_from_slice(br#"{"content":"data:image/png;base64,"#);
+        input.extend(std::iter::repeat_n(b'A', 1024 * 1024));
+        input.extend_from_slice(b"\"}\n");
+        let (_temp, source) = temp_source(&input);
+        let options = FormatOptions {
+            kind: FormatKind::Jsonl,
+            indent: 2,
+        };
+        let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
+
+        let lines = file.read_window(0, 8).unwrap();
+
+        assert!(
+            lines
+                .iter()
+                .any(|line| { line.contains("<media image/png; 786432 decoded bytes>") })
+        );
+        assert!(lines.iter().map(String::len).sum::<usize>() < 1024);
+    }
+
+    #[test]
+    fn lazy_view_opens_the_exact_source_record_for_a_formatted_line() {
+        let input = concat!(
+            r#"{"role":"assistant","content":[{"type":"tool_call","arguments":"{\"cmd\":\"cargo  test\"}"}]}"#,
+            "\n"
+        )
+        .as_bytes();
+        let (_temp, source) = temp_source(input);
+        let options = FormatOptions {
+            kind: FormatKind::Jsonl,
+            indent: 2,
+        };
+        let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
+        let lines = file.read_window(0, 32).unwrap();
+        let arguments_line = lines
+            .iter()
+            .position(|line| line.contains("arguments"))
+            .unwrap();
+
+        let raw = file.open_raw_record(arguments_line).unwrap().unwrap();
+        let raw = raw.read_window(0, raw.line_count()).unwrap().concat();
+
+        assert_eq!(raw.as_bytes(), input.strip_suffix(b"\n").unwrap());
+    }
+
+    #[test]
+    fn lazy_raw_record_uses_the_ingested_snapshot_after_source_rewrites() {
+        let input = b"{\"value\":\"ORIGINAL\"}\n";
+        let (mut temp, source) = temp_source(input);
+        let options = FormatOptions {
+            kind: FormatKind::Jsonl,
+            indent: 2,
+        };
+        let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
+        let lines = file.read_window(0, 16).unwrap();
+        let value_line = lines
+            .iter()
+            .position(|line| line.contains("ORIGINAL"))
+            .unwrap();
+
+        temp.as_file_mut().seek(SeekFrom::Start(0)).unwrap();
+        temp.as_file_mut()
+            .write_all(b"{\"value\":\"MUTATED!\"}\n")
+            .unwrap();
+        temp.as_file_mut().flush().unwrap();
+
+        let raw = file.open_raw_record(value_line).unwrap().unwrap();
+        assert_eq!(
+            raw.read_window(0, raw.line_count()).unwrap().concat(),
+            "{\"value\":\"ORIGINAL\"}"
+        );
+
+        temp.as_file_mut().set_len(0).unwrap();
+        temp.as_file_mut().write_all(b"replacement\n").unwrap();
+        temp.as_file_mut().flush().unwrap();
+        assert_eq!(
+            raw.read_window(0, raw.line_count()).unwrap().concat(),
+            "{\"value\":\"ORIGINAL\"}"
+        );
     }
 
     #[test]

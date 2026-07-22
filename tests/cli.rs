@@ -200,6 +200,23 @@ fn formats_chat_jsonl_showcase() {
 }
 
 #[test]
+fn formats_generic_conversation_jsonl_without_rewriting_embedded_arguments() {
+    let example =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/conversation.jsonl");
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    let assert = cmd.arg(example).assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+
+    assert!(stdout.contains(
+        r#""arguments": "{\"cmd\":\"cargo test --workspace\",\"note\":\"keep  spaces\"}""#
+    ));
+    assert!(stdout.contains(r#""type": "tool_result""#));
+    assert!(stdout.contains(r#""type": "runtime_reminder""#));
+    assert!(stdout.contains(r#""artifact": {"#));
+}
+
+#[test]
 fn plain_type_passthrough_keeps_stdout_scriptable() {
     let mut cmd = Command::cargo_bin("fmtview").unwrap();
     cmd.args(["--type", "plain", "--literal", "alpha {{ untouched }}\n"])

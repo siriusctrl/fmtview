@@ -43,6 +43,171 @@ fn fake_timeline_distinguishes_pending_from_terminal_end() {
 }
 
 #[test]
+fn raw_record_mapping_survives_older_prepend() {
+    let (_handle, timeline) = fake_timeline((0..6).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(2, 4096),
+    )
+    .unwrap();
+    let newest_line = find_line(&file, "record-5");
+
+    assert_eq!(
+        raw_record_text(&file, newest_line),
+        String::from_utf8(record(5)).unwrap().trim_end()
+    );
+    file.load_older_records(2, 4096).unwrap();
+
+    assert_eq!(
+        raw_record_text(&file, find_line(&file, "record-5")),
+        String::from_utf8(record(5)).unwrap().trim_end()
+    );
+    assert_eq!(
+        raw_record_text(&file, find_line(&file, "record-2")),
+        String::from_utf8(record(2)).unwrap().trim_end()
+    );
+}
+
+#[test]
+fn raw_record_mapping_tracks_newer_append() {
+    let (handle, timeline) = fake_timeline((0..3).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(4, 4096),
+    )
+    .unwrap();
+
+    handle.append(record(3));
+    file.refresh_records(4, 4096).unwrap();
+
+    assert_eq!(
+        raw_record_text(&file, find_line(&file, "record-3")),
+        String::from_utf8(record(3)).unwrap().trim_end()
+    );
+}
+
+#[test]
+fn raw_record_mapping_uses_the_replacement_epoch_after_reset() {
+    let (handle, timeline) = fake_timeline((0..3).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(4, 4096),
+    )
+    .unwrap();
+
+    handle.replace([record(20), record(21)]);
+    file.refresh_records(4, 4096).unwrap();
+
+    assert_eq!(
+        raw_record_text(&file, find_line(&file, "record-21")),
+        String::from_utf8(record(21)).unwrap().trim_end()
+    );
+}
+
+#[test]
+fn an_open_raw_record_view_remains_a_stable_snapshot_across_source_changes() {
+    let (handle, timeline) = fake_timeline((0..6).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(2, 4096),
+    )
+    .unwrap();
+    let raw = file
+        .open_raw_record(find_line(&file, "record-5"))
+        .unwrap()
+        .unwrap();
+
+    file.load_older_records(2, 4096).unwrap();
+    handle.append(record(6));
+    file.refresh_records(4, 4096).unwrap();
+    handle.replace([record(20), record(21)]);
+    file.refresh_records(4, 4096).unwrap();
+
+    assert_eq!(
+        raw.read_window(0, raw.line_count()).unwrap().concat(),
+        String::from_utf8(record(5)).unwrap().trim_end()
+    );
+}
+
+#[test]
+fn follow_raw_overlay_keeps_its_snapshot_until_returning_to_updated_structure() {
+    let (handle, timeline) = fake_timeline([record(5)]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(4, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 10);
+    viewer.render(size, None).unwrap();
+
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    let raw = viewer.render(size, None).unwrap();
+    assert!(raw.title.contains("raw record"));
+    assert!(frame_text(raw).contains("record-5"));
+
+    handle.append(record(6));
+    viewer.preload().unwrap();
+    let stable_after_append = viewer.render(size, None).unwrap();
+    assert!(frame_text(stable_after_append).contains("record-5"));
+
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    let appended = viewer.render(size, None).unwrap();
+    assert!(appended.footer_text.contains("follow:on"));
+    assert!(frame_text(appended).contains("record-6"));
+
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    handle.replace([record(20)]);
+    viewer.preload().unwrap();
+    let stable_raw = viewer.render(size, None).unwrap();
+    let stable_raw_text = frame_text(stable_raw);
+    assert!(stable_raw_text.contains("record-5"));
+    assert!(!stable_raw_text.contains("record-20"));
+
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    let updated = viewer.render(size, None).unwrap();
+    assert!(!updated.title.contains("raw record"));
+    assert!(frame_text(updated).contains("record-20"));
+}
+
+#[test]
+fn detached_follow_keeps_receiving_records_behind_a_raw_overlay() {
+    let (handle, timeline) = fake_timeline((0..12).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+    viewer.render(size, None).unwrap();
+    viewer.handle_event(key(KeyCode::Up), FileViewer::page_for_size(size));
+    let detached = viewer.render(size, None).unwrap();
+    let detached_top = detached.position.top;
+    assert!(detached.footer_text.contains("follow:detached"));
+
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    handle.append(record(12));
+    viewer.preload().unwrap();
+    viewer.handle_event(key(KeyCode::Char('r')), FileViewer::page_for_size(size));
+    let returned = viewer.render(size, None).unwrap();
+
+    assert!(returned.footer_text.contains("follow:detached"));
+    assert_eq!(returned.position.top, detached_top);
+    viewer.handle_event(
+        InputEvent::Command(ViewerCommand::FollowTail),
+        FileViewer::page_for_size(size),
+    );
+    assert!(frame_text(viewer.render(size, None).unwrap()).contains("record-12"));
+}
+
+#[test]
 fn follow_tail_advances_detaches_and_reattaches_headlessly() {
     let (handle, timeline) = fake_timeline((0..6).map(record));
     let file = RecordTimelineViewFile::with_initial_limit(
@@ -1134,6 +1299,22 @@ fn frame_text(frame: fmtview_core::RenderFrame) -> String {
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>()
+}
+
+fn find_line(file: &dyn ViewFile, needle: &str) -> usize {
+    (0..file.line_count())
+        .find(|line| {
+            file.read_window(*line, 1)
+                .unwrap()
+                .first()
+                .is_some_and(|text| text.contains(needle))
+        })
+        .unwrap_or_else(|| panic!("missing formatted line containing {needle:?}"))
+}
+
+fn raw_record_text(file: &dyn ViewFile, line: usize) -> String {
+    let raw = file.open_raw_record(line).unwrap().unwrap();
+    raw.read_window(0, raw.line_count()).unwrap().join("")
 }
 
 #[derive(Clone)]

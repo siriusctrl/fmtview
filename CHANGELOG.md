@@ -10,6 +10,11 @@ for GitHub Release notes, so every published version must have a matching
 
 ### Added
 
+- Link nested typed JSON `tool_result`/`tool_response` objects to earlier tool
+  calls by exact ID, alongside the existing direct tool-role result shape.
+- Add `r` in interactive JSONL/NDJSON views to toggle an exact, bounded raw
+  record snapshot. Follow refresh and attached/detached viewport state continue
+  behind the snapshot, and `r` returns to the structured view.
 - Add `-F`/`--follow` for interactive JSONL/NDJSON files. Follow mode opens at
   the committed tail without formatting the whole file, advances on appended
   records while attached, detaches when scrolled up, reattaches at the bottom,
@@ -21,6 +26,10 @@ for GitHub Release notes, so every published version must have a matching
 
 ### Changed
 
+- Collapse high-confidence inline base64 media in interactive JSONL/NDJSON
+  views to media type and validated decoded size without decoding or copying it
+  into the formatted display spool. Source records, redirected output, diffs,
+  tool arguments, media bytes, and unknown fields remain token-preserving.
 - Split the publishable, terminal-independent viewer engine into the new
   `fmtview-core` workspace crate. Format profiles and transforms, load/index
   models, file and diff viewer state, search/navigation, highlighting, layout,

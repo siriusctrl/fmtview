@@ -99,6 +99,9 @@ shapes.
 - `record-stream`: newline-delimited records can be transformed independently.
 - `record-stream/huge-record`: one record dominates the cost, so first-window
   lazy behavior cannot hide transform/readback work.
+- `record-stream/huge-media`: one record contains a large inline base64 payload,
+  so the viewer must validate and summarize it without decoding or writing the
+  payload into the formatted spool.
 - `growing-record-stream/tail`, `/older`, `/newer`, and `/follow`: a
   bidirectional timeline begins at committed EOF, loads backward, refreshes
   forward, or keeps an attached viewport at the new tail.
@@ -133,6 +136,10 @@ Load metrics:
   reading the visible window back from the spool. Compare this with the
   first-window metric to separate transform/spool cost from long-line readback.
   Shape: `record-stream/huge-record`.
+- `lazy huge media first-window collapse` measures opening a JSONL record with
+  a 16 MiB inline base64 payload, validating it with a buffered scan, and
+  emitting only the bounded media summary into the formatted spool. Shape:
+  `record-stream/huge-media`.
 - `timeline tail-first open+format` measures reverse tail discovery, formatting
   the initial bounded record batch, spooling/indexing it, and reading the last
   viewport. Fixture generation is outside the timed region, and correctness

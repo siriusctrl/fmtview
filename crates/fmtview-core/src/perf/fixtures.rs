@@ -114,3 +114,24 @@ pub(super) fn generated_huge_string_jsonl_source(
     let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
     (temp, source, input_bytes)
 }
+
+pub(super) fn generated_huge_media_jsonl_source(
+    payload_bytes: usize,
+    suffix: &str,
+) -> (NamedTempFile, InputSource, usize) {
+    let mut temp = TempFileBuilder::new().suffix(suffix).tempfile().unwrap();
+    temp.write_all(br#"{"content":"data:image/png;base64,"#)
+        .unwrap();
+    let chunk = vec![b'A'; 64 * 1024];
+    let mut remaining = payload_bytes;
+    while remaining > 0 {
+        let take = remaining.min(chunk.len());
+        temp.write_all(&chunk[..take]).unwrap();
+        remaining -= take;
+    }
+    temp.write_all(b"\"}\n").unwrap();
+    temp.flush().unwrap();
+    let input_bytes = temp.as_file().metadata().unwrap().len() as usize;
+    let source = InputSource::from_arg(temp.path().to_str().unwrap(), None).unwrap();
+    (temp, source, input_bytes)
+}

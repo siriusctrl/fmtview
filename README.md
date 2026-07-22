@@ -62,11 +62,16 @@ embedded markup, wrapped records, or formatted diffs.
   marks the object start, and its colored guide covers the body between the
   opening and closing braces. Boundary rows and objects without a direct role
   stay neutral. Role-bearing objects are also preferred for structure jumps.
-- Match direct `role: tool` results to recent earlier tool calls by exact ID in
-  common `tool_call_id`/`tool_use_id` and contextual custom fields. Matched
+- Match direct `role: tool` results and nested typed `tool_result` objects to
+  recent earlier tool calls by exact ID in common `tool_call_id`/`tool_use_id`,
+  `call_id`, and contextual custom fields. Matched
   calls and results reuse the existing line-number separator for compact
   `↓`/`↑` direction markers, without taking another column; press `t` to jump
   exactly between a matched pair.
+- Collapse high-confidence inline base64 media in the interactive JSONL view to
+  a media type and validated decoded byte size, without allocating a decoded
+  payload. Press `r` to inspect the current record's original source text and
+  press it again to return to the structured view.
 - Preserve data semantics. JSON strings are highlighted for readability, not
   rewritten.
 - Keep large outputs responsive by indexing a temporary text file and only
@@ -240,6 +245,26 @@ Other types are intentionally passthrough:
 - Jinja templates are indexed and highlighted as templates, but `fmtview` does
   not render them, evaluate includes, or rewrite template statements.
 
+### Conversation records and inline media
+
+Conversation-shaped JSON remains ordinary JSON: direct `role`/`ref` fields,
+typed `content` items, reasoning, runtime reminders, artifact metadata, and
+unknown future fields are formatted and displayed instead of projected into a
+fixed schema. Typed `tool_call`/`tool_use` and `tool_result`/`tool_response`
+objects can link by exact IDs even when they are nested in `content` arrays.
+Embedded argument strings keep their original JSON token spelling and escapes.
+
+In the interactive JSONL viewer, an unescaped-ASCII
+`data:<media-type>;base64,...` string is shown as a compact media summary. A
+same-object `type: base64` or `type: base64url` plus
+`media_type`/`mime_type` and later `data` field is handled too, as is a direct
+`attachment` object under a typed image item. Standard and URL-safe alphabets
+are validated separately. Metadata must precede that sibling `data` field for
+streaming recognition, and arbitrary `media_type` plus `data` objects are not
+guessed to be base64. Valid payloads show the decoded byte size; recognized
+invalid payloads say `invalid base64` instead of claiming a size. Redirected
+output never collapses these strings.
+
 ### Following growing JSONL files
 
 Use `-F`/`--follow` with a JSONL or NDJSON file to open directly at its current
@@ -319,6 +344,7 @@ The repository includes small sample files that exercise the viewer features:
 fmtview examples/showcase.json
 fmtview examples/events.jsonl
 fmtview examples/chat.jsonl
+fmtview examples/conversation.jsonl
 fmtview examples/long-inline.jsonl
 fmtview examples/response.xml
 fmtview examples/page.html
@@ -345,6 +371,9 @@ useful for testing structure jumps around partially observed inline content.
 mixed `system`/`user`/`assistant`/`tool` ordering, an object without a role, and
 a matched tool call/result pair for testing role scopes, relation markers,
 pair navigation, and chat-aware structure jumps.
+`examples/conversation.jsonl` includes generic typed content, nested tool
+call/result objects, an exact embedded arguments string, reasoning/runtime and
+artifact metadata, and same-object base64 media.
 `examples/page.html` is well-formed HTML that also works as XML-compatible
 markup.
 `examples/messy.html` is loose HTML with void elements, unclosed optional
@@ -376,6 +405,7 @@ Shift+Wheel horizontal scroll in nowrap mode
 n/N         next/previous search match
 ]/[         next/previous structure
 t           jump between the focused tool call/result pair
+r           toggle current JSONL record between structured and raw source view
 m           toggle mouse selection mode
 Digits+Enter jump to a line number, for example 1200 Enter
 Backspace   edit a pending prompt
@@ -425,6 +455,18 @@ With `--follow`, this same indexed spool starts from the committed tail, loads
 older records backward when needed, and extends forward after source refreshes.
 The footer shows `follow:on`, `follow:detached`, or `follow:off`.
 
+Press `r` on a JSONL/NDJSON record to open a bounded raw snapshot backed by its
+exact immutable raw-spool range. An active search match selects its containing
+record; otherwise the viewport's top record is used. The snapshot stays on that
+record even if the source is appended, truncated, or replaced in the
+background; returning to structured mode shows the updated stream without
+changing an existing detached anchor. Raw display
+uses 32 KiB visual chunks so a huge record is never copied wholesale into the
+viewer frame. Search works within those chunks, but a query spanning an
+artificial chunk boundary is not matched. Invalid UTF-8 is displayed lossily;
+the exact bytes remain in the source/spool and are never reconstructed from
+pretty output. Press `q` (or an idle `Esc`) to quit from either view.
+
 To jump to a specific line, type the line number directly and press Enter. While
 a line jump is pending, the footer shows the target line; Backspace edits it and
 Esc cancels it. Out-of-range line numbers are clamped to the file. On fully
@@ -452,7 +494,8 @@ line numbers.
 
 Tool calls and tool results reuse the existing line-number separator instead
 of adding a separate relation lane. The matcher only considers ID-like fields
-in a tool call object or a direct `"role": "tool"` result object, then requires
+in a tool call object, a direct `"role": "tool"` result object, or a nested
+typed `tool_result`/`tool_response` object, then requires
 an exact ID value match with an earlier call from bounded recent context. On a
 cold jump, context recovery reads at most 4,096 preceding lines. A matched call
 replaces `│` with `↓`, and its result replaces it with `↑`; the
@@ -543,6 +586,11 @@ rendered output in memory for browsing.
 - Lazy preview writes transformed records into a temporary spool and keeps compact
   offsets, not formatted strings, in memory. The title shows `N+` lines while
   the session index is still incomplete and idle time extends the index.
+- JSONL raw toggles write only ingested source records to a separate immutable
+  temporary spool, so an open snapshot cannot change after source replacement.
+- Viewer-only JSONL formatting scans recognized base64 payloads in buffered
+  slices, validates padding/alphabet, and writes only the media summary. It does
+  not allocate a decoded buffer or a payload-sized formatted output buffer.
 - Passthrough inputs, such as Markdown, TOML, plain text, and Jinja templates,
   are indexed without content rewriting.
 - The terminal viewer uses compact ANSI redraws and avoids repainting invisible
