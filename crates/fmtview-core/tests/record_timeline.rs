@@ -967,10 +967,10 @@ fn repeated_forward_search_wraps_into_lazily_loaded_older_records() {
 
 #[test]
 fn wrapped_forward_search_waits_for_the_true_prefix_before_choosing_a_match() {
-    let (_handle, timeline) = fake_timeline((0..200).map(|index| match index {
+    let (_handle, timeline) = fake_timeline((0..1_200).map(|index| match index {
         0 => b"{\"message\":\"needle-oldest\"}\n".to_vec(),
-        100 => b"{\"message\":\"needle-newer-prefix-batch\"}\n".to_vec(),
-        199 => b"{\"message\":\"needle-tail\"}\n".to_vec(),
+        700 => b"{\"message\":\"needle-newer-prefix-batch\"}\n".to_vec(),
+        1_199 => b"{\"message\":\"needle-tail\"}\n".to_vec(),
         _ => record(index),
     }));
     let file = RecordTimelineViewFile::with_initial_limit(
