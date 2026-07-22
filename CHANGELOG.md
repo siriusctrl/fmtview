@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-22
+
 ### Added
 
 - Expose `fmtview::view` as a narrow public embedding facade for interactive
@@ -25,7 +27,9 @@ for GitHub Release notes, so every published version must have a matching
 ### Fixed
 
 - Keep forward and backward search sessions aware of committed records appended
-  after the search began, including when repeating a completed miss.
+  after the search began, including when repeating a completed miss. Preserve
+  source ordering across lazy older loads, repeated backward appends, and short
+  timeline reads so active searches neither reorder matches nor skip records.
 
 ## [0.6.0] - 2026-07-22
 
