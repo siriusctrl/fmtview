@@ -33,6 +33,14 @@ for GitHub Release notes, so every published version must have a matching
 
 ### Fixed
 
+- Detect bounded start/middle/end changes when a same-size followed file is
+  rewritten outside its previous tail, instead of silently keeping stale
+  committed history.
+- Keep follow-mode search input independent from navigation keys, including
+  `f`, `g`, `j`, and `b`, and make a wrapped forward search load the true older
+  prefix before repeating a tail match.
+- Surface the existing malformed-record notice for records first encountered
+  in the initial or lazily loaded older follow window.
 - Require the release workflow to resolve an exact version tag and validate its
   changelog entry before any crates.io or npm publishing job can start.
 

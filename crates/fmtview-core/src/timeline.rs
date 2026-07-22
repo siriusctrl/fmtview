@@ -12,7 +12,7 @@ use memchr::{memchr, memrchr};
 const REVERSE_SCAN_CHUNK_BYTES: usize = 64 * 1024;
 const FORWARD_SCAN_CHUNK_BYTES: usize = 16 * 1024;
 const REFRESH_SHORT_READ_ATTEMPTS: usize = 3;
-const PENDING_SAMPLE_BYTES: u64 = 64;
+const RANGE_SAMPLE_BYTES: u64 = 64;
 
 /// Stable identity for one committed record within a source epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -125,7 +125,7 @@ pub struct FileRecordTimeline {
     observed_end: u64,
     older_cursor: u64,
     newer_cursor: u64,
-    committed_anchor: Vec<u8>,
+    committed_sample: Vec<u8>,
     pending_sample: Vec<u8>,
     instrumentation: FileTimelineInstrumentation,
 }
@@ -148,7 +148,8 @@ impl FileRecordTimeline {
         let mut instrumentation = FileTimelineInstrumentation::default();
         let committed_end =
             find_committed_end(&mut file, observed_end, &mut instrumentation, &label)?;
-        let committed_anchor = read_anchor(&mut file, committed_end, &mut instrumentation, &label)?;
+        let committed_sample =
+            read_committed_sample(&mut file, committed_end, &mut instrumentation, &label)?;
         let pending_sample = read_pending_sample(
             &mut file,
             committed_end,
@@ -168,7 +169,7 @@ impl FileRecordTimeline {
             observed_end,
             older_cursor: committed_end,
             newer_cursor: committed_end,
-            committed_anchor,
+            committed_sample,
             pending_sample,
             instrumentation,
         })
@@ -191,7 +192,7 @@ impl FileRecordTimeline {
             &mut self.instrumentation,
             &self.label,
         )?;
-        let committed_anchor = read_anchor(
+        let committed_sample = read_committed_sample(
             &mut file,
             committed_end,
             &mut self.instrumentation,
@@ -212,7 +213,7 @@ impl FileRecordTimeline {
         self.committed_end = committed_end;
         self.older_cursor = committed_end;
         self.newer_cursor = committed_end;
-        self.committed_anchor = committed_anchor;
+        self.committed_sample = committed_sample;
         self.pending_sample = pending_sample;
         Ok(TimelineRefresh::Reset {
             reason,
@@ -220,17 +221,17 @@ impl FileRecordTimeline {
         })
     }
 
-    fn anchor_still_matches(&mut self, file: &mut File) -> Result<bool> {
-        if self.committed_anchor.is_empty() {
+    fn committed_sample_still_matches(&mut self, file: &mut File) -> Result<bool> {
+        if self.committed_sample.is_empty() {
             return Ok(true);
         }
-        let current = read_anchor(
+        let current = read_committed_sample(
             file,
             self.committed_end,
             &mut self.instrumentation,
             &self.label,
         )?;
-        Ok(current == self.committed_anchor)
+        Ok(current == self.committed_sample)
     }
 
     fn refresh_once(&mut self) -> Result<TimelineRefresh> {
@@ -250,7 +251,7 @@ impl FileRecordTimeline {
             return self.reset(replacement, &metadata, TimelineResetReason::Truncated);
         }
 
-        if self.committed_end > 0 && !self.anchor_still_matches(&mut replacement)? {
+        if self.committed_end > 0 && !self.committed_sample_still_matches(&mut replacement)? {
             return self.reset(replacement, &metadata, TimelineResetReason::Replaced);
         }
 
@@ -300,7 +301,7 @@ impl FileRecordTimeline {
             &self.label,
         )?
         .map_or(previous_committed_end, |offset| offset.saturating_add(1));
-        let committed_anchor = read_anchor(
+        let committed_sample = read_committed_sample(
             &mut replacement,
             committed_end,
             &mut self.instrumentation,
@@ -326,7 +327,7 @@ impl FileRecordTimeline {
         self.change_stamp = change_stamp;
         self.observed_end = observed_end;
         self.committed_end = committed_end;
-        self.committed_anchor = committed_anchor;
+        self.committed_sample = committed_sample;
         self.pending_sample = pending_sample;
 
         let snapshot = self.snapshot();
@@ -579,10 +580,29 @@ fn read_pending_sample(
     instrumentation: &mut FileTimelineInstrumentation,
     label: &str,
 ) -> Result<Vec<u8>> {
+    read_range_sample(file, start, end, instrumentation, label)
+}
+
+fn read_committed_sample(
+    file: &mut File,
+    committed_end: u64,
+    instrumentation: &mut FileTimelineInstrumentation,
+    label: &str,
+) -> Result<Vec<u8>> {
+    read_range_sample(file, 0, committed_end, instrumentation, label)
+}
+
+fn read_range_sample(
+    file: &mut File,
+    start: u64,
+    end: u64,
+    instrumentation: &mut FileTimelineInstrumentation,
+    label: &str,
+) -> Result<Vec<u8>> {
     if start >= end {
         return Ok(Vec::new());
     }
-    let width = (end - start).min(PENDING_SAMPLE_BYTES);
+    let width = (end - start).min(RANGE_SAMPLE_BYTES);
     let mut offsets = [
         start,
         start + (end - start - width) / 2,
@@ -607,21 +627,6 @@ fn read_pending_sample(
         previous = Some(offset);
     }
     Ok(sample)
-}
-
-fn read_anchor(
-    file: &mut File,
-    committed_end: u64,
-    instrumentation: &mut FileTimelineInstrumentation,
-    label: &str,
-) -> Result<Vec<u8>> {
-    const ANCHOR_BYTES: u64 = 64;
-    let start = committed_end.saturating_sub(ANCHOR_BYTES);
-    let mut anchor = vec![0_u8; usize::try_from(committed_end - start).unwrap_or(0)];
-    if !anchor.is_empty() {
-        read_exact_at(file, start, &mut anchor, instrumentation, label)?;
-    }
-    Ok(anchor)
 }
 
 fn read_exact_at(
