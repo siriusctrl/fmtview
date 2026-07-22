@@ -20,7 +20,8 @@ tool-heavy cache maintenance, and accidentally unbounded prefix scans that are
 not visible in the lower-level viewport-render benchmark.
 
 Run the load benchmark smoke suite for raw indexed files and lazy record
-spooling:
+spooling, including tail-open, older prepend, append refresh, and attached
+follow rendering:
 
 ```sh
 benches/load-performance.sh
@@ -98,6 +99,9 @@ shapes.
 - `record-stream`: newline-delimited records can be transformed independently.
 - `record-stream/huge-record`: one record dominates the cost, so first-window
   lazy behavior cannot hide transform/readback work.
+- `growing-record-stream/tail`, `/older`, `/newer`, and `/follow`: a
+  bidirectional timeline begins at committed EOF, loads backward, refreshes
+  forward, or keeps an attached viewport at the new tail.
 - `whole-document`: formatting depends on parser state across the complete
   document, so transform, temp-file indexing, and readback should be measured
   separately.
@@ -129,6 +133,17 @@ Load metrics:
   reading the visible window back from the spool. Compare this with the
   first-window metric to separate transform/spool cost from long-line readback.
   Shape: `record-stream/huge-record`.
+- `timeline tail-first open+format` measures reverse tail discovery, formatting
+  the initial bounded record batch, spooling/indexing it, and reading the last
+  viewport. Fixture generation is outside the timed region, and correctness
+  tests separately assert bounded source bytes with instrumentation.
+- `timeline older prepend+format` measures one bounded backward record load,
+  formatting/spooling, and insertion into the session indexes.
+- `timeline append refresh+format` measures reverse committed-boundary refresh,
+  bounded forward loading, formatting, and append-only index extension.
+- `timeline follow refresh+render` measures an attached follow viewport from
+  source refresh through transform/spool work to the next backend-neutral
+  frame.
 - `json whole-document eager view open` and `xml whole-document eager view open`
   measure complete document transform, temp-file line indexing, and first-window
   readback together. Shape: `whole-document`.

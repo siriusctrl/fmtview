@@ -8,6 +8,17 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Add `-F`/`--follow` for interactive JSONL/NDJSON files. Follow mode opens at
+  the committed tail without formatting the whole file, advances on appended
+  records while attached, detaches when scrolled up, reattaches at the bottom,
+  and uses `f` plus a legible footer to pause or resume.
+- Expose a backend-neutral bidirectional `RecordTimeline` API from
+  `fmtview-core`, with exact raw record bytes, stable epoch/offset identities,
+  bounded older/newer loading, explicit pending/end/reset outcomes, and
+  headless fake- and real-source tests.
+
 ### Changed
 
 - Split the publishable, terminal-independent viewer engine into the new
@@ -15,6 +26,10 @@ for GitHub Release notes, so every published version must have a matching
   models, file and diff viewer state, search/navigation, highlighting, layout,
   render caches, and backend-neutral frames can now be tested without a real
   terminal, while the `fmtview` package keeps the same install and binary name.
+- Extend lazy record spooling, search, structure/chat/tool navigation, and
+  viewport anchoring across tail-first older loads and live appends. Replacement
+  epochs use bounded ordered overlap reconciliation that preserves legitimate
+  duplicate records and prevents stale/new history interleaving.
 
 ### Fixed
 

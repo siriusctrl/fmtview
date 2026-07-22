@@ -8,6 +8,7 @@ This npm package installs the prebuilt static Linux x64 `fmtview` binary.
 ```sh
 npm install -g fmtview
 fmtview data.json
+fmtview --follow events.jsonl
 fmtview page.html
 fmtview notes.md
 fmtview config.toml
@@ -27,6 +28,11 @@ and previewed without rewriting their content. Markdown fenced `json`, `toml`,
 The main product surface is the terminal viewer: fast lazy loading, useful
 highlighting, in-viewer search, and interactive diffs while redirected stdout
 stays scriptable.
+
+For growing JSONL/NDJSON files, `-F`/`--follow` opens directly at the committed
+tail. Appends advance while the viewport is at the bottom, scrolling up
+detaches, scrolling back down reattaches, and `f` explicitly pauses or resumes.
+An incomplete final record stays hidden until its newline arrives.
 
 For a shorter daily command, print or install a shell alias:
 
