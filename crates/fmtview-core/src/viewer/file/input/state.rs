@@ -235,10 +235,7 @@ impl ViewState {
         shift_target(&mut self.search_target, at, lines);
         shift_target(&mut self.structure_target, at, lines);
         if let Some(task) = self.search_task.as_mut() {
-            if !task.awaiting_older {
-                shift_index(&mut task.next_line, at, lines);
-                task.remaining = task.remaining.saturating_add(lines);
-            }
+            task.shift_for_insert(at, lines);
         }
         if let Some(index) = self.search_index.as_mut() {
             index.counted_lines = 0;
@@ -261,6 +258,18 @@ impl ViewState {
         }
         self.search_match_ordinal = None;
         self.clear_tool_navigation();
+    }
+
+    pub(in crate::viewer) fn extend_for_append(&mut self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        if let Some(task) = self.search_task.as_mut() {
+            task.extend_for_append(start, end);
+        }
+        if let Some(index) = self.search_index.as_mut() {
+            index.exact = false;
+        }
     }
 }
 

@@ -420,6 +420,11 @@ impl FileViewer {
             self.state
                 .shift_for_insert(change.inserted_at, change.inserted_lines);
         }
+        if change.appended_lines > 0 {
+            let end = self.file.line_count();
+            self.state
+                .extend_for_append(end.saturating_sub(change.appended_lines), end);
+        }
         if change.appended_lines > 0 && self.state.follow == Some(FollowState::Following) {
             set_file_end(&mut self.state, self.file.line_count());
         }
