@@ -13,3 +13,11 @@ categories = ["command-line-utilities", "development-tools"]
 [lib]
 name = "fmtview_core"
 path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1.0.102"
+memchr = "2.8.0"
+quick-xml = "0.39.2"
+ratatui = { version = "0.30.0", default-features = false }
+tempfile = "3.27.0"
+unicode-width = "0.2.2"

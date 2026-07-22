@@ -347,17 +347,23 @@ dependencies = [
  "assert_cmd",
  "clap",
  "crossterm",
- "memchr",
+ "fmtview-core",
  "predicates",
- "quick-xml",
  "ratatui",
  "tempfile",
- "unicode-width",
 ]
 
 [[package]]
 name = "fmtview-core"
 version = "0.5.4"
+dependencies = [
+ "anyhow",
+ "memchr",
+ "quick-xml",
+ "ratatui",
+ "tempfile",
+ "unicode-width",
+]
 
 [[package]]
 name = "foldhash"

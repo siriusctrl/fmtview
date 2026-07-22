@@ -1,0 +1,25 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormatKind {
+    Auto,
+    Json,
+    Jsonl,
+    Xml,
+    Html,
+    Toml,
+    Markdown,
+    Plain,
+    Jinja,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FormatOptions {
+    pub kind: FormatKind,
+    pub indent: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TransformStrategy {
+    PrettyPrint,
+    RecordPrettyPrint,
+    Passthrough,
+}

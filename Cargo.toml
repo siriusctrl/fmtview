@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/fmtview-core"]
+default-members = [".", "crates/fmtview-core"]
 resolver = "3"
 
 [package]
@@ -19,11 +20,9 @@ exclude = [".github/", "npm/"]
 anyhow = "1.0.102"
 clap = { version = "4.6.1", features = ["derive"] }
 crossterm = "0.29.0"
-memchr = "2.8.0"
-quick-xml = "0.39.2"
+fmtview-core = { version = "0.5.4", path = "crates/fmtview-core" }
 ratatui = { version = "0.30.0", default-features = false, features = ["crossterm"] }
 tempfile = "3.27.0"
-unicode-width = "0.2.2"
 
 [dev-dependencies]
 assert_cmd = "2.2.1"

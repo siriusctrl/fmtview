@@ -1,40 +1,11 @@
 use std::io::{self, Write};
 
-use ratatui::{
-    backend::Backend,
-    buffer::Buffer,
-    layout::{Rect, Size},
-    style::Style,
-    text::Line,
-};
-
-use super::{
-    buffer_frame::render_frame,
-    scroll::{ScrollDirection, draw_buffer_delta},
-    terminal_writer::draw_cells_with_buffer,
-};
-
-pub(crate) use super::scroll::ScrollHint;
+use fmtview_core::{RenderFrame, ScrollPosition, render_frame_to_buffer};
 #[cfg(test)]
-pub(crate) use super::terminal_writer::draw_cells;
+use fmtview_core::{ScrollDirection, ScrollHint};
+use ratatui::{backend::Backend, buffer::Buffer, layout::Size};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ScrollPosition {
-    pub(crate) top: usize,
-    pub(crate) row_offset: usize,
-}
-
-pub(crate) struct TerminalFrame {
-    pub(crate) area: Rect,
-    pub(crate) styled: Vec<Line<'static>>,
-    pub(crate) sticky: Vec<Line<'static>>,
-    pub(crate) selection_mode: bool,
-    pub(crate) title: String,
-    pub(crate) footer_text: String,
-    pub(crate) footer_style: Style,
-    pub(crate) position: ScrollPosition,
-    pub(crate) scroll_hint: Option<ScrollHint>,
-}
+use super::{scroll::draw_buffer_delta, terminal_writer::draw_cells_with_buffer};
 
 pub(crate) struct ViewerTerminal<B> {
     backend: B,
@@ -74,7 +45,7 @@ where
         self.backend.show_cursor()
     }
 
-    pub(crate) fn draw(&mut self, frame: TerminalFrame) -> io::Result<()> {
+    pub(crate) fn draw(&mut self, frame: RenderFrame) -> io::Result<()> {
         let mut current = self
             .scratch
             .take()
@@ -82,26 +53,21 @@ where
         current.resize(frame.area);
         current.reset();
         let sticky_rows = frame.sticky.len();
-        render_frame(
-            &mut current,
-            frame.styled,
-            frame.sticky,
-            frame.selection_mode,
-            frame.title,
-            frame.footer_text,
-            frame.footer_style,
-        );
+        let position = frame.position;
+        let selection_mode = frame.selection_mode;
+        let scroll_hint = frame.scroll_hint;
+        render_frame_to_buffer(&mut current, frame);
         match self.previous.take() {
             Some(previous)
                 if previous.area == current.area
                     && self.previous_sticky_rows == sticky_rows
-                    && self.previous_selection_mode == Some(frame.selection_mode) =>
+                    && self.previous_selection_mode == Some(selection_mode) =>
             {
                 draw_buffer_delta(
                     &mut self.backend,
                     &previous,
                     &current,
-                    frame.scroll_hint,
+                    scroll_hint,
                     sticky_rows,
                     &mut self.output,
                 )?;
@@ -109,7 +75,7 @@ where
             }
             previous => {
                 self.backend.clear()?;
-                let empty = Buffer::empty(frame.area);
+                let empty = Buffer::empty(current.area);
                 draw_cells_with_buffer(&mut self.backend, empty.diff(&current), &mut self.output)?;
                 self.previous_position = None;
                 self.previous_selection_mode = None;
@@ -119,32 +85,37 @@ where
         self.backend.hide_cursor()?;
         Backend::flush(&mut self.backend)?;
         self.previous = Some(current);
-        self.previous_position = Some(frame.position);
+        self.previous_position = Some(position);
         self.previous_sticky_rows = sticky_rows;
-        self.previous_selection_mode = Some(frame.selection_mode);
+        self.previous_selection_mode = Some(selection_mode);
         Ok(())
     }
 
+    pub(crate) fn previous_position(&self) -> Option<ScrollPosition> {
+        self.previous_position
+    }
+
+    #[cfg(test)]
     pub(crate) fn scroll_hint(&self, position: ScrollPosition) -> Option<ScrollHint> {
         let previous = self.previous_position?;
         if previous.top != position.top {
             return None;
         }
-
         let delta = position.row_offset.abs_diff(previous.row_offset);
         if delta == 0 || delta > 12 {
             return None;
         }
         let amount = u16::try_from(delta).ok()?;
-        let direction = if position.row_offset > previous.row_offset {
-            ScrollDirection::Up
+        if position.row_offset > previous.row_offset {
+            Some(ScrollHint {
+                amount,
+                direction: ScrollDirection::Up,
+            })
         } else {
-            ScrollDirection::Down
-        };
-        Some(ScrollHint { amount, direction })
-    }
-
-    pub(crate) fn previous_position(&self) -> Option<ScrollPosition> {
-        self.previous_position
+            Some(ScrollHint {
+                amount,
+                direction: ScrollDirection::Down,
+            })
+        }
     }
 }
