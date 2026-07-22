@@ -26,6 +26,9 @@ instead of starting Xvfb.
 
 Set FMTVIEW_EMULATOR_FOLLOW_FILE to the JSONL file named by a --follow demo
 command to record append, detach, reattach, and pause/resume actions.
+
+Set FMTVIEW_EMULATOR_SCENARIO=conversation to record nested tool-pair
+navigation, structured/raw record toggles, media collapse, search, and wrap.
 EOF
 }
 
@@ -61,6 +64,7 @@ window_h="${FMTVIEW_EMULATOR_WINDOW_H:-820}"
 fps="${FMTVIEW_EMULATOR_FPS:-24}"
 use_existing_display="${FMTVIEW_EMULATOR_USE_EXISTING_DISPLAY:-0}"
 follow_file="${FMTVIEW_EMULATOR_FOLLOW_FILE:-}"
+scenario="${FMTVIEW_EMULATOR_SCENARIO:-default}"
 class_name="fmtview-emulator-$$"
 display=""
 xvfb_pid=""
@@ -255,6 +259,45 @@ if [[ -n "$follow_file" ]]; then
   sleep 0.8
   send_key "resume_follow" "f"
   sleep 0.8
+elif [[ "$scenario" == "conversation" ]]; then
+  send_key "tool_search_open" "slash"
+  sleep 0.2
+  send_type "tool_search_query" "tool_call"
+  sleep 0.2
+  send_key "tool_search_enter" "Return"
+  sleep 0.7
+  send_key "tool_jump_to_result" "t"
+  sleep 0.7
+  send_key "tool_jump_to_call" "t"
+  sleep 0.7
+  send_key "raw_arguments" "r"
+  sleep 0.7
+  send_key "raw_search_open" "slash"
+  sleep 0.2
+  send_type "raw_search_query" "cargo test"
+  sleep 0.2
+  send_key "raw_search_enter" "Return"
+  sleep 0.7
+  send_key "structured_from_arguments" "r"
+  sleep 0.7
+  send_key "media_search_open" "slash"
+  sleep 0.2
+  send_type "media_search_query" "image/png"
+  sleep 0.2
+  send_key "media_search_enter" "Return"
+  sleep 0.7
+  send_key "raw_media" "r"
+  sleep 0.7
+  send_key "structured_from_media" "r"
+  sleep 0.7
+  send_key "toggle_wrap" "w"
+  sleep 0.7
+  send_key "metadata_search_open" "slash"
+  sleep 0.2
+  send_type "metadata_search_query" "runtime_reminder"
+  sleep 0.2
+  send_key "metadata_search_enter" "Return"
+  sleep 0.7
 else
   send_key "scroll_down" "j"
   sleep 0.5

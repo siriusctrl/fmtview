@@ -52,6 +52,16 @@ FMTVIEW_EMULATOR_FOLLOW_FILE=target/follow-demo.jsonl \
   target/debug/fmtview --follow target/follow-demo.jsonl
 ```
 
+For the generic conversation fixture, select the dedicated interaction
+scenario. It records nested tool-pair navigation, exact raw argument and media
+records, the structured media summary, search, wrap, and clean quit:
+
+```sh
+FMTVIEW_EMULATOR_SCENARIO=conversation \
+  scripts/record-emulator-demo.sh target/fmtview-emulator-recordings/conversation -- \
+  target/debug/fmtview examples/conversation.jsonl
+```
+
 For release candidates, pass the release binary explicitly after building it:
 
 ```sh
