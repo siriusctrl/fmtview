@@ -11,11 +11,14 @@ distribution plans, tokens, and maintainer checklists belong here.
 Current stable channels:
 
 - crates.io: `cargo install fmtview --locked`.
-- crates.io library dependency: `fmtview-core` is published for the `fmtview`
-  package, but end users should still install the `fmtview` binary.
 - npm Linux x64 binary wrapper: `npm install -g fmtview`.
 - GitHub Releases with a static Linux x64 binary archive and checksums.
 - Git install: `cargo install --git https://github.com/siriusctrl/fmtview --locked`
+
+The workspace and release workflow are prepared to publish `fmtview-core`
+before `fmtview`, but the library is not a stable channel until the first
+release containing the extraction is available on crates.io. End users should
+continue to install the `fmtview` binary.
 
 Current binary coverage:
 
@@ -95,9 +98,12 @@ on:
 The workflow should:
 
 - Check out the tagged commit.
+- Reject branch names, commit SHAs, and unprefixed versions: the release ref must
+  resolve to the exact existing `vX.Y.Z` tag for the checked-out commit.
 - Verify the tag version matches `Cargo.toml`.
 - Verify the `fmtview-core` and npm package versions match the root `Cargo.toml`.
-- Verify `CHANGELOG.md` has a non-empty section for the tag.
+- Verify `CHANGELOG.md` has a non-empty section for the tag before any
+  publish-capable job can start.
 - Run `cargo fmt --check`, `cargo test`, and `cargo clippy --all-targets -- -D warnings`.
 - Build the Linux x64 release binary as a static musl binary.
 - Package the binary as `fmtview-linux-x64.tar.gz`.
@@ -110,6 +116,9 @@ The workflow should:
   Publishing after it is configured.
 - Support manual reruns for an existing tag and skip registry versions that are
   already published.
+
+Manual dispatches must name an existing release tag. They are reruns of the
+tagged release path, not a way to publish from a branch or arbitrary commit.
 
 If the crates.io or npm secret is missing, the workflow still builds the GitHub
 Release artifact and skips that registry publish step.

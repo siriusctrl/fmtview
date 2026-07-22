@@ -12,6 +12,7 @@ mod tui;
 mod viewer;
 
 pub use diff::{DiffView, diff_sources, diff_view};
+pub use formats::ContentShape;
 pub use input::InputSource;
 pub use load::{LoadPlan, OpenedViewFile, ViewFile, open_view_file, open_view_file_with_fallback};
 pub use profile::TypeProfile;

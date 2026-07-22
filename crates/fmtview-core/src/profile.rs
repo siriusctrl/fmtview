@@ -56,6 +56,21 @@ impl TypeProfile {
         })
     }
 
+    /// Resolved content kind used by highlighting and rendering.
+    pub const fn content_kind(self) -> FormatKind {
+        self.content
+    }
+
+    /// Coarse input shape used to select shared runtime behavior.
+    pub const fn content_shape(self) -> ContentShape {
+        self.shape
+    }
+
+    /// Loading strategy selected for interactive viewing.
+    pub const fn load_plan(self) -> crate::load::LoadPlan {
+        self.load
+    }
+
     pub fn format_options(self, indent: usize) -> FormatOptions {
         FormatOptions {
             kind: self.content,

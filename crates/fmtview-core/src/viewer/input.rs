@@ -24,6 +24,9 @@ impl KeyModifiers {
     pub const SHIFT: Self = Self(1 << 0);
     pub const CONTROL: Self = Self(1 << 1);
     pub const ALT: Self = Self(1 << 2);
+    pub const SUPER: Self = Self(1 << 3);
+    pub const HYPER: Self = Self(1 << 4);
+    pub const META: Self = Self(1 << 5);
 
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
