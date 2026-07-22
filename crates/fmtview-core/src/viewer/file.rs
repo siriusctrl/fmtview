@@ -287,6 +287,9 @@ impl FileViewer {
             self.state
                 .shift_for_overlap_removal(change.removed_at, change.removed_lines);
         }
+        if change.appended_lines > 0 {
+            self.state.extend_for_append(change.appended_lines);
+        }
         if change.appended_lines > 0 && self.state.follow == Some(FollowState::Following) {
             set_file_end(&mut self.state, self.file.line_count());
         }

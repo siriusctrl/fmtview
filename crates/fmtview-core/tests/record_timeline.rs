@@ -536,6 +536,30 @@ fn repeated_forward_search_wraps_into_lazily_loaded_older_records() {
 }
 
 #[test]
+fn active_forward_search_includes_newer_records_arriving_at_the_boundary() {
+    let (handle, timeline) = fake_timeline([record(0), record(1)]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+    viewer.render(size, None).unwrap();
+    viewer.handle_event(key(KeyCode::Home), FileViewer::page_for_size(size));
+    viewer.render(size, None).unwrap();
+    enter_search(&mut viewer, size, "needle-after-search-started");
+
+    handle.append(b"{\"message\":\"needle-after-search-started\"}\n".to_vec());
+    viewer.preload().unwrap();
+    advance_until_idle(&mut viewer);
+    let frame = viewer.render(size, None).unwrap();
+
+    assert!(frame_text(frame).contains("needle-after-search-started"));
+}
+
+#[test]
 fn file_timeline_preserves_crlf_empty_records_and_ignores_incomplete_eof() {
     let mut temp = NamedTempFile::new().unwrap();
     temp.write_all(b"{\"a\":1}\r\n\r\n{\"b\":2}\n{\"pending\":true}")
