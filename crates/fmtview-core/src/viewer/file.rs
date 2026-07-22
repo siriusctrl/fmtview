@@ -413,7 +413,12 @@ impl FileViewer {
     }
 
     fn open_raw_record(&mut self) -> ViewerAction {
-        match self.file.open_raw_record(self.state.top) {
+        let anchor = self
+            .state
+            .search_match_target
+            .map(|target| target.line)
+            .unwrap_or(self.state.top);
+        match self.file.open_raw_record(anchor) {
             Ok(Some(file)) => {
                 let mut state = ViewState {
                     wrap: self.state.wrap,

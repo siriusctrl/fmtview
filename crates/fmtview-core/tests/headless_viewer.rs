@@ -160,6 +160,45 @@ fn record_engine_toggles_bounded_raw_view_and_keeps_core_interactions() {
 }
 
 #[test]
+fn raw_toggle_prefers_the_active_search_match_record_over_the_viewport_top() {
+    let source = source(
+        "search-focus.jsonl",
+        concat!(
+            r#"{"ref":"first","role":"assistant","content":[{"type":"text","text":"before"}]}"#,
+            "\n",
+            r#"{"ref":"second","role":"assistant","content":[{"type":"text","text":"after"}]}"#,
+            "\n"
+        ),
+    );
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let profile = TypeProfile::resolve(&source, &options).unwrap();
+    let opened = open_view_file(&source, &options, profile).unwrap();
+    let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
+    let size = Size::new(72, 30);
+    viewer.render(size, None).unwrap();
+
+    send_key(&mut viewer, size, KeyCode::Char('/'));
+    for ch in "second".chars() {
+        send_key(&mut viewer, size, KeyCode::Char(ch));
+    }
+    send_key(&mut viewer, size, KeyCode::Enter);
+    while viewer.advance(std::time::Instant::now()).unwrap() {}
+    let matched = viewer.render(size, None).unwrap();
+    assert_eq!(matched.position.top, 0);
+    assert!(buffer_text(matched).contains("second"));
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('r')).dirty);
+    let raw = viewer.render(size, None).unwrap();
+    assert!(raw.title.contains("raw record"), "{}", raw.title);
+    let raw_text = buffer_text(raw);
+    assert!(raw_text.contains(r#""ref":"second""#), "{raw_text}");
+    assert!(!raw_text.contains(r#""ref":"first""#), "{raw_text}");
+}
+
+#[test]
 fn pretty_nested_tool_pair_navigation_round_trips_between_records() {
     let source = source(
         "conversation.jsonl",

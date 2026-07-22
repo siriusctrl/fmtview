@@ -452,9 +452,11 @@ older records backward when needed, and extends forward after source refreshes.
 The footer shows `follow:on`, `follow:detached`, or `follow:off`.
 
 Press `r` on a JSONL/NDJSON record to open a bounded raw snapshot backed by its
-exact source or spool range. The snapshot stays on that record while a followed
-source appends or resets in the background; returning to structured mode shows
-the updated stream without changing an existing detached anchor. Raw display
+exact source or spool range. An active search match selects its containing
+record; otherwise the viewport's top record is used. The snapshot stays on that
+record while a followed source appends or resets in the background; returning
+to structured mode shows the updated stream without changing an existing
+detached anchor. Raw display
 uses 32 KiB visual chunks so a huge record is never copied wholesale into the
 viewer frame. Search works within those chunks, but a query spanning an
 artificial chunk boundary is not matched. Invalid UTF-8 is displayed lossily;

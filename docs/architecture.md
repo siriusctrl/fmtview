@@ -365,9 +365,11 @@ UTF-8 boundary adjustment. Opening raw mode does not copy or reconstruct the
 record from formatted output. An open snapshot
 keeps the selected old record stable through later prepend, append, or reset
 work, while the main stream continues refreshing behind it. `FileViewer` owns
-the `r` toggle plus raw search, wrap, and viewport state; it synchronizes wrap
-and mouse-capture state when returning to the structured view. The terminal
-package only forwards backend-neutral input and draws the resulting frame.
+the `r` toggle plus raw search, wrap, and viewport state. An active search-match
+line is the raw-record anchor; without one, the structured viewport top is the
+anchor. The viewer synchronizes wrap and mouse-capture state when returning to
+the structured view. The terminal package only forwards backend-neutral input
+and draws the resulting frame.
 
 Record streams also have a viewer-only JSON display formatter for
 high-confidence inline base64 media. Data URIs are self-describing; sibling
