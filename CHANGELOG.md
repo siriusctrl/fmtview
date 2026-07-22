@@ -8,6 +8,12 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep tail-first follow views attached when pretty-printed JSON breadcrumbs
+  change the first frame's visible height, so committed appends continue
+  advancing without requiring an explicit reattach.
+
 ## [0.6.1] - 2026-07-22
 
 ### Added

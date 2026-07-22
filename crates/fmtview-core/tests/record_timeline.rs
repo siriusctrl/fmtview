@@ -478,6 +478,153 @@ fn follow_tail_advances_detaches_and_reattaches_headlessly() {
 }
 
 #[test]
+fn tail_first_follow_stays_attached_with_pretty_json_and_a_breadcrumb() {
+    let (handle, timeline) = fake_timeline(
+        (0..140).map(|index| conversation_record(index, &format!("history-{index}"))),
+    );
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(128, 4 * 1024 * 1024),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(120, 34);
+
+    let first = viewer.render(size, None).unwrap();
+    let first_footer = first.footer_text.clone();
+    let first_text = frame_text(first);
+    assert!(first_text.contains("history-139"), "{first_text}");
+    assert!(first_footer.contains("follow:on"), "{first_footer}");
+    assert_eq!(handle.older_calls(), 1);
+
+    handle.append(conversation_record(140, "appended-tail"));
+    assert!(viewer.preload().unwrap());
+    let appended = viewer.render(size, None).unwrap();
+    let appended_footer = appended.footer_text.clone();
+    let appended_text = frame_text(appended);
+    assert!(appended_text.contains("appended-tail"), "{appended_text}");
+    assert!(appended_footer.contains("follow:on"), "{appended_footer}");
+}
+
+#[test]
+fn tail_first_follow_layout_variants_keep_the_exact_tail_attached() {
+    for (name, size, unwrap) in [
+        ("wrapped", Size::new(120, 34), false),
+        ("unwrapped", Size::new(120, 34), true),
+        ("narrow", Size::new(48, 8), false),
+    ] {
+        let (handle, timeline) = fake_timeline(
+            (0..140).map(|index| conversation_record(index, &format!("{name}-history-{index}"))),
+        );
+        let file = RecordTimelineViewFile::with_initial_limit(
+            Box::new(timeline),
+            JSONL,
+            RecordLoadLimit::new(128, 4 * 1024 * 1024),
+        )
+        .unwrap();
+        let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+        if unwrap {
+            viewer.handle_event(key(KeyCode::Char('w')), FileViewer::page_for_size(size));
+        }
+
+        let first = viewer.render(size, None).unwrap();
+        let first_title = first.title.clone();
+        let first_footer = first.footer_text.clone();
+        let first_text = frame_text(first);
+        if name == "narrow" {
+            assert!(first_title.contains("100%"), "{first_title}");
+        } else {
+            assert!(
+                first_text.contains(&format!("{name}-history-139")),
+                "{first_text}"
+            );
+        }
+        assert!(first_footer.contains("follow:on"), "{name}: {first_footer}");
+
+        handle.append(conversation_record(140, &format!("{name}-appended")));
+        assert!(viewer.preload().unwrap());
+        let appended = viewer.render(size, None).unwrap();
+        let appended_title = appended.title.clone();
+        let appended_footer = appended.footer_text.clone();
+        let appended_text = frame_text(appended);
+        if name == "narrow" {
+            assert!(appended_title.contains("100%"), "{appended_title}");
+            assert_ne!(appended_title, first_title);
+        } else {
+            assert!(
+                appended_text.contains(&format!("{name}-appended")),
+                "{appended_text}"
+            );
+        }
+        assert!(
+            appended_footer.contains("follow:on"),
+            "{name}: {appended_footer}"
+        );
+    }
+}
+
+#[test]
+fn pretty_tail_follow_detaches_prepends_reattaches_and_pauses() {
+    let (handle, timeline) = fake_timeline(
+        (0..140).map(|index| conversation_record(index, &format!("history-{index}"))),
+    );
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(4, 4 * 1024 * 1024),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(120, 34);
+
+    let first = viewer.render(size, None).unwrap();
+    assert!(first.footer_text.contains("follow:on"));
+    assert!(frame_text(first).contains("history-139"));
+
+    assert!(
+        viewer
+            .handle_event(key(KeyCode::Up), FileViewer::page_for_size(size))
+            .dirty
+    );
+    let detached = viewer.render(size, None).unwrap();
+    assert!(detached.footer_text.contains("follow:detached"));
+    assert!(viewer.preload().unwrap());
+    assert_eq!(handle.older_calls(), 2);
+    let prepended = viewer.render(size, None).unwrap();
+    assert!(prepended.footer_text.contains("follow:detached"));
+    assert!(frame_text(prepended).contains("history-139"));
+
+    viewer.handle_event(key(KeyCode::Char('G')), FileViewer::page_for_size(size));
+    let reattached = viewer.render(size, None).unwrap();
+    assert!(reattached.footer_text.contains("follow:on"));
+    assert!(frame_text(reattached).contains("history-139"));
+
+    viewer.handle_event(key(KeyCode::Char('f')), FileViewer::page_for_size(size));
+    let paused = viewer.render(size, None).unwrap();
+    assert!(paused.footer_text.contains("follow:off"));
+
+    handle.append(conversation_record(140, "paused-append"));
+    assert!(viewer.preload().unwrap());
+    let paused_append = viewer.render(size, None).unwrap();
+    assert!(paused_append.footer_text.contains("follow:off"));
+    assert!(!frame_text(paused_append).contains("paused-append"));
+
+    viewer.handle_event(key(KeyCode::Char('G')), FileViewer::page_for_size(size));
+    assert!(
+        viewer
+            .render(size, None)
+            .unwrap()
+            .footer_text
+            .contains("follow:off")
+    );
+    viewer.handle_event(key(KeyCode::Char('f')), FileViewer::page_for_size(size));
+    let resumed = viewer.render(size, None).unwrap();
+    assert!(resumed.footer_text.contains("follow:on"));
+    assert!(frame_text(resumed).contains("paused-append"));
+}
+
+#[test]
 fn follow_can_pause_at_bottom_without_an_append_jump() {
     let (handle, timeline) = fake_timeline((0..6).map(record));
     let file = RecordTimelineViewFile::with_initial_limit(
@@ -1724,6 +1871,13 @@ fn inode_replacement_resets_with_identity_change() {
 
 fn record(index: usize) -> Vec<u8> {
     format!("{{\"message\":\"record-{index}\"}}\n").into_bytes()
+}
+
+fn conversation_record(index: usize, marker: &str) -> Vec<u8> {
+    format!(
+        "{{\"ref\":\"m{index}\",\"role\":\"assistant\",\"content\":[{{\"type\":\"text\",\"text\":\"{marker}\"}}],\"meta\":{{\"checkpoint\":{{\"index\":0,\"count\":1}}}}}}\n"
+    )
+    .into_bytes()
 }
 
 fn key(code: KeyCode) -> InputEvent {

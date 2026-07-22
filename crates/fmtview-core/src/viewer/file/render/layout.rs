@@ -111,7 +111,7 @@ pub(in crate::viewer) fn sync_sticky_layout(
         if preserve_tail || pin_follow_tail || pin_requested_tail {
             pin_state_to_tail(state, tail);
         }
-        if preserve_tail {
+        if preserve_tail && !pin_follow_tail && !pin_requested_tail {
             keep_preserved_tail_position(state, preserved_tail_position);
         }
         let next_lines = sticky_lines(
