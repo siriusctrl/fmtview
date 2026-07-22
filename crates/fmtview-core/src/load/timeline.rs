@@ -145,6 +145,10 @@ impl ViewFile for RecordTimelineViewFile {
         self.follow
     }
 
+    fn starts_at_tail(&self) -> bool {
+        true
+    }
+
     fn has_older_records(&self) -> bool {
         !self.state.borrow().older_end
     }

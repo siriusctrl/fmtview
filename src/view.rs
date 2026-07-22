@@ -69,8 +69,6 @@ pub type Result<T> = anyhow::Result<T>;
 pub struct ViewOptions {
     /// Number of spaces used when formatting each JSONL record.
     pub indent: usize,
-    /// Optional transient message shown when the viewer opens.
-    pub notice: Option<String>,
     /// Refresh newer records and enable attached/detached/paused follow state.
     pub follow: bool,
 }
@@ -79,7 +77,6 @@ impl Default for ViewOptions {
     fn default() -> Self {
         Self {
             indent: 2,
-            notice: None,
             follow: false,
         }
     }
@@ -93,13 +90,17 @@ impl Default for ViewOptions {
 /// crossterm event loop, and terminal cleanup.
 pub fn run(source: Box<dyn RecordTimeline>, options: ViewOptions) -> Result<()> {
     validate_options(&options)?;
-    if !io::stdout().is_terminal() {
+    require_interactive_stdout(io::stdout().is_terminal())?;
+
+    let file = open_timeline(source, &options)?;
+    crate::viewer::run(file, FormatKind::Jsonl, None)
+}
+
+fn require_interactive_stdout(is_terminal: bool) -> Result<()> {
+    if !is_terminal {
         bail!("embedded fmtview requires an interactive terminal on stdout");
     }
-
-    let notice = options.notice.clone();
-    let file = open_timeline(source, &options)?;
-    crate::viewer::run(file, FormatKind::Jsonl, notice)
+    Ok(())
 }
 
 fn validate_options(options: &ViewOptions) -> Result<()> {
@@ -191,5 +192,15 @@ mod tests {
         };
 
         assert!(validate_options(&options).is_err());
+    }
+
+    #[test]
+    fn rejects_redirected_stdout_before_entering_the_terminal() {
+        let error = require_interactive_stdout(false).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "embedded fmtview requires an interactive terminal on stdout"
+        );
     }
 }

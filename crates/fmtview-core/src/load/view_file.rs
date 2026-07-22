@@ -31,6 +31,10 @@ pub trait ViewFile {
     fn is_follow_source(&self) -> bool {
         false
     }
+    /// Whether the initially loaded window is anchored at the newer boundary.
+    fn starts_at_tail(&self) -> bool {
+        false
+    }
     fn has_older_records(&self) -> bool {
         false
     }

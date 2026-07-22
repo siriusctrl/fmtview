@@ -137,7 +137,5 @@ fn main() -> Result<()> {
         b"{\"ref\":\"m2\",\"role\":\"assistant\",\"content\":[{\"type\":\"tool_call\",\"id\":\"call_1\",\"name\":\"bash\",\"arguments\":\"{\\\"cmd\\\":\\\"cargo test\\\"}\"}]}\n".to_vec(),
         b"{\"ref\":\"m3\",\"role\":\"tool\",\"content\":[{\"type\":\"tool_result\",\"call_id\":\"call_1\",\"content\":\"ok\"}]}\n".to_vec(),
     ]);
-    let mut options = ViewOptions::default();
-    options.notice = Some("embedded through fmtview::view".to_owned());
-    view::run(Box::new(timeline), options)
+    view::run(Box::new(timeline), ViewOptions::default())
 }

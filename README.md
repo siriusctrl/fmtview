@@ -300,7 +300,6 @@ use fmtview::view::{self, RecordTimeline, Result, ViewOptions};
 fn inspect(source: Box<dyn RecordTimeline>, follow: bool) -> Result<()> {
     let mut options = ViewOptions::default();
     options.follow = follow;
-    options.notice = Some("opened by my application".to_owned());
     view::run(source, options)
 }
 ```
