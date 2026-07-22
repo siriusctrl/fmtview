@@ -22,6 +22,11 @@ for GitHub Release notes, so every published version must have a matching
   showing follow controls, while existing follow timelines retain append,
   detach, pause, and reset behavior.
 
+### Fixed
+
+- Keep forward and backward search sessions aware of committed records appended
+  after the search began, including when repeating a completed miss.
+
 ## [0.6.0] - 2026-07-22
 
 ### Added

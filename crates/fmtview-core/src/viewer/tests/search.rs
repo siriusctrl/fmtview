@@ -728,3 +728,151 @@ fn search_highlight_ignores_chat_role_gutter() {
 
     assert_eq!(background_cell_count(&[highlighted]), 0);
 }
+
+struct MutableSearchFile {
+    lines: std::cell::RefCell<Vec<String>>,
+    reads: std::cell::RefCell<Vec<usize>>,
+}
+
+impl MutableSearchFile {
+    fn with_len(line_count: usize) -> Self {
+        Self {
+            lines: std::cell::RefCell::new(
+                (0..line_count).map(|line| format!("line-{line}")).collect(),
+            ),
+            reads: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    fn append(&self, lines: impl IntoIterator<Item = String>) -> (usize, usize) {
+        let mut current = self.lines.borrow_mut();
+        let start = current.len();
+        current.extend(lines);
+        (start, current.len())
+    }
+
+    fn read_counts(&self) -> Vec<usize> {
+        let line_count = self.line_count();
+        let mut counts = vec![0_usize; line_count];
+        for line in self.reads.borrow().iter().copied() {
+            counts[line] = counts[line].saturating_add(1);
+        }
+        counts
+    }
+}
+
+impl ViewFile for MutableSearchFile {
+    fn label(&self) -> &str {
+        "mutable-search"
+    }
+
+    fn line_count(&self) -> usize {
+        self.lines.borrow().len()
+    }
+
+    fn byte_len(&self) -> u64 {
+        0
+    }
+
+    fn byte_offset_for_line(&self, _line: usize) -> u64 {
+        0
+    }
+
+    fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>> {
+        let lines = self.lines.borrow();
+        let end = start.saturating_add(count).min(lines.len());
+        self.reads.borrow_mut().extend(start..end);
+        Ok(lines[start..end].to_vec())
+    }
+}
+
+#[test]
+fn forward_search_does_not_rescan_wrapped_history_before_multi_append_delta() {
+    let original_len = crate::viewer::file::SEARCH_CHUNK_LINES + 2_000;
+    let file = MutableSearchFile::with_len(original_len);
+    let mut state = ViewState::default();
+    start_search(
+        &mut state,
+        "needle-forward-append".to_owned(),
+        SearchDirection::Forward,
+        original_len - 5,
+        original_len,
+    );
+
+    assert!(!process_search_step(&file, &mut state).unwrap());
+    assert!(!process_search_step(&file, &mut state).unwrap());
+    let (first_start, first_end) = file.append(["append-without-match".to_owned()]);
+    state.extend_for_append(first_start, first_end);
+    let (second_start, second_end) = file.append([
+        "needle-forward-append".to_owned(),
+        "append-after-match".to_owned(),
+    ]);
+    state.extend_for_append(second_start, second_end);
+    assert_eq!(state.search_task.as_ref().unwrap().span_count(), 2);
+
+    while state.search_task.is_some() {
+        process_search_step(&file, &mut state).unwrap();
+    }
+
+    assert_eq!(state.search_cursor, Some(original_len + 1));
+    let counts = file.read_counts();
+    assert!(counts[..original_len].iter().all(|count| *count <= 1));
+    assert_eq!(counts[original_len], 1);
+    assert_eq!(counts[original_len + 1], 1);
+    assert_eq!(counts[original_len + 2], 1);
+}
+
+#[test]
+fn backward_search_does_not_rescan_wrapped_history_before_append_delta() {
+    let original_len = crate::viewer::file::SEARCH_CHUNK_LINES + 2_000;
+    let file = MutableSearchFile::with_len(original_len);
+    let mut state = ViewState::default();
+    start_search(
+        &mut state,
+        "needle-backward-append".to_owned(),
+        SearchDirection::Backward,
+        4,
+        original_len,
+    );
+
+    assert!(!process_search_step(&file, &mut state).unwrap());
+    assert!(!process_search_step(&file, &mut state).unwrap());
+    let (start, end) = file.append([
+        "append-before-match".to_owned(),
+        "needle-backward-append".to_owned(),
+    ]);
+    state.extend_for_append(start, end);
+
+    while state.search_task.is_some() {
+        process_search_step(&file, &mut state).unwrap();
+    }
+
+    assert_eq!(state.search_cursor, Some(original_len + 1));
+    let counts = file.read_counts();
+    assert!(counts[..original_len].iter().all(|count| *count <= 1));
+    assert_eq!(counts[original_len], 1);
+    assert_eq!(counts[original_len + 1], 1);
+}
+
+#[test]
+fn append_invalidates_and_recounts_an_exact_search_index() {
+    let file = MutableSearchFile::with_len(3);
+    let mut state = ViewState::default();
+    start_search(
+        &mut state,
+        "needle-index-append".to_owned(),
+        SearchDirection::Forward,
+        0,
+        file.line_count(),
+    );
+    assert!(process_search_index_step(&file, &mut state).unwrap());
+    assert!(state.search_index.as_ref().unwrap().exact);
+    assert_eq!(state.search_index.as_ref().unwrap().matches, 0);
+
+    let (start, end) = file.append(["needle-index-append".to_owned()]);
+    state.extend_for_append(start, end);
+    assert!(!state.search_index.as_ref().unwrap().exact);
+    assert!(process_search_index_step(&file, &mut state).unwrap());
+    assert!(state.search_index.as_ref().unwrap().exact);
+    assert_eq!(state.search_index.as_ref().unwrap().matches, 1);
+}

@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use crate::viewer::{KeyCode, KeyModifiers};
 use anyhow::Result;
 
@@ -19,9 +21,228 @@ pub(in crate::viewer) struct SearchTarget {
 pub(in crate::viewer) struct SearchTask {
     pub(in crate::viewer) query: String,
     pub(in crate::viewer) direction: SearchDirection,
-    pub(in crate::viewer) next_line: usize,
-    pub(in crate::viewer) remaining: usize,
+    // Disjoint half-open ranges of currently loaded lines not yet visited by
+    // this search. The front span is consumed in `direction`; appended and
+    // inserted ranges are queued without restarting the completed prefix.
+    spans: VecDeque<SearchSpan>,
+    known_line_count: usize,
+    // A forward wrap freezes non-append spans until the true older boundary is
+    // known. Live append spans remain eligible while that prefix is loading.
     pub(in crate::viewer) awaiting_older: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SearchSpan {
+    start: usize,
+    end: usize,
+    kind: SearchSpanKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchSpanKind {
+    Initial,
+    Wrapped,
+    Appended,
+    Inserted,
+}
+
+impl SearchSpan {
+    fn new(start: usize, end: usize, kind: SearchSpanKind) -> Option<Self> {
+        (start < end).then_some(Self { start, end, kind })
+    }
+
+    fn len(self) -> usize {
+        self.end.saturating_sub(self.start)
+    }
+}
+
+impl SearchTask {
+    fn new(
+        query: String,
+        direction: SearchDirection,
+        start_line: usize,
+        line_count: usize,
+    ) -> Self {
+        let mut spans = VecDeque::with_capacity(3);
+        let split = start_line.min(line_count.saturating_sub(1));
+        match direction {
+            SearchDirection::Forward => {
+                push_span(
+                    &mut spans,
+                    SearchSpan::new(split, line_count, SearchSpanKind::Initial),
+                );
+                push_span(
+                    &mut spans,
+                    SearchSpan::new(0, split, SearchSpanKind::Wrapped),
+                );
+            }
+            SearchDirection::Backward => {
+                let split = split.saturating_add(1).min(line_count);
+                push_span(
+                    &mut spans,
+                    SearchSpan::new(0, split, SearchSpanKind::Initial),
+                );
+                push_span(
+                    &mut spans,
+                    SearchSpan::new(split, line_count, SearchSpanKind::Wrapped),
+                );
+            }
+        }
+        Self {
+            query,
+            direction,
+            spans,
+            known_line_count: line_count,
+            awaiting_older: false,
+        }
+    }
+
+    pub(in crate::viewer) fn extend_for_append(&mut self, start: usize, end: usize) {
+        let start = start.max(self.known_line_count);
+        self.known_line_count = self.known_line_count.max(end);
+        if start >= end {
+            return;
+        }
+        if self.awaiting_older {
+            let priority_end = self
+                .spans
+                .iter()
+                .position(|span| span.kind != SearchSpanKind::Appended)
+                .unwrap_or(self.spans.len());
+            if priority_end > 0 && self.spans[priority_end - 1].end == start {
+                self.spans[priority_end - 1].end = end;
+                return;
+            }
+            self.spans.insert(
+                priority_end,
+                SearchSpan {
+                    start,
+                    end,
+                    kind: SearchSpanKind::Appended,
+                },
+            );
+            return;
+        }
+        let deferred_boundary = self.spans.iter().position(|span| match self.direction {
+            SearchDirection::Forward => matches!(
+                span.kind,
+                SearchSpanKind::Inserted | SearchSpanKind::Wrapped
+            ),
+            SearchDirection::Backward => span.kind == SearchSpanKind::Wrapped,
+        });
+        if let Some(boundary) = deferred_boundary {
+            if boundary > 0
+                && self.spans[boundary - 1].kind == SearchSpanKind::Appended
+                && self.spans[boundary - 1].end == start
+            {
+                self.spans[boundary - 1].end = end;
+                return;
+            }
+            self.spans.insert(
+                boundary,
+                SearchSpan {
+                    start,
+                    end,
+                    kind: SearchSpanKind::Appended,
+                },
+            );
+            return;
+        }
+        if let Some(last) = self.spans.back_mut()
+            && last.kind == SearchSpanKind::Appended
+            && last.end == start
+        {
+            last.end = end;
+            return;
+        }
+        self.spans.push_back(SearchSpan {
+            start,
+            end,
+            kind: SearchSpanKind::Appended,
+        });
+    }
+
+    pub(in crate::viewer) fn shift_for_insert(&mut self, at: usize, lines: usize) {
+        if lines == 0 {
+            return;
+        }
+        let mut absorbed = false;
+        for span in &mut self.spans {
+            if span.start < at && at < span.end {
+                span.end = span.end.saturating_add(lines);
+                absorbed = true;
+            } else if span.start >= at {
+                span.start = span.start.saturating_add(lines);
+                span.end = span.end.saturating_add(lines);
+            }
+        }
+        self.known_line_count = self.known_line_count.saturating_add(lines);
+        if absorbed {
+            return;
+        }
+
+        let shifted_start = at.saturating_add(lines);
+        if let Some(existing) = self
+            .spans
+            .iter_mut()
+            .find(|span| span.kind != SearchSpanKind::Appended && span.start == shifted_start)
+        {
+            existing.start = at;
+            return;
+        }
+        let insert_at = self
+            .spans
+            .iter()
+            .position(|span| span.kind == SearchSpanKind::Wrapped)
+            .unwrap_or(self.spans.len());
+        self.spans.insert(
+            insert_at,
+            SearchSpan {
+                start: at,
+                end: shifted_start,
+                kind: SearchSpanKind::Inserted,
+            },
+        );
+    }
+
+    fn observe_line_count(&mut self, line_count: usize) {
+        if line_count > self.known_line_count {
+            self.extend_for_append(self.known_line_count, line_count);
+        }
+    }
+
+    fn current_span(&self) -> Option<SearchSpan> {
+        self.spans.front().copied()
+    }
+
+    fn consume(&mut self, lines: usize) {
+        let Some(span) = self.spans.front_mut() else {
+            return;
+        };
+        let lines = lines.min(span.len());
+        match self.direction {
+            SearchDirection::Forward => span.start = span.start.saturating_add(lines),
+            SearchDirection::Backward => span.end = span.end.saturating_sub(lines),
+        }
+        if span.start == span.end {
+            self.spans.pop_front();
+        }
+    }
+
+    fn has_work(&self) -> bool {
+        !self.spans.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(in crate::viewer) fn span_count(&self) -> usize {
+        self.spans.len()
+    }
+}
+
+fn push_span(spans: &mut VecDeque<SearchSpan>, span: Option<SearchSpan>) {
+    if let Some(span) = span {
+        spans.push_back(span);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,13 +412,7 @@ pub(in crate::viewer) fn start_search(
         return true;
     }
 
-    state.search_task = Some(SearchTask {
-        query,
-        direction,
-        next_line: start_line.min(line_count.saturating_sub(1)),
-        remaining: line_count,
-        awaiting_older: false,
-    });
+    state.search_task = Some(SearchTask::new(query, direction, start_line, line_count));
     true
 }
 
@@ -275,14 +490,43 @@ pub(in crate::viewer) fn process_search_step(
         return Ok(false);
     };
 
-    if task.awaiting_older {
+    task.observe_line_count(file.line_count());
+    if task.direction == SearchDirection::Forward
+        && file.has_older_records()
+        && (task.awaiting_older
+            || !task.has_work()
+            || task
+                .current_span()
+                .is_some_and(|span| span.kind == SearchSpanKind::Wrapped))
+    {
+        task.awaiting_older = true;
+    } else if !file.has_older_records() {
+        task.awaiting_older = false;
+    }
+
+    if task.awaiting_older
+        && file.has_older_records()
+        && !task
+            .current_span()
+            .is_some_and(|span| span.kind == SearchSpanKind::Appended)
+    {
+        state.search_task = Some(task);
+        return Ok(false);
+    }
+
+    if !task.has_work() {
         if file.has_older_records() {
             state.search_task = Some(task);
             return Ok(false);
         }
-        task.awaiting_older = false;
-        task.next_line = 0;
-        task.remaining = file.line_count();
+        state.search_target = None;
+        state.search_match_ordinal = None;
+        state.search_match_target = None;
+        state.set_footer_message(
+            format!("not found: {}", task.query),
+            FooterMessageKind::Warning,
+        );
+        return Ok(true);
     }
 
     let step = scan_search_chunk(file, &task)?;
@@ -295,28 +539,13 @@ pub(in crate::viewer) fn process_search_step(
         return Ok(true);
     }
 
-    task.next_line = step.next_line;
-    let incomplete_index = !file.at_newer_boundary();
-    task.remaining = task.remaining.saturating_sub(step.scanned);
-    if incomplete_index
-        && task.direction == SearchDirection::Forward
-        && task.remaining == 0
-        && step.scanned > 0
-    {
-        task.remaining = SEARCH_CHUNK_LINES;
-    }
-    let reached_unloaded_prefix = task.direction == SearchDirection::Forward
-        && file.has_older_records()
-        && task.next_line >= file.line_count();
-    if reached_unloaded_prefix
-        || ((task.remaining == 0 || step.scanned == 0) && file.has_older_records())
-    {
-        task.remaining = 0;
+    task.consume(step.scanned);
+    if !task.has_work() && file.has_older_records() {
         task.awaiting_older = true;
         state.search_task = Some(task);
         return Ok(false);
     }
-    if task.remaining == 0 || step.scanned == 0 {
+    if !task.has_work() || step.scanned == 0 {
         state.search_target = None;
         state.search_match_ordinal = None;
         state.search_match_target = None;
@@ -387,7 +616,6 @@ fn floor_char_boundary(text: &str, mut index: usize) -> usize {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::viewer) struct SearchStep {
     pub(in crate::viewer) found: Option<SearchTarget>,
-    pub(in crate::viewer) next_line: usize,
     pub(in crate::viewer) scanned: usize,
 }
 
@@ -405,52 +633,29 @@ pub(in crate::viewer) fn scan_search_forward(
     file: &dyn ViewFile,
     task: &SearchTask,
 ) -> Result<SearchStep> {
-    let line_count = file.line_count();
-    let exact_line_count = file.at_newer_boundary() && !file.has_older_records();
-    if line_count == 0 || task.remaining == 0 {
+    let Some(span) = task.current_span() else {
         return Ok(SearchStep {
             found: None,
-            next_line: 0,
             scanned: 0,
         });
-    }
-
-    let mut next_line = task.next_line.min(line_count - 1);
-    let mut scanned = 0;
-    let limit = task.remaining.min(SEARCH_CHUNK_LINES);
-
-    while scanned < limit {
-        let count = (line_count - next_line).min(limit - scanned);
-        let lines = file.read_window(next_line, count)?;
-        if lines.is_empty() {
-            break;
-        }
-
-        for (offset, line) in lines.iter().enumerate() {
-            if let Some(byte_index) = line.find(&task.query) {
-                let found_line = next_line + offset;
-                return Ok(SearchStep {
-                    found: Some(SearchTarget {
-                        line: found_line,
-                        byte_index,
-                    }),
-                    next_line: found_line,
-                    scanned: scanned + offset + 1,
-                });
-            }
-        }
-
-        scanned += lines.len();
-        next_line = next_line.saturating_add(lines.len());
-        if next_line >= line_count {
-            next_line = if exact_line_count { 0 } else { line_count };
+    };
+    let count = span.len().min(SEARCH_CHUNK_LINES);
+    let lines = file.read_window(span.start, count)?;
+    for (offset, line) in lines.iter().enumerate() {
+        if let Some(byte_index) = line.find(&task.query) {
+            return Ok(SearchStep {
+                found: Some(SearchTarget {
+                    line: span.start + offset,
+                    byte_index,
+                }),
+                scanned: offset + 1,
+            });
         }
     }
 
     Ok(SearchStep {
         found: None,
-        next_line,
-        scanned,
+        scanned: lines.len(),
     })
 }
 
@@ -458,48 +663,29 @@ pub(in crate::viewer) fn scan_search_backward(
     file: &dyn ViewFile,
     task: &SearchTask,
 ) -> Result<SearchStep> {
-    let line_count = file.line_count();
-    if line_count == 0 || task.remaining == 0 {
+    let Some(span) = task.current_span() else {
         return Ok(SearchStep {
             found: None,
-            next_line: 0,
             scanned: 0,
         });
-    }
-
-    let mut next_line = task.next_line.min(line_count - 1);
-    let mut scanned = 0;
-    let limit = task.remaining.min(SEARCH_CHUNK_LINES);
-
-    while scanned < limit {
-        let count = (next_line + 1).min(limit - scanned);
-        let start = next_line + 1 - count;
-        let lines = file.read_window(start, count)?;
-        if lines.is_empty() {
-            break;
+    };
+    let count = span.len().min(SEARCH_CHUNK_LINES);
+    let start = span.end.saturating_sub(count);
+    let lines = file.read_window(start, count)?;
+    for (offset, line) in lines.iter().enumerate().rev() {
+        if let Some(byte_index) = line.rfind(&task.query) {
+            return Ok(SearchStep {
+                found: Some(SearchTarget {
+                    line: start + offset,
+                    byte_index,
+                }),
+                scanned: lines.len().saturating_sub(offset),
+            });
         }
-
-        for (offset, line) in lines.iter().enumerate().rev() {
-            if let Some(byte_index) = line.rfind(&task.query) {
-                let found_line = start + offset;
-                return Ok(SearchStep {
-                    found: Some(SearchTarget {
-                        line: found_line,
-                        byte_index,
-                    }),
-                    next_line: found_line,
-                    scanned: scanned + (count - offset),
-                });
-            }
-        }
-
-        scanned += lines.len();
-        next_line = start.checked_sub(1).unwrap_or(line_count - 1);
     }
 
     Ok(SearchStep {
         found: None,
-        next_line,
-        scanned,
+        scanned: lines.len(),
     })
 }
