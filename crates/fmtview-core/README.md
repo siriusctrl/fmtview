@@ -18,6 +18,12 @@ The core viewer owns viewport-anchor preservation and follow state through
 backend-neutral events, including `ViewerCommand::FollowTail` and
 `ViewerCommand::ToggleFollowTail`.
 
+`RecordTimelineViewFile::new` retains live follow behavior.
+`RecordTimelineViewFile::snapshot` uses the same bounded tail-first and lazy
+older-loading path without refreshing newer records or enabling follow state.
+The root package's `fmtview::view` facade selects between those modes and owns
+the terminal lifecycle for embedders that do not need to drive core headlessly.
+
 Record-backed views can expose exact raw-record snapshots through bounded
 virtual lines. Lazy JSONL records are copied once at ingest into an immutable
 raw spool, so opening raw mode is an offset lookup and source replacement

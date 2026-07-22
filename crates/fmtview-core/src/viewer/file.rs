@@ -80,10 +80,14 @@ struct RawRecordOverlay {
 impl FileViewer {
     pub fn new(file: Box<dyn ViewFile>, mode: FormatKind, notice: Option<String>) -> Self {
         let mut state = ViewState::default();
+        if file.starts_at_tail() {
+            state.viewport_at_tail = true;
+            state.preserve_tail_on_next_draw = true;
+            state.older_preload_armed = false;
+            set_file_end(&mut state, file.line_count());
+        }
         if file.is_follow_source() {
             state.follow = Some(FollowState::Following);
-            state.viewport_at_tail = true;
-            set_file_end(&mut state, file.line_count());
         }
         state.raw_record_available = file.supports_raw_records();
         if let Some(message) = notice {
@@ -112,10 +116,26 @@ impl FileViewer {
                 .as_ref()
                 .is_some_and(|task| task.direction == StructureDirection::Backward)
         {
+            let awaiting_older = self
+                .state
+                .structure_task
+                .as_ref()
+                .is_some_and(|task| task.awaiting_older);
             let change = self
                 .file
                 .load_older_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
+            let inserted_lines = change.inserted_lines;
             dirty |= self.apply_file_change(change);
+            if awaiting_older {
+                if let Some(task) = self.state.structure_task.as_mut() {
+                    task.next_line = if inserted_lines > 0 {
+                        task.next_line.saturating_sub(1)
+                    } else {
+                        usize::MAX
+                    };
+                    task.awaiting_older = false;
+                }
+            }
         }
         if self.file.has_older_records()
             && self
@@ -170,19 +190,22 @@ impl FileViewer {
     }
 
     pub fn preload(&mut self) -> Result<bool> {
-        if !self.file.is_follow_source() {
-            return self.file.preload(
+        let mut dirty = if self.file.is_follow_source() {
+            let refresh = self
+                .file
+                .refresh_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
+            self.apply_file_change(refresh)
+        } else {
+            self.file.preload(
                 LAZY_PRELOAD_LINES,
                 LAZY_PRELOAD_RECORDS,
                 LAZY_PRELOAD_BUDGET,
-            );
-        }
-
-        let refresh = self
-            .file
-            .refresh_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
-        let mut dirty = self.apply_file_change(refresh);
-        if self.state.top <= TIMELINE_OLDER_THRESHOLD_LINES && self.file.has_older_records() {
+            )?
+        };
+        if self.state.older_preload_armed
+            && self.state.top <= TIMELINE_OLDER_THRESHOLD_LINES
+            && self.file.has_older_records()
+        {
             let older = self
                 .file
                 .load_older_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
@@ -230,6 +253,7 @@ impl FileViewer {
                 &mut raw.state,
                 raw.file.line_count(),
                 true,
+                false,
                 page,
             );
         }
@@ -269,8 +293,18 @@ impl FileViewer {
             &mut self.state,
             self.file.line_count(),
             self.file.at_newer_boundary(),
+            self.file.has_older_records(),
             page,
         );
+        if self.file.starts_at_tail() && !had_active_prompt {
+            if event_moves_away_from_tail(event, self.state.wrap)
+                && (action.dirty || self.file.has_older_records())
+            {
+                self.state.older_preload_armed = true;
+            } else if event_forces_tail(event) {
+                self.state.older_preload_armed = false;
+            }
+        }
         if self.file.is_follow_source() && !had_active_prompt {
             if action.dirty && event_moves_away_from_tail(event, self.state.wrap) {
                 if self.state.follow == Some(FollowState::Following) {
@@ -298,6 +332,7 @@ impl FileViewer {
                 if !action.dirty || self.state.top >= self.file.line_count().saturating_sub(1) {
                     self.state.follow = Some(FollowState::Following);
                     self.state.viewport_at_tail = true;
+                    self.state.older_preload_armed = false;
                     self.state.follow_reattach_pending = false;
                     set_file_end(&mut self.state, self.file.line_count());
                     action.dirty = true;
@@ -398,6 +433,7 @@ impl FileViewer {
     fn enable_follow_tail(&mut self) -> ViewerAction {
         self.state.follow = Some(FollowState::Following);
         self.state.viewport_at_tail = true;
+        self.state.older_preload_armed = false;
         self.state.follow_reattach_pending = false;
         set_file_end(&mut self.state, self.file.line_count());
         ViewerAction {

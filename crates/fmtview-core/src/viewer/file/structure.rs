@@ -21,6 +21,7 @@ pub(in crate::viewer) struct StructureTask {
     pub(super) direction: StructureDirection,
     pub(super) next_line: usize,
     pub(super) viewport: Option<StructureViewport>,
+    pub(super) awaiting_older: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,10 +44,21 @@ impl StructureViewport {
     }
 }
 
+#[cfg(test)]
 pub(in crate::viewer) fn start_structure_navigation(
     state: &mut ViewState,
     line_count: usize,
     line_count_exact: bool,
+    direction: StructureDirection,
+) -> bool {
+    start_structure_navigation_with_older(state, line_count, line_count_exact, false, direction)
+}
+
+pub(in crate::viewer) fn start_structure_navigation_with_older(
+    state: &mut ViewState,
+    line_count: usize,
+    line_count_exact: bool,
+    has_older_records: bool,
     direction: StructureDirection,
 ) -> bool {
     state.clear_tool_navigation();
@@ -60,10 +72,17 @@ pub(in crate::viewer) fn start_structure_navigation(
     }
 
     let anchor = state.structure_cursor.unwrap_or(state.top);
-    let Some(next_line) = structure_start_line(anchor, line_count, line_count_exact, direction)
-    else {
-        set_no_block_message(state, direction);
-        return true;
+    let awaiting_older =
+        direction == StructureDirection::Backward && anchor == 0 && has_older_records;
+    let next_line = if awaiting_older {
+        0
+    } else {
+        let Some(next_line) = structure_start_line(anchor, line_count, line_count_exact, direction)
+        else {
+            set_no_block_message(state, direction);
+            return true;
+        };
+        next_line
     };
 
     state.clear_footer_message();
@@ -74,6 +93,7 @@ pub(in crate::viewer) fn start_structure_navigation(
         direction,
         next_line,
         viewport,
+        awaiting_older,
     });
     true
 }

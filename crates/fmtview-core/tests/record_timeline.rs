@@ -43,6 +43,223 @@ fn fake_timeline_distinguishes_pending_from_terminal_end() {
 }
 
 #[test]
+fn snapshot_timeline_lazily_loads_older_without_refresh_or_follow_controls() {
+    let (handle, timeline) = fake_timeline((0..130).map(record));
+    let file = RecordTimelineViewFile::snapshot_with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(2, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+
+    let tail = viewer.render(size, None).unwrap();
+    assert!(frame_text(tail).contains("record-129"));
+    assert!(
+        !viewer
+            .render(size, None)
+            .unwrap()
+            .footer_text
+            .contains("follow:")
+    );
+
+    handle.append(record(130));
+    assert!(!viewer.preload().unwrap());
+    assert_eq!(handle.refresh_calls(), 0);
+    viewer.handle_event(key(KeyCode::Char('g')), FileViewer::page_for_size(size));
+    assert!(viewer.preload().unwrap());
+    viewer.handle_event(key(KeyCode::Char('g')), FileViewer::page_for_size(size));
+    let first_older_batch = frame_text(viewer.render(size, None).unwrap());
+    assert!(
+        first_older_batch.contains("record-64"),
+        "{first_older_batch}"
+    );
+
+    assert!(viewer.preload().unwrap());
+    assert_eq!(handle.refresh_calls(), 0);
+    viewer.handle_event(key(KeyCode::Char('g')), FileViewer::page_for_size(size));
+    let source_start = frame_text(viewer.render(size, None).unwrap());
+    assert!(source_start.contains("record-0"), "{source_start}");
+
+    viewer.handle_event(key(KeyCode::Char('f')), FileViewer::page_for_size(size));
+    let after_f = viewer.render(size, None).unwrap();
+    assert!(!after_f.footer_text.contains("follow:"));
+    assert_eq!(handle.refresh_calls(), 0);
+}
+
+#[test]
+fn snapshot_opens_at_tail_without_eagerly_loading_older_records() {
+    let (handle, timeline) = fake_timeline((0..130).map(record));
+    let file = RecordTimelineViewFile::snapshot_with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(8, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+
+    let tail = viewer.render(size, None).unwrap();
+    let tail_text = frame_text(tail);
+    assert!(tail_text.contains("record-129"), "{tail_text}");
+    assert!(!tail_text.contains("record-122"), "{tail_text}");
+    let repeated_tail = frame_text(viewer.render(size, None).unwrap());
+    assert!(repeated_tail.contains("record-129"), "{repeated_tail}");
+    assert!(!viewer.preload().unwrap());
+    assert_eq!(handle.older_calls(), 1);
+    assert_eq!(handle.refresh_calls(), 0);
+
+    viewer.handle_event(key(KeyCode::PageUp), FileViewer::page_for_size(size));
+    assert!(viewer.preload().unwrap());
+    assert_eq!(handle.older_calls(), 2);
+
+    viewer.handle_event(key(KeyCode::Char('G')), FileViewer::page_for_size(size));
+    let returned_tail = frame_text(viewer.render(size, None).unwrap());
+    assert!(returned_tail.contains("record-129"), "{returned_tail}");
+    assert!(!viewer.preload().unwrap());
+    assert_eq!(handle.older_calls(), 2);
+}
+
+#[test]
+fn snapshot_backward_intent_loads_older_when_the_tail_batch_already_fits() {
+    let (handle, timeline) = fake_timeline((0..10).map(record));
+    let file = RecordTimelineViewFile::snapshot_with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(1, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 12);
+
+    let tail = frame_text(viewer.render(size, None).unwrap());
+    assert!(tail.contains("record-9"), "{tail}");
+    assert!(!viewer.preload().unwrap());
+    assert_eq!(handle.older_calls(), 1);
+
+    let action = viewer.handle_event(key(KeyCode::PageUp), FileViewer::page_for_size(size));
+    assert!(!action.dirty);
+    assert!(viewer.preload().unwrap());
+    assert_eq!(handle.older_calls(), 2);
+}
+
+#[test]
+fn snapshot_search_and_structure_load_older_without_refreshing() {
+    let (search_handle, search_timeline) = fake_timeline((0..80).map(record));
+    let search_file = RecordTimelineViewFile::snapshot_with_initial_limit(
+        Box::new(search_timeline),
+        JSONL,
+        RecordLoadLimit::new(1, 4096),
+    )
+    .unwrap();
+    let mut search_viewer = FileViewer::new(Box::new(search_file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+
+    enter_search(&mut search_viewer, size, "record-0");
+    advance_until_idle(&mut search_viewer);
+    let search_frame = frame_text(search_viewer.render(size, None).unwrap());
+    assert!(search_frame.contains("record-0"), "{search_frame}");
+    assert_eq!(search_handle.refresh_calls(), 0);
+
+    let (structure_handle, structure_timeline) = fake_timeline((0..80).map(record));
+    let structure_file = RecordTimelineViewFile::snapshot_with_initial_limit(
+        Box::new(structure_timeline),
+        JSONL,
+        RecordLoadLimit::new(1, 4096),
+    )
+    .unwrap();
+    let mut structure_viewer = FileViewer::new(Box::new(structure_file), FormatKind::Jsonl, None);
+    structure_viewer.render(size, None).unwrap();
+    structure_viewer.handle_event(key(KeyCode::Char('[')), FileViewer::page_for_size(size));
+    advance_until_idle(&mut structure_viewer);
+    let structure_frame = frame_text(structure_viewer.render(size, None).unwrap());
+    assert!(structure_frame.contains("record-78"), "{structure_frame}");
+    assert!(structure_handle.older_calls() > 1);
+    assert_eq!(structure_handle.refresh_calls(), 0);
+}
+
+#[test]
+fn follow_structure_navigation_can_cross_the_lazy_older_boundary() {
+    let (handle, timeline) = fake_timeline((0..80).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(1, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+
+    for _ in 0..2 {
+        viewer.handle_event(key(KeyCode::Char('[')), FileViewer::page_for_size(size));
+        advance_until_idle(&mut viewer);
+    }
+    let frame = viewer.render(size, None).unwrap();
+    let footer = frame.footer_text.clone();
+    let text = frame_text(frame);
+    assert!(text.contains("record-78"), "{text}");
+    assert!(footer.contains("follow:"), "{footer}");
+    assert!(handle.older_calls() > 1);
+}
+
+#[test]
+fn exhausted_snapshot_reports_no_previous_structure_without_rearming() {
+    let (handle, timeline) = fake_timeline([record(0)]);
+    let file = RecordTimelineViewFile::snapshot_with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(1, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+
+    viewer.render(size, None).unwrap();
+    viewer.handle_event(key(KeyCode::Char('[')), FileViewer::page_for_size(size));
+    assert!(!viewer.needs_immediate_advance());
+    assert!(!viewer.advance(Instant::now()).unwrap());
+    let frame = viewer.render(size, None).unwrap();
+    assert!(frame.footer_text.contains("no previous structure"));
+    assert_eq!(handle.older_calls(), 1);
+    assert_eq!(handle.refresh_calls(), 0);
+}
+
+#[test]
+fn live_timeline_constructor_still_refreshes_and_exposes_follow_controls() {
+    let (handle, timeline) = fake_timeline([record(0)]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(2, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+
+    assert!(
+        viewer
+            .render(size, None)
+            .unwrap()
+            .footer_text
+            .contains("follow:on")
+    );
+    handle.append(record(1));
+    assert!(viewer.preload().unwrap());
+    assert_eq!(handle.refresh_calls(), 1);
+    assert!(frame_text(viewer.render(size, None).unwrap()).contains("record-1"));
+
+    viewer.handle_event(key(KeyCode::Char('f')), FileViewer::page_for_size(size));
+    assert!(
+        viewer
+            .render(size, None)
+            .unwrap()
+            .footer_text
+            .contains("follow:off")
+    );
+}
+
+#[test]
 fn raw_record_mapping_survives_older_prepend() {
     let (_handle, timeline) = fake_timeline((0..6).map(record));
     let file = RecordTimelineViewFile::with_initial_limit(
@@ -440,15 +657,17 @@ fn prepending_older_records_preserves_the_viewport_anchor() {
     .unwrap();
     let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
     let size = Size::new(60, 8);
+    viewer.render(size, None).unwrap();
+    viewer.handle_event(key(KeyCode::PageUp), FileViewer::page_for_size(size));
     let before = viewer.render(size, None).unwrap();
     let before_top = before.position.top;
     let before_text = frame_text(before);
-    assert!(before_text.contains("record-99"), "{before_text:?}");
+    assert!(before_text.contains("record-98"), "{before_text:?}");
 
     assert!(viewer.preload().unwrap());
     let after = viewer.render(size, None).unwrap();
     assert!(after.position.top > before_top);
-    assert!(frame_text(after).contains("record-99"));
+    assert!(frame_text(after).contains("record-98"));
 }
 
 #[test]
@@ -1336,6 +1555,14 @@ impl FakeHandle {
     fn fail_next_prefix_probe(&self) {
         self.state.borrow_mut().probe_failures += 1;
     }
+
+    fn refresh_calls(&self) -> usize {
+        self.state.borrow().refresh_calls
+    }
+
+    fn older_calls(&self) -> usize {
+        self.state.borrow().older_calls
+    }
 }
 
 struct FakeState {
@@ -1343,6 +1570,8 @@ struct FakeState {
     generation: u64,
     terminal: bool,
     probe_failures: usize,
+    refresh_calls: usize,
+    older_calls: usize,
 }
 
 struct FakeTimeline {
@@ -1358,6 +1587,8 @@ fn fake_timeline(records: impl IntoIterator<Item = Vec<u8>>) -> (FakeHandle, Fak
         generation: 1,
         terminal: false,
         probe_failures: 0,
+        refresh_calls: 0,
+        older_calls: 0,
     }));
     let len = state.borrow().records.len();
     (
@@ -1430,6 +1661,7 @@ impl RecordTimeline for FakeTimeline {
     }
 
     fn load_older(&mut self, limit: RecordLoadLimit) -> anyhow::Result<TimelineRead> {
+        self.state.borrow_mut().older_calls += 1;
         if self.older_cursor == 0 {
             return Ok(TimelineRead::End);
         }
@@ -1497,6 +1729,7 @@ impl RecordTimeline for FakeTimeline {
     }
 
     fn refresh(&mut self) -> anyhow::Result<TimelineRefresh> {
+        self.state.borrow_mut().refresh_calls += 1;
         let state = self.state.borrow();
         if state.generation != self.generation {
             self.generation = state.generation;
