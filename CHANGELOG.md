@@ -16,6 +16,11 @@ for GitHub Release notes, so every published version must have a matching
   render caches, and backend-neutral frames can now be tested without a real
   terminal, while the `fmtview` package keeps the same install and binary name.
 
+### Fixed
+
+- Require the release workflow to resolve an exact version tag and validate its
+  changelog entry before any crates.io or npm publishing job can start.
+
 ## [0.5.4] - 2026-07-17
 
 ### Added
