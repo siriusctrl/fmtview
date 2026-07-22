@@ -193,7 +193,7 @@ impl TimelineViewState {
                 }
                 let inserted_at = self.older_insert_at;
                 let inserted_record_at = self.older_record_insert_at;
-                let spooled = self.spool_records(&records, false)?;
+                let spooled = self.spool_records(&records, true)?;
                 let inserted_lines = spooled.lines.len();
                 self.lines.splice(inserted_at..inserted_at, spooled.lines);
                 self.records
@@ -305,16 +305,14 @@ impl TimelineViewState {
     ) -> Result<SpooledRecords> {
         let mut lines = Vec::new();
         let mut record_refs = Vec::new();
+        let mut parse_failures = 0_usize;
+        let mut first_failure_offset = None;
         for record in records {
             let bytes = match transform::format_record_bytes(&record.raw, self.options) {
                 Ok(bytes) => bytes,
                 Err(_) => {
-                    if notices {
-                        self.notices.push_back(format!(
-                            "record at byte {} failed JSON parse; showing raw record",
-                            record.id.start_offset
-                        ));
-                    }
+                    parse_failures = parse_failures.saturating_add(1);
+                    first_failure_offset.get_or_insert(record.id.start_offset);
                     String::from_utf8_lossy(transform::trim_record_line_end(&record.raw))
                         .into_owned()
                         .into_bytes()
@@ -323,6 +321,20 @@ impl TimelineViewState {
             let (next_lines, record_ref) = self.write_record(record, &bytes)?;
             lines.extend(next_lines);
             record_refs.push(record_ref);
+        }
+        if notices && parse_failures > 0 {
+            let first_offset = first_failure_offset.unwrap_or_default();
+            let detail = if parse_failures == 1 {
+                "showing raw record".to_owned()
+            } else {
+                format!(
+                    "and {} more records; showing raw records",
+                    parse_failures - 1
+                )
+            };
+            self.notices.push_back(format!(
+                "record at byte {first_offset} failed JSON parse; {detail}"
+            ));
         }
         Ok(SpooledRecords {
             lines,

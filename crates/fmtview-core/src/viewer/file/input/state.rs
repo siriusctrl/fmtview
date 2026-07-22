@@ -229,8 +229,10 @@ impl ViewState {
         shift_target(&mut self.search_target, at, lines);
         shift_target(&mut self.structure_target, at, lines);
         if let Some(task) = self.search_task.as_mut() {
-            shift_index(&mut task.next_line, at, lines);
-            task.remaining = task.remaining.saturating_add(lines);
+            if !task.awaiting_older {
+                shift_index(&mut task.next_line, at, lines);
+                task.remaining = task.remaining.saturating_add(lines);
+            }
         }
         if let Some(index) = self.search_index.as_mut() {
             index.counted_lines = 0;

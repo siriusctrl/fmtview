@@ -129,6 +129,11 @@ impl FileViewer {
             .search_index
             .as_ref()
             .is_some_and(|index| !index.exact)
+            && !self
+                .state
+                .search_task
+                .as_ref()
+                .is_some_and(|task| task.awaiting_older)
         {
             dirty |= process_search_index_step(file, &mut self.state)?;
         }
@@ -173,18 +178,20 @@ impl FileViewer {
     }
 
     pub fn handle_event(&mut self, event: InputEvent, page: usize) -> ViewerAction {
+        let had_active_prompt = self.state.has_active_prompt();
         if self.file.is_follow_source() {
             if matches!(event, InputEvent::Command(ViewerCommand::FollowTail)) {
                 return self.enable_follow_tail();
             }
             if matches!(event, InputEvent::Command(ViewerCommand::ToggleFollowTail))
-                || matches!(
-                    event,
-                    InputEvent::Key {
-                        code: KeyCode::Char('f'),
-                        modifiers
-                    } if modifiers.is_empty()
-                )
+                || (!self.state.has_active_prompt()
+                    && matches!(
+                        event,
+                        InputEvent::Key {
+                            code: KeyCode::Char('f'),
+                            modifiers
+                        } if modifiers.is_empty()
+                    ))
             {
                 return self.toggle_follow_tail();
             }
@@ -197,7 +204,7 @@ impl FileViewer {
             self.file.at_newer_boundary(),
             page,
         );
-        if self.file.is_follow_source() {
+        if self.file.is_follow_source() && !had_active_prompt {
             if action.dirty && event_moves_away_from_tail(event) {
                 if self.state.follow == Some(FollowState::Following) {
                     self.state.follow = Some(FollowState::Detached);

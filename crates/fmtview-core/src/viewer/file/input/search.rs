@@ -21,6 +21,7 @@ pub(in crate::viewer) struct SearchTask {
     pub(in crate::viewer) direction: SearchDirection,
     pub(in crate::viewer) next_line: usize,
     pub(in crate::viewer) remaining: usize,
+    pub(in crate::viewer) awaiting_older: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -195,6 +196,7 @@ pub(in crate::viewer) fn start_search(
         direction,
         next_line: start_line.min(line_count.saturating_sub(1)),
         remaining: line_count,
+        awaiting_older: false,
     });
     true
 }
@@ -273,6 +275,16 @@ pub(in crate::viewer) fn process_search_step(
         return Ok(false);
     };
 
+    if task.awaiting_older {
+        if file.has_older_records() {
+            state.search_task = Some(task);
+            return Ok(false);
+        }
+        task.awaiting_older = false;
+        task.next_line = 0;
+        task.remaining = file.line_count();
+    }
+
     let step = scan_search_chunk(file, &task)?;
     if let Some(target) = step.found {
         state.search_cursor = Some(target.line);
@@ -293,8 +305,14 @@ pub(in crate::viewer) fn process_search_step(
     {
         task.remaining = SEARCH_CHUNK_LINES;
     }
-    if (task.remaining == 0 || step.scanned == 0) && file.has_older_records() {
-        task.remaining = SEARCH_CHUNK_LINES;
+    let reached_unloaded_prefix = task.direction == SearchDirection::Forward
+        && file.has_older_records()
+        && task.next_line >= file.line_count();
+    if reached_unloaded_prefix
+        || ((task.remaining == 0 || step.scanned == 0) && file.has_older_records())
+    {
+        task.remaining = 0;
+        task.awaiting_older = true;
         state.search_task = Some(task);
         return Ok(false);
     }
@@ -388,7 +406,7 @@ pub(in crate::viewer) fn scan_search_forward(
     task: &SearchTask,
 ) -> Result<SearchStep> {
     let line_count = file.line_count();
-    let exact_line_count = file.at_newer_boundary();
+    let exact_line_count = file.at_newer_boundary() && !file.has_older_records();
     if line_count == 0 || task.remaining == 0 {
         return Ok(SearchStep {
             found: None,

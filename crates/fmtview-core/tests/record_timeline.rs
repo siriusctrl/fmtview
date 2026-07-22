@@ -121,6 +121,37 @@ fn follow_can_pause_at_bottom_without_an_append_jump() {
 }
 
 #[test]
+fn follow_search_prompt_accepts_the_f_character() {
+    let (_handle, timeline) = fake_timeline([b"{\"message\":\"find-me\"}\n".to_vec()]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+    viewer.render(size, None).unwrap();
+
+    viewer.handle_event(key(KeyCode::Char('/')), FileViewer::page_for_size(size));
+    for ch in "fgjb".chars() {
+        viewer.handle_event(key(KeyCode::Char(ch)), FileViewer::page_for_size(size));
+    }
+    let frame = viewer.render(size, None).unwrap();
+
+    assert!(
+        frame.footer_text.contains("follow:on"),
+        "{}",
+        frame.footer_text
+    );
+    assert!(
+        frame.footer_text.contains("search: fgjb"),
+        "{}",
+        frame.footer_text
+    );
+}
+
+#[test]
 fn detached_follow_reattaches_only_after_scrolling_back_to_bottom() {
     let (handle, timeline) = fake_timeline((0..10).map(record));
     let file = RecordTimelineViewFile::with_initial_limit(
@@ -312,6 +343,33 @@ fn search_reaches_lazily_loaded_older_and_newer_records() {
 }
 
 #[test]
+fn repeated_forward_search_wraps_into_lazily_loaded_older_records() {
+    let (_handle, timeline) = fake_timeline((0..100).map(|index| match index {
+        0 => b"{\"message\":\"needle-old\"}\n".to_vec(),
+        99 => b"{\"message\":\"needle-tail\"}\n".to_vec(),
+        _ => record(index),
+    }));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(2, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 10);
+    viewer.render(size, None).unwrap();
+
+    enter_search(&mut viewer, size, "needle");
+    advance_until_idle(&mut viewer);
+    assert!(frame_text(viewer.render(size, None).unwrap()).contains("needle-tail"));
+
+    viewer.handle_event(key(KeyCode::Char('n')), FileViewer::page_for_size(size));
+    advance_until_idle(&mut viewer);
+    let wrapped = frame_text(viewer.render(size, None).unwrap());
+    assert!(wrapped.contains("needle-old"), "{wrapped}");
+}
+
+#[test]
 fn file_timeline_preserves_crlf_empty_records_and_ignores_incomplete_eof() {
     let mut temp = NamedTempFile::new().unwrap();
     temp.write_all(b"{\"a\":1}\r\n\r\n{\"b\":2}\n{\"pending\":true}")
@@ -443,6 +501,31 @@ fn large_append_refresh_finds_the_tail_with_bounded_reverse_work() {
 }
 
 #[test]
+fn append_burst_drains_across_bounded_refresh_batches_without_duplicates() {
+    let (handle, timeline) = fake_timeline([record(0)]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(1, 4096),
+    )
+    .unwrap();
+    for index in 1..=10 {
+        handle.append(record(index));
+    }
+
+    let mut appended_lines = 0;
+    for _ in 0..4 {
+        appended_lines += file.refresh_records(3, 4096).unwrap().appended_lines;
+    }
+    assert_eq!(appended_lines, 30);
+    assert!(file.at_newer_boundary());
+    let text = file.read_window(0, file.line_count()).unwrap().join("\n");
+    for index in 0..=10 {
+        assert_eq!(text.matches(&format!("record-{index}\"")).count(), 1);
+    }
+}
+
+#[test]
 fn unchanged_large_pending_suffix_is_not_rescanned_on_each_refresh() {
     let mut temp = NamedTempFile::new().unwrap();
     temp.write_all(b"{\"id\":1}\n").unwrap();
@@ -520,7 +603,27 @@ fn truncating_only_an_uncommitted_tail_does_not_duplicate_committed_records() {
 }
 
 #[test]
-fn same_inode_same_size_copytruncate_rewrite_resets_on_anchor_mismatch() {
+fn truncating_committed_history_starts_a_new_epoch() {
+    let mut temp = NamedTempFile::new().unwrap();
+    temp.write_all(b"{\"id\":1}\n{\"id\":2}\n{\"id\":3}\n")
+        .unwrap();
+    temp.flush().unwrap();
+    let mut timeline = FileRecordTimeline::open(temp.path(), "truncate.jsonl").unwrap();
+
+    let mut writer = OpenOptions::new().write(true).open(temp.path()).unwrap();
+    writer.set_len(0).unwrap();
+    writer.write_all(b"{\"id\":4}\n").unwrap();
+    writer.flush().unwrap();
+
+    let TimelineRefresh::Reset { reason, snapshot } = timeline.refresh().unwrap() else {
+        panic!("expected truncation reset");
+    };
+    assert_eq!(reason, TimelineResetReason::Truncated);
+    assert_eq!(snapshot.epoch, 2);
+}
+
+#[test]
+fn same_inode_same_size_copytruncate_rewrite_resets_on_sample_mismatch() {
     let mut temp = NamedTempFile::new().unwrap();
     temp.write_all(b"{\"id\":1}\n").unwrap();
     temp.flush().unwrap();
@@ -538,6 +641,64 @@ fn same_inode_same_size_copytruncate_rewrite_resets_on_anchor_mismatch() {
             ..
         }
     ));
+}
+
+#[test]
+fn same_inode_same_size_rewrite_outside_the_tail_sample_resets() {
+    let mut temp = NamedTempFile::new().unwrap();
+    for index in 0..16 {
+        writeln!(
+            temp,
+            "{{\"id\":{index:02},\"payload\":\"unchanged-width-value\"}}"
+        )
+        .unwrap();
+    }
+    temp.flush().unwrap();
+    let mut timeline = FileRecordTimeline::open(temp.path(), "same-size-rewrite.jsonl").unwrap();
+    let original = fs::read(temp.path()).unwrap();
+
+    let mut rewritten = original.clone();
+    let old = b"\"id\":00";
+    let new = b"\"id\":99";
+    let offset = rewritten
+        .windows(old.len())
+        .position(|window| window == old)
+        .unwrap();
+    rewritten[offset..offset + old.len()].copy_from_slice(new);
+    assert_eq!(rewritten.len(), original.len());
+    assert_eq!(
+        &rewritten[rewritten.len() - 64..],
+        &original[original.len() - 64..]
+    );
+    fs::write(temp.path(), &rewritten).unwrap();
+
+    assert!(matches!(
+        timeline.refresh().unwrap(),
+        TimelineRefresh::Reset {
+            reason: TimelineResetReason::Replaced,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn malformed_initial_tail_record_surfaces_a_notice() {
+    let (_handle, timeline) = fake_timeline([b"not-json\n".to_vec(), b"still-not-json\n".to_vec()]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+
+    let notice = file.take_notice().unwrap();
+    assert!(notice.contains("failed JSON parse"), "{notice}");
+    assert!(notice.contains("and 1 more record"), "{notice}");
+    assert!(file.take_notice().is_none());
+    assert_eq!(
+        file.read_window(0, 2).unwrap(),
+        vec!["not-json", "still-not-json"]
+    );
 }
 
 #[test]

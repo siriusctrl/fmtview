@@ -314,19 +314,22 @@ The contract has these invariants:
 `FileRecordTimeline` implements the seam for growing newline-delimited files.
 It locates committed EOF from bounded reverse chunks, never exposes an
 incomplete final line, and lets bounded forward loads do the record work after
-a refresh. Refresh validates a small committed anchor independently of file
-timestamps so same-identity copytruncate rewrites are reset. Inode/device
-identity is used on Unix; portable fallbacks never treat file length as
-identity.
+a refresh. Refresh validates bounded start/middle/end samples of committed
+history independently of file timestamps, so same-identity copytruncate
+rewrites outside the old tail are still detected without indexing the whole
+file. Inode/device identity is used on Unix; portable fallbacks never treat file
+length as identity.
 
 An unchanged incomplete suffix is not reread on every application poll. The
-file implementation retains start/middle/end samples plus a change stamp for
-the previously verified newline-free range. Unix uses nanosecond ctime. On a
-platform/filesystem where timestamps are coarse, a same-size rewrite confined
-to unsampled middle bytes may be detected only after a later observable size,
-stamp, or sample change; committed history is still independently protected by
-the exact anchor check. Stat/read races caused by a concurrent shrink are
-retried, and snapshot fields are committed only after all reads succeed.
+file implementation retains start/middle/end samples for both committed and
+pending ranges plus a change stamp for the previously verified newline-free
+range. Unix uses nanosecond ctime. On a platform/filesystem where timestamps are
+coarse, a same-size rewrite confined to bytes outside every bounded sample may
+be detected only after a later observable size, stamp, or sample change; fully
+detecting arbitrary in-place rewrites would require reading or indexing the
+whole file and would violate tail-first opening. Stat/read races caused by a
+concurrent shrink are retried, and snapshot fields are committed only after all
+reads succeed.
 
 `RecordTimelineViewFile` owns formatting, on-disk raw/formatted spools, reset
 reconciliation, and compact line/record indexes. `FileViewer` owns viewport
