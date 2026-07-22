@@ -33,8 +33,11 @@ Read these when the task matches:
 - `crates/fmtview-core/Cargo.toml` is the publishable headless engine package.
   It is versioned with the root package and has no crossterm dependency.
 - `src/bin/fmtview.rs` is the thin binary entry point.
-- `src/lib.rs` exposes only application-layer modules used by the binary and
-  black-box tests.
+- `src/lib.rs` exposes the CLI entry point plus the narrow `fmtview::view`
+  embedding facade.
+- `src/view.rs` re-exports the backend-neutral record timeline contract and
+  turns a caller-provided timeline plus snapshot/follow options into the
+  private terminal runner.
 - `crates/fmtview-core/src/lib.rs` is the library boundary for profiles,
   loading, viewer/diff engines, backend-neutral input, and render frames.
 

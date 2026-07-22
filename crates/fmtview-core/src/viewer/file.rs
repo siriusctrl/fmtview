@@ -112,10 +112,26 @@ impl FileViewer {
                 .as_ref()
                 .is_some_and(|task| task.direction == StructureDirection::Backward)
         {
+            let awaiting_older = self
+                .state
+                .structure_task
+                .as_ref()
+                .is_some_and(|task| task.awaiting_older);
             let change = self
                 .file
                 .load_older_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
+            let inserted_lines = change.inserted_lines;
             dirty |= self.apply_file_change(change);
+            if awaiting_older {
+                if let Some(task) = self.state.structure_task.as_mut() {
+                    task.next_line = if inserted_lines > 0 {
+                        task.next_line.saturating_sub(1)
+                    } else {
+                        usize::MAX
+                    };
+                    task.awaiting_older = false;
+                }
+            }
         }
         if self.file.has_older_records()
             && self
@@ -170,18 +186,18 @@ impl FileViewer {
     }
 
     pub fn preload(&mut self) -> Result<bool> {
-        if !self.file.is_follow_source() {
-            return self.file.preload(
+        let mut dirty = if self.file.is_follow_source() {
+            let refresh = self
+                .file
+                .refresh_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
+            self.apply_file_change(refresh)
+        } else {
+            self.file.preload(
                 LAZY_PRELOAD_LINES,
                 LAZY_PRELOAD_RECORDS,
                 LAZY_PRELOAD_BUDGET,
-            );
-        }
-
-        let refresh = self
-            .file
-            .refresh_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
-        let mut dirty = self.apply_file_change(refresh);
+            )?
+        };
         if self.state.top <= TIMELINE_OLDER_THRESHOLD_LINES && self.file.has_older_records() {
             let older = self
                 .file
@@ -230,6 +246,7 @@ impl FileViewer {
                 &mut raw.state,
                 raw.file.line_count(),
                 true,
+                false,
                 page,
             );
         }
@@ -269,6 +286,7 @@ impl FileViewer {
             &mut self.state,
             self.file.line_count(),
             self.file.at_newer_boundary(),
+            self.file.has_older_records(),
             page,
         );
         if self.file.is_follow_source() && !had_active_prompt {

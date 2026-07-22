@@ -32,10 +32,12 @@ const RESET_COMPARE_CHUNK_BYTES: usize = 16 * 1024;
 /// overlap detection live in a separate on-disk spool.
 pub struct RecordTimelineViewFile {
     label: String,
+    follow: bool,
     state: RefCell<TimelineViewState>,
 }
 
 impl RecordTimelineViewFile {
+    /// Open a live timeline at its current tail and refresh it while viewed.
     pub fn new(timeline: Box<dyn RecordTimeline>, options: FormatOptions) -> Result<Self> {
         Self::with_initial_limit(
             timeline,
@@ -44,16 +46,49 @@ impl RecordTimelineViewFile {
         )
     }
 
+    /// Open a timeline at its current tail without refreshing newer records.
+    ///
+    /// Older records remain available through bounded lazy loads. This is
+    /// useful when an embedder wants a stable snapshot of a source that may
+    /// continue growing in the background.
+    pub fn snapshot(timeline: Box<dyn RecordTimeline>, options: FormatOptions) -> Result<Self> {
+        Self::snapshot_with_initial_limit(
+            timeline,
+            options,
+            RecordLoadLimit::new(INITIAL_TAIL_RECORDS, INITIAL_TAIL_BYTES),
+        )
+    }
+
+    /// Open a live timeline with an explicit initial tail-load limit.
     pub fn with_initial_limit(
         timeline: Box<dyn RecordTimeline>,
         options: FormatOptions,
         limit: RecordLoadLimit,
+    ) -> Result<Self> {
+        Self::with_initial_limit_and_follow(timeline, options, limit, true)
+    }
+
+    /// Open a non-refreshing timeline snapshot with an explicit initial limit.
+    pub fn snapshot_with_initial_limit(
+        timeline: Box<dyn RecordTimeline>,
+        options: FormatOptions,
+        limit: RecordLoadLimit,
+    ) -> Result<Self> {
+        Self::with_initial_limit_and_follow(timeline, options, limit, false)
+    }
+
+    fn with_initial_limit_and_follow(
+        timeline: Box<dyn RecordTimeline>,
+        options: FormatOptions,
+        limit: RecordLoadLimit,
+        follow: bool,
     ) -> Result<Self> {
         let label = timeline.label().to_owned();
         let mut state = TimelineViewState::new(timeline, options)?;
         state.load_older(limit)?;
         Ok(Self {
             label,
+            follow,
             state: RefCell::new(state),
         })
     }
@@ -107,7 +142,7 @@ impl ViewFile for RecordTimelineViewFile {
     }
 
     fn is_follow_source(&self) -> bool {
-        true
+        self.follow
     }
 
     fn has_older_records(&self) -> bool {

@@ -288,6 +288,44 @@ Follow mode requires a real file and an interactive stdout terminal. Ordinary
 viewing and redirected output are unchanged; `--follow` never turns redirected
 stdout into an endless stream.
 
+## Embedding a Record Timeline
+
+Applications with their own committed-record storage can reuse the interactive
+viewer through `fmtview::view` without implementing terminal setup or depending
+on `fmtview-core` directly:
+
+```rust
+use fmtview::view::{self, RecordTimeline, Result, ViewOptions};
+
+fn inspect(source: Box<dyn RecordTimeline>, follow: bool) -> Result<()> {
+    let mut options = ViewOptions::default();
+    options.follow = follow;
+    options.notice = Some("opened by my application".to_owned());
+    view::run(source, options)
+}
+```
+
+The facade re-exports `RecordTimeline` and all of its record, read, refresh,
+reset, snapshot, limit, and result types. A downstream source can therefore
+list only `fmtview` in `Cargo.toml`; the `view::Result` alias also avoids a
+direct `anyhow` dependency. Each committed source record is interpreted as one
+JSONL record, and the source keeps responsibility for never yielding an
+incomplete logical commit.
+
+`ViewOptions::default()` opens a stable tail-first snapshot: older records load
+lazily, but a live source is not refreshed and no follow controls are shown.
+Set `follow = true` to refresh committed appends and enable attached, detached,
+and paused follow state. Both modes keep search, structure/tool navigation, raw
+record snapshots, media collapsing, and exact source bytes in the shared core.
+The call requires an interactive stdout terminal; fmtview owns raw mode,
+crossterm polling, alternate-screen entry/exit, mouse capture, frame commit,
+and cleanup for the duration of `view::run`.
+
+See [`examples/embed-timeline.rs`](examples/embed-timeline.rs) for a complete
+source implementation. The facade follows the `fmtview` package's SemVer. While
+the package is pre-1.0, pin the compatible minor line you tested and review
+minor-version upgrades before adopting them.
+
 Format a literal string:
 
 ```sh

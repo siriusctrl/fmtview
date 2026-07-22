@@ -8,6 +8,20 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Expose `fmtview::view` as a narrow public embedding facade for interactive
+  JSONL record timelines. It re-exports the backend-neutral `RecordTimeline`
+  contract and result alias, accepts snapshot/follow options, and keeps
+  crossterm polling, terminal lifecycle, and frame commit private.
+
+### Changed
+
+- Separate tail-first lazy history from live follow refresh. Embedded snapshot
+  timelines still load older records on demand without calling `refresh` or
+  showing follow controls, while existing follow timelines retain append,
+  detach, pause, and reset behavior.
+
 ## [0.6.0] - 2026-07-22
 
 ### Added

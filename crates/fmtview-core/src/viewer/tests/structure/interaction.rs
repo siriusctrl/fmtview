@@ -21,6 +21,22 @@ fn bracket_keys_start_structure_navigation_tasks() {
 }
 
 #[test]
+fn backward_structure_at_lazy_top_waits_for_older_records() {
+    let mut state = ViewState::default();
+
+    assert!(start_structure_navigation_with_older(
+        &mut state,
+        1,
+        true,
+        true,
+        StructureDirection::Backward,
+    ));
+
+    assert!(state.structure_task.is_some());
+    assert!(state.footer_message.is_none());
+}
+
+#[test]
 fn manual_scroll_resets_structure_repeat_anchor() {
     let file = indexed_file(&["{", r#"  "a": {"#, "  },", r#"  "b": {"#, "  }", "}"]);
     let mut state = ViewState::default();

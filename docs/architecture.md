@@ -34,6 +34,7 @@ The workspace has a one-way application-to-engine dependency:
 ```text
 fmtview application package
   clap CLI, stdin/file/literal assembly, redirected stdout
+  public fmtview::view record-timeline embedding facade
   crossterm event adapter and terminal lifecycle
   raw mode, alternate screen, mouse capture, polling, frame commit, cleanup
                          |
@@ -57,6 +58,14 @@ how terminal state is restored.
 This is a product boundary, not only a package boundary. Core tests render
 file and diff frames, drive search and navigation, and paint frames into an
 in-memory ratatui buffer without raw mode, a PTY, or a terminal backend.
+
+The application package exposes one narrow embedding entry point:
+`fmtview::view::run(Box<dyn RecordTimeline>, ViewOptions)`. The facade
+re-exports the complete `RecordTimeline` vocabulary and a result alias, fixes
+the display profile to JSONL, constructs a `RecordTimelineViewFile`, and then
+hands it to the same private crossterm runner used by the CLI. No crossterm or
+ratatui backend type appears in the public signature. Snapshot mode is the
+default; callers opt into live refresh and follow controls explicitly.
 
 `TypeProfile` selects the format package and shared runtime behavior for the
 current input. It answers four questions:
@@ -358,6 +367,15 @@ checkpoint-committed producer can implement the same trait by mapping its own
 opaque stable ordering into epoch/offset identities; it needs no file methods,
 poll cadence, checkpoint storage rule, or terminal backend type.
 
+Tail-first loading and live following are separate capabilities. A snapshot
+timeline still starts at the committed tail and loads older records in bounded
+batches near the top or while backward search/structure navigation advances,
+but it never calls `refresh` and does not expose follow footer state or `f`
+controls. A follow timeline uses the same older-loading path plus periodic
+refresh, newer batches, reset reconciliation, and attached/detached/paused
+state. Existing `RecordTimelineViewFile::new` callers retain follow behavior;
+`RecordTimelineViewFile::snapshot` selects the non-refreshing mode.
+
 Record-backed `ViewFile` implementations can expose an exact raw-record seam.
 The seam retains source or raw-spool offsets and `u64` lengths, then presents a
 snapshot through nominal 32 KiB virtual-line chunks with up to a three-byte
@@ -391,8 +409,9 @@ checkpoint source can use an independent decoder cursor.
 
 The root package only decides when to call core preload/refresh work, maps `f`
 and other crossterm events into `InputEvent`/`ViewerCommand`, and commits the
-returned frame. Poll cadence, raw mode, terminal cleanup, and TTY detection do
-not enter `fmtview-core`.
+returned frame. `fmtview::view` additionally selects snapshot versus follow for
+an embedded timeline before entering that private runner. Poll cadence, raw
+mode, terminal cleanup, and TTY detection do not enter `fmtview-core`.
 
 ## Load Plans
 

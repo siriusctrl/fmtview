@@ -386,8 +386,15 @@ fn line_jump_on_incomplete_lazy_file_can_target_unloaded_line() {
     let mut state = ViewState::default();
 
     handle_key_event(KeyCode::Char('6'), KeyModifiers::NONE, &mut state, 1, 10);
-    let action =
-        handle_key_event_with_count(KeyCode::Enter, KeyModifiers::NONE, &mut state, 1, false, 10);
+    let action = handle_key_event_with_count(
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+        &mut state,
+        1,
+        false,
+        false,
+        10,
+    );
 
     assert!(action.dirty);
     assert_eq!(state.top, 5);

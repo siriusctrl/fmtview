@@ -2,7 +2,7 @@ use crate::viewer::{InputEvent, KeyCode, KeyModifiers, MouseEventKind, ViewerAct
 
 use crate::viewer::file::{MOUSE_HORIZONTAL_COLUMNS, MOUSE_SCROLL_LINES};
 
-use super::super::structure::{StructureDirection, start_structure_navigation};
+use super::super::structure::{StructureDirection, start_structure_navigation_with_older};
 use super::{
     jump::{handle_jump_input_key, push_jump_digit},
     keys::{accepts_jump_digit, plain_key},
@@ -24,7 +24,7 @@ pub(in crate::viewer) fn handle_event(
     line_count: usize,
     page: usize,
 ) -> ViewerAction {
-    handle_event_with_count(event, state, line_count, true, page)
+    handle_event_with_count(event, state, line_count, true, false, page)
 }
 
 pub(in crate::viewer) fn handle_event_with_count(
@@ -32,12 +32,19 @@ pub(in crate::viewer) fn handle_event_with_count(
     state: &mut ViewState,
     line_count: usize,
     line_count_exact: bool,
+    has_older_records: bool,
     page: usize,
 ) -> ViewerAction {
     match event {
-        InputEvent::Key { code, modifiers } => {
-            handle_key_event_with_count(code, modifiers, state, line_count, line_count_exact, page)
-        }
+        InputEvent::Key { code, modifiers } => handle_key_event_with_count(
+            code,
+            modifiers,
+            state,
+            line_count,
+            line_count_exact,
+            has_older_records,
+            page,
+        ),
         InputEvent::Mouse { kind, modifiers } if !state.has_active_prompt() => {
             handle_mouse_event(kind, modifiers, state, line_count)
         }
@@ -59,7 +66,7 @@ pub(in crate::viewer) fn handle_key_event(
     line_count: usize,
     page: usize,
 ) -> ViewerAction {
-    handle_key_event_with_count(code, modifiers, state, line_count, true, page)
+    handle_key_event_with_count(code, modifiers, state, line_count, true, false, page)
 }
 
 pub(in crate::viewer) fn handle_key_event_with_count(
@@ -68,6 +75,7 @@ pub(in crate::viewer) fn handle_key_event_with_count(
     state: &mut ViewState,
     line_count: usize,
     line_count_exact: bool,
+    has_older_records: bool,
     page: usize,
 ) -> ViewerAction {
     if matches!(code, KeyCode::Char('c')) && modifiers.contains(KeyModifiers::CONTROL) {
@@ -103,16 +111,18 @@ pub(in crate::viewer) fn handle_key_event_with_count(
         KeyCode::Char('N') if plain_key(modifiers) => {
             start_repeat_search(state, line_count, SearchDirection::Backward)
         }
-        KeyCode::Char(']') if plain_key(modifiers) => start_structure_navigation(
+        KeyCode::Char(']') if plain_key(modifiers) => start_structure_navigation_with_older(
             state,
             line_count,
             line_count_exact,
+            has_older_records,
             StructureDirection::Forward,
         ),
-        KeyCode::Char('[') if plain_key(modifiers) => start_structure_navigation(
+        KeyCode::Char('[') if plain_key(modifiers) => start_structure_navigation_with_older(
             state,
             line_count,
             line_count_exact,
+            has_older_records,
             StructureDirection::Backward,
         ),
         KeyCode::Enter => false,
