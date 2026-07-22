@@ -996,6 +996,41 @@ fn wrapped_forward_search_waits_for_the_true_prefix_before_choosing_a_match() {
 }
 
 #[test]
+fn forward_search_from_loaded_start_waits_for_true_prefix_after_a_huge_tail_record() {
+    let huge_tail = format!(
+        "{{\"items\":[{}]}}\n",
+        std::iter::repeat_n("0", 5_000)
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+    .into_bytes();
+    let (_handle, timeline) = fake_timeline((0..1_000).map(|index| match index {
+        0 => b"{\"message\":\"needle-oldest\"}\n".to_vec(),
+        950 => b"{\"message\":\"needle-newer-prefix-batch\"}\n".to_vec(),
+        999 => huge_tail.clone(),
+        _ => record(index),
+    }));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(2, 64 * 1024),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 10);
+    viewer.render(size, None).unwrap();
+    viewer.handle_event(key(KeyCode::Home), FileViewer::page_for_size(size));
+    viewer.render(size, None).unwrap();
+
+    enter_search(&mut viewer, size, "needle");
+    advance_until_idle(&mut viewer);
+    let found = frame_text(viewer.render(size, None).unwrap());
+
+    assert!(found.contains("needle-oldest"), "{found}");
+    assert!(!found.contains("needle-newer-prefix-batch"), "{found}");
+}
+
+#[test]
 fn active_forward_search_includes_newer_records_arriving_at_the_boundary() {
     let (handle, timeline) = fake_timeline([record(0), record(1)]);
     let file = RecordTimelineViewFile::with_initial_limit(
@@ -1077,6 +1112,38 @@ fn active_search_crosses_a_reset_tail_and_lazily_inserted_older_records() {
     let text = frame_text(frame);
 
     assert!(text.contains("needle-in-reset-prefix"), "{footer}");
+}
+
+#[test]
+fn backward_search_orders_a_reset_tail_before_its_lazily_inserted_prefix() {
+    let (handle, timeline) = fake_timeline((0..20).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(32, 64 * 1024),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+    viewer.render(size, None).unwrap();
+    viewer.handle_event(key(KeyCode::Home), FileViewer::page_for_size(size));
+    enter_search(&mut viewer, size, "needle-reset-backward");
+    viewer.handle_event(key(KeyCode::Char('N')), FileViewer::page_for_size(size));
+
+    handle.replace((0..140).map(|index| match index {
+        0 => b"{\"message\":\"needle-reset-backward-prefix\"}\n".to_vec(),
+        139 => b"{\"message\":\"needle-reset-backward-tail\"}\n".to_vec(),
+        _ => format!("{{\"message\":\"replacement-{index}\"}}\n").into_bytes(),
+    }));
+    viewer.preload().unwrap();
+    advance_until_idle(&mut viewer);
+    let tail = frame_text(viewer.render(size, None).unwrap());
+    assert!(tail.contains("needle-reset-backward-tail"), "{tail}");
+
+    viewer.handle_event(key(KeyCode::Char('N')), FileViewer::page_for_size(size));
+    advance_until_idle(&mut viewer);
+    let prefix = frame_text(viewer.render(size, None).unwrap());
+    assert!(prefix.contains("needle-reset-backward-prefix"), "{prefix}");
 }
 
 #[test]

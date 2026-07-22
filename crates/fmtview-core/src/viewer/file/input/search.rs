@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::viewer::{KeyCode, KeyModifiers};
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::load::ViewFile;
 
@@ -101,6 +101,29 @@ impl SearchTask {
         let start = start.max(self.known_line_count);
         self.known_line_count = self.known_line_count.max(end);
         if start >= end {
+            return;
+        }
+        if self.direction == SearchDirection::Backward {
+            let boundary = self
+                .spans
+                .iter()
+                .position(|span| span.kind != SearchSpanKind::Initial)
+                .unwrap_or(self.spans.len());
+            if let Some(span) = self.spans.get_mut(boundary)
+                && span.kind == SearchSpanKind::Appended
+                && span.end == start
+            {
+                span.end = end;
+                return;
+            }
+            self.spans.insert(
+                boundary,
+                SearchSpan {
+                    start,
+                    end,
+                    kind: SearchSpanKind::Appended,
+                },
+            );
             return;
         }
         if self.awaiting_older {
@@ -495,9 +518,12 @@ pub(in crate::viewer) fn process_search_step(
         && file.has_older_records()
         && (task.awaiting_older
             || !task.has_work()
-            || task
-                .current_span()
-                .is_some_and(|span| span.kind == SearchSpanKind::Wrapped))
+            || task.current_span().is_some_and(|span| {
+                matches!(
+                    span.kind,
+                    SearchSpanKind::Inserted | SearchSpanKind::Wrapped
+                )
+            }))
     {
         task.awaiting_older = true;
     } else if !file.has_older_records() {
@@ -640,7 +666,7 @@ pub(in crate::viewer) fn scan_search_forward(
         });
     };
     let count = span.len().min(SEARCH_CHUNK_LINES);
-    let lines = file.read_window(span.start, count)?;
+    let lines = read_search_window(file, span.start, count)?;
     for (offset, line) in lines.iter().enumerate() {
         if let Some(byte_index) = line.find(&task.query) {
             return Ok(SearchStep {
@@ -671,7 +697,7 @@ pub(in crate::viewer) fn scan_search_backward(
     };
     let count = span.len().min(SEARCH_CHUNK_LINES);
     let start = span.end.saturating_sub(count);
-    let lines = file.read_window(start, count)?;
+    let lines = read_search_window(file, start, count)?;
     for (offset, line) in lines.iter().enumerate().rev() {
         if let Some(byte_index) = line.rfind(&task.query) {
             return Ok(SearchStep {
@@ -688,4 +714,28 @@ pub(in crate::viewer) fn scan_search_backward(
         found: None,
         scanned: lines.len(),
     })
+}
+
+fn read_search_window(file: &dyn ViewFile, start: usize, count: usize) -> Result<Vec<String>> {
+    let mut lines = Vec::with_capacity(count);
+    while lines.len() < count {
+        let remaining = count - lines.len();
+        let Some(next_start) = start.checked_add(lines.len()) else {
+            bail!("search window start overflow");
+        };
+        let chunk = file.read_window(next_start, remaining)?;
+        if chunk.is_empty() {
+            bail!(
+                "view file returned an empty search window at line {next_start} with {remaining} lines remaining"
+            );
+        }
+        if chunk.len() > remaining {
+            bail!(
+                "view file returned {} search lines for a {remaining}-line request",
+                chunk.len()
+            );
+        }
+        lines.extend(chunk);
+    }
+    Ok(lines)
 }
