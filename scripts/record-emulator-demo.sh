@@ -23,6 +23,9 @@ Examples:
 
 Set FMTVIEW_EMULATOR_USE_EXISTING_DISPLAY=1 to reuse the current DISPLAY
 instead of starting Xvfb.
+
+Set FMTVIEW_EMULATOR_FOLLOW_FILE to the JSONL file named by a --follow demo
+command to record append, detach, reattach, and pause/resume actions.
 EOF
 }
 
@@ -57,6 +60,7 @@ window_w="${FMTVIEW_EMULATOR_WINDOW_W:-1180}"
 window_h="${FMTVIEW_EMULATOR_WINDOW_H:-820}"
 fps="${FMTVIEW_EMULATOR_FPS:-24}"
 use_existing_display="${FMTVIEW_EMULATOR_USE_EXISTING_DISPLAY:-0}"
+follow_file="${FMTVIEW_EMULATOR_FOLLOW_FILE:-}"
 class_name="fmtview-emulator-$$"
 display=""
 xvfb_pid=""
@@ -196,6 +200,11 @@ ffmpeg_pid=$!
 actions_file="$output_dir/actions.jsonl"
 : >"$actions_file"
 
+if [[ -n "$follow_file" && ! -f "$follow_file" ]]; then
+  echo "FMTVIEW_EMULATOR_FOLLOW_FILE is not a file: $follow_file" >&2
+  exit 1
+fi
+
 send_key() {
   local name="$1"
   local key="$2"
@@ -216,35 +225,66 @@ send_type() {
   printf '{"name":"%s","text":"%s","sent_ms":%s}\n' "$name" "$text" "$before" >>"$actions_file"
 }
 
+append_follow_record() {
+  local name="$1"
+  local index="$2"
+  local before
+  before="$(date +%s%3N)"
+  printf '{"index":%s,"role":"assistant","message":"recorded follow append %s"}\n' \
+    "$index" "$index" >>"$follow_file"
+  printf '{"name":"%s","record":%s,"sent_ms":%s}\n' "$name" "$index" "$before" >>"$actions_file"
+}
+
 sleep 1.0
-send_key "scroll_down" "j"
-sleep 0.5
-send_key "page_down" "Page_Down"
-sleep 0.7
-send_key "search_open" "slash"
-sleep 0.2
-send_type "search_query" "assistant"
-sleep 0.2
-send_key "search_enter" "Return"
-sleep 0.7
-send_key "search_next" "n"
-sleep 0.7
-send_key "next_structure" "bracketright"
-sleep 0.7
-send_key "previous_structure" "bracketleft"
-sleep 0.7
-if [[ "$demo_command" == "target/debug/fmtview examples/chat.jsonl" \
-  || "$demo_command" == "target/release/fmtview examples/chat.jsonl" ]]; then
-  send_key "tool_search_open" "slash"
+if [[ -n "$follow_file" ]]; then
+  append_follow_record "append_while_attached" 900001
+  sleep 0.8
+  send_key "detach_page_up" "Page_Up"
+  sleep 0.7
+  append_follow_record "append_while_detached" 900002
+  sleep 0.8
+  send_key "reattach_page_down_1" "Page_Down"
+  sleep 0.4
+  send_key "reattach_page_down_2" "Page_Down"
+  sleep 0.8
+  append_follow_record "append_after_reattach" 900003
+  sleep 0.8
+  send_key "pause_follow" "f"
+  sleep 0.7
+  append_follow_record "append_while_paused" 900004
+  sleep 0.8
+  send_key "resume_follow" "f"
+  sleep 0.8
+else
+  send_key "scroll_down" "j"
+  sleep 0.5
+  send_key "page_down" "Page_Down"
+  sleep 0.7
+  send_key "search_open" "slash"
   sleep 0.2
-  send_type "tool_search_query" "tool_call_id"
+  send_type "search_query" "assistant"
   sleep 0.2
-  send_key "tool_search_enter" "Return"
+  send_key "search_enter" "Return"
   sleep 0.7
-  send_key "tool_jump_to_call" "t"
+  send_key "search_next" "n"
   sleep 0.7
-  send_key "tool_jump_to_result" "t"
+  send_key "next_structure" "bracketright"
   sleep 0.7
+  send_key "previous_structure" "bracketleft"
+  sleep 0.7
+  if [[ "$demo_command" == "target/debug/fmtview examples/chat.jsonl" \
+    || "$demo_command" == "target/release/fmtview examples/chat.jsonl" ]]; then
+    send_key "tool_search_open" "slash"
+    sleep 0.2
+    send_type "tool_search_query" "tool_call_id"
+    sleep 0.2
+    send_key "tool_search_enter" "Return"
+    sleep 0.7
+    send_key "tool_jump_to_call" "t"
+    sleep 0.7
+    send_key "tool_jump_to_result" "t"
+    sleep 0.7
+  fi
 fi
 send_key "quit" "q"
 sleep 0.5

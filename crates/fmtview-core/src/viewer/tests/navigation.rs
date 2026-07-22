@@ -166,7 +166,10 @@ fn tool_result_footer_shows_pair_context_and_jump_hint() {
     use crate::formats::json::tool_links::{ToolLink, ToolLinkStatus};
 
     let file = indexed_lines(&["tool result"]);
-    let mut state = ViewState::default();
+    let mut state = ViewState {
+        follow: Some(FollowState::Paused),
+        ..ViewState::default()
+    };
     state.set_tool_context(Some((
         ToolLink {
             id: Arc::from("call_123"),
@@ -178,6 +181,7 @@ fn tool_result_footer_shows_pair_context_and_jump_hint() {
     )));
 
     let footer = file_footer_text(&file, &state);
+    assert!(footer.contains("follow:off"));
     assert!(footer.contains("tool result ↑ call line 5"));
     assert!(footer.contains("id: call_123"));
     assert!(footer.contains("t jump"));

@@ -40,6 +40,18 @@ scripts/record-emulator-demo.sh target/fmtview-emulator-recordings/html -- targe
 scripts/record-emulator-demo.sh target/fmtview-emulator-recordings/diff -- target/debug/fmtview diff examples/chat.jsonl examples/chat.jsonl
 ```
 
+For follow mode, prepare a disposable JSONL file, name the same file in
+`FMTVIEW_EMULATOR_FOLLOW_FILE`, and pass the follow command. The helper then
+records attached append, scroll-detach, ordinary PageDown reattach, explicit
+pause, and resume states:
+
+```sh
+cp examples/chat.jsonl target/follow-demo.jsonl
+FMTVIEW_EMULATOR_FOLLOW_FILE=target/follow-demo.jsonl \
+  scripts/record-emulator-demo.sh target/fmtview-emulator-recordings/follow -- \
+  target/debug/fmtview --follow target/follow-demo.jsonl
+```
+
 For release candidates, pass the release binary explicitly after building it:
 
 ```sh

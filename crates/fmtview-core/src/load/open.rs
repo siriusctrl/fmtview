@@ -3,10 +3,13 @@ use anyhow::Result;
 use crate::{
     input::InputSource,
     profile::TypeProfile,
+    timeline::FileRecordTimeline,
     transform::{self, FormatKind, FormatOptions, TransformStrategy},
 };
 
-use super::{IndexedTempFile, LazyTransformedRecordsFile, LoadPlan, ViewFile};
+use super::{
+    IndexedTempFile, LazyTransformedRecordsFile, LoadPlan, RecordTimelineViewFile, ViewFile,
+};
 
 pub struct OpenedViewFile {
     pub file: Box<dyn ViewFile>,
@@ -20,6 +23,19 @@ pub fn open_view_file(
     profile: TypeProfile,
 ) -> Result<OpenedViewFile> {
     open_view_file_with_fallback(input, options, profile, false)
+}
+
+/// Open a growing JSONL/NDJSON file at its current committed tail.
+pub fn open_follow_view_file(
+    input: &InputSource,
+    options: &FormatOptions,
+) -> Result<OpenedViewFile> {
+    let timeline = FileRecordTimeline::open(input.path(), input.label())?;
+    Ok(OpenedViewFile {
+        file: Box::new(RecordTimelineViewFile::new(Box::new(timeline), *options)?),
+        content: FormatKind::Jsonl,
+        notice: None,
+    })
 }
 
 pub fn open_view_file_with_fallback(

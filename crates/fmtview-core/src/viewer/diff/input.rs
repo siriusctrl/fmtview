@@ -31,7 +31,7 @@ pub(super) fn handle_event(
             dirty: true,
             ..ViewerAction::default()
         },
-        InputEvent::Ignore => ViewerAction::default(),
+        InputEvent::Command(_) | InputEvent::Ignore => ViewerAction::default(),
     }
 }
 

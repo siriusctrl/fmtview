@@ -11,6 +11,7 @@ inputs without leaving the CLI.
 ```sh
 fmtview payload.json
 fmtview events.jsonl
+fmtview --follow events.jsonl
 fmtview response.xml
 fmtview page.html
 fmtview notes.md
@@ -239,6 +240,29 @@ Other types are intentionally passthrough:
 - Jinja templates are indexed and highlighted as templates, but `fmtview` does
   not render them, evaluate includes, or rewrite template statements.
 
+### Following growing JSONL files
+
+Use `-F`/`--follow` with a JSONL or NDJSON file to open directly at its current
+committed tail:
+
+```sh
+fmtview --follow service.jsonl
+```
+
+The first frame reverse-scans only enough source data to build the last
+viewport; it does not format or index the file from the beginning. A final
+record is committed only after its newline arrives, so a writer's partial EOF
+record is never displayed early. While the viewport remains at the bottom,
+committed appends advance it automatically. Scrolling up changes the footer to
+`follow:detached`; scrolling back to the physical bottom reattaches. Press `f`
+to pause or resume follow explicitly. Search plus structure, chat-role, and tool
+navigation continue across older records loaded on demand and records appended
+after opening.
+
+Follow mode requires a real file and an interactive stdout terminal. Ordinary
+viewing and redirected output are unchanged; `--follow` never turns redirected
+stdout into an endless stream.
+
 Format a literal string:
 
 ```sh
@@ -357,7 +381,8 @@ Digits+Enter jump to a line number, for example 1200 Enter
 Backspace   edit a pending prompt
 j/k         scroll one visual row in wrap mode; one logical line in nowrap
 Up/Down     scroll one visual row in wrap mode; one logical line in nowrap
-Space/f     page down
+Space       page down
+f           toggle follow-tail with --follow; page down otherwise
 b           page up
 g/G         top/end when no prompt is pending
 w           toggle wrap/nowrap
@@ -396,6 +421,9 @@ the line count; the viewer continues extending that session index during idle
 time. If a JSONL record is malformed, the TTY viewer keeps that record as raw
 text, shows a temporary red notice, and continues with following records.
 Redirected output still performs the full deterministic formatting pass.
+With `--follow`, this same indexed spool starts from the committed tail, loads
+older records backward when needed, and extends forward after source refreshes.
+The footer shows `follow:on`, `follow:detached`, or `follow:off`.
 
 To jump to a specific line, type the line number directly and press Enter. While
 a line jump is pending, the footer shows the target line; Backspace edits it and
@@ -509,6 +537,9 @@ rendered output in memory for browsing.
 - Record-like TTY previews, such as JSONL logs, use a lazy path: `fmtview`
   sniffs a small prefix to confirm that the input is independent records, then
   formats only the records needed for the visible window.
+- Follow-mode JSONL opens from a bounded reverse tail scan. Refresh locates the
+  newest committed delimiter from EOF, and record/byte budgets bound subsequent
+  older and newer loads; no persistent full-file index is required.
 - Lazy preview writes transformed records into a temporary spool and keeps compact
   offsets, not formatted strings, in memory. The title shows `N+` lines while
   the session index is still incomplete and idle time extends the index.
@@ -581,6 +612,7 @@ Options:
 ```text
 -t, --type <auto|json|jsonl|xml|html|markdown|toml|plain|jinja>
                                   Override type-profile detection
+-F, --follow                     Open a JSONL/NDJSON file at its tail and follow
     --literal <STRING>            Read this string instead of a file/stdin
     --indent <N>                  Pretty-print indent width, default 2
 ```

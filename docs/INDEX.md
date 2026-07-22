@@ -24,7 +24,7 @@ Read these when the task matches:
   - application versus headless engine crate boundary
   - type profiles, load/index, transform, viewer, and diff ownership
   - backend-neutral input and render frames
-  - the next-stage bidirectional timeline seam
+  - the public bidirectional record timeline and reset/follow invariants
 
 ## Workspace Entry Points
 
@@ -68,7 +68,11 @@ or navigation target should be displayed. Those decisions belong to core.
 - `transform.rs` and `transform/` own whole-source and record transforms used by
   redirected output, eager viewing, lazy record viewing, and diff input.
 - `load.rs` and `load/` own `ViewFile`, eager temp-file indexing, lazy record
-  spooling, read windows, progress, notices, and preload mechanics.
+  spooling, timeline raw/formatted spools, reset reconciliation, read windows,
+  progress, notices, and preload mechanics.
+- `timeline.rs` defines the public backend-neutral `RecordTimeline` contract,
+  identities/snapshots/read/refresh outcomes, and the reverse-scanning growing
+  file implementation.
 - `diff.rs` and `diff/` own redirected unified patches, eager/lazy interactive
   models, record-stream comparison, inline changes, and unified/side-by-side rows.
 - `viewer/input.rs` defines backend-neutral key, pointer, resize, modifier, and
@@ -94,6 +98,9 @@ or navigation target should be displayed. Those decisions belong to core.
 
 - `crates/fmtview-core/tests/headless_viewer.rs` proves file rendering, search,
   navigation, diff rendering, and buffer painting without a PTY or real terminal.
+- `crates/fmtview-core/tests/record_timeline.rs` uses a mutable fake timeline and
+  real files to prove pending/end, append/reset, follow detach/reattach, anchor
+  preservation, lazy search/navigation, incomplete EOF, and bounded tail work.
 - Unit tests under `crates/fmtview-core/src/viewer/tests/` remain close to private
   engine state, render caches, search, viewport, and structure-navigation logic.
 - Root `src/tui/tests.rs` covers the actual terminal writer and frame-commit

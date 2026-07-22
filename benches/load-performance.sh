@@ -12,8 +12,8 @@ Runs fmtview load-layer performance smoke tests in one release-mode Rust
 harness process and prints per-sample timings plus median/min/max summaries.
 
 Use this before and after raw line indexing, window reads, load planning,
-lazy record spooling, or preload behavior changes. FILTER matches benchmark
-labels, input shapes, or layers.
+lazy record spooling, timeline tail-open/prepend/refresh/follow, or preload
+behavior changes. FILTER matches benchmark labels, input shapes, or layers.
 USAGE
 }
 

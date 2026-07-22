@@ -8,6 +8,17 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+### Added
+
+- Add `-F`/`--follow` for interactive JSONL/NDJSON files. Follow mode opens at
+  the committed tail without formatting the whole file, advances on appended
+  records while attached, detaches when scrolled up, reattaches at the bottom,
+  and uses `f` plus a legible footer to pause or resume.
+- Expose a backend-neutral bidirectional `RecordTimeline` API from
+  `fmtview-core`, with exact raw record bytes, stable epoch/offset identities,
+  bounded older/newer loading, explicit pending/end/reset outcomes, and
+  headless fake- and real-source tests.
+
 ### Changed
 
 - Split the publishable, terminal-independent viewer engine into the new
@@ -15,11 +26,28 @@ for GitHub Release notes, so every published version must have a matching
   models, file and diff viewer state, search/navigation, highlighting, layout,
   render caches, and backend-neutral frames can now be tested without a real
   terminal, while the `fmtview` package keeps the same install and binary name.
+- Extend lazy record spooling, search, structure/chat/tool navigation, and
+  viewport anchoring across tail-first older loads and live appends. Replacement
+  epochs use a bounded committed-prefix probe plus exact record identities for
+  ordered overlap reconciliation, preserving legitimate duplicate records and
+  preventing stale/new history interleaving even when overlap spans lazy
+  reverse-load batches.
 
 ### Fixed
 
+- Detect bounded start/middle/end changes when a same-size followed file is
+  rewritten outside its previous tail, instead of silently keeping stale
+  committed history.
+- Keep follow-mode search input independent from navigation keys, including
+  `f`, `g`, `j`, and `b`, and make a wrapped forward search load the true older
+  prefix before repeating a tail match.
+- Surface the existing malformed-record notice for records first encountered
+  in the initial or lazily loaded older follow window.
 - Require the release workflow to resolve an exact version tag and validate its
   changelog entry before any crates.io or npm publishing job can start.
+- Revalidate bounded pending tails before scanning appended bytes, so an
+  in-place delimiter rewrite followed by growth is not missed, and publish
+  newer-read cursor progress only after the complete batch succeeds.
 
 ## [0.5.4] - 2026-07-17
 

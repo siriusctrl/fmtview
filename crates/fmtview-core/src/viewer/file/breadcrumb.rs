@@ -8,7 +8,7 @@ use crate::{formats::json::path::JsonPathStack, load::ViewFile};
 
 const CHECKPOINT_INTERVAL: usize = 512;
 const SCAN_CHUNK_LINES: usize = 512;
-const MAX_BREADCRUMB_ROWS: usize = 2;
+pub(in crate::viewer) const MAX_BREADCRUMB_ROWS: usize = 2;
 const MIN_BREADCRUMB_WIDTH: usize = 16;
 
 #[derive(Debug, Default)]

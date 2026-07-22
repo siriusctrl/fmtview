@@ -40,7 +40,8 @@ fmtview application package
                          v
 fmtview-core library package
   format profiles and transforms, load/index models, diff models
-  file/diff viewer state, viewport, wrap, search, navigation, highlight
+  record timeline/source state, formatting/spooling, file/diff viewer state
+  viewport anchors, follow state, wrap, search, navigation, highlight
   chat/tool relations, layout and render caches
   backend-neutral InputEvent -> state transition -> RenderFrame
 ```
@@ -269,20 +270,103 @@ palette/text helpers, and format highlighters. Their row models stay separate
 because normal files render indexed document lines, while diffs render unified
 or side-by-side comparison rows with change metadata.
 
-## Next-stage Timeline Seam
+## Bidirectional Record Timeline
 
-This extraction intentionally does not add a record timeline, tail-first
-loading, or follow behavior. The next stage should attach a bidirectional
-record source behind the core viewer model and preserve the existing outer
-contract: terminal events enter as `InputEvent`, state and loading decisions
-remain in core, and display leaves as `RenderFrame`. `ViewFile` remains the
-current indexed-line access boundary; timeline work should evolve or wrap that
-model inside `fmtview-core` rather than introducing terminal polling or a
-backend protocol into the data source.
+`fmtview-core::RecordTimeline` is the public source seam for committed record
+streams. It is intentionally narrower than a file API:
 
-That seam lets future timeline tests drive older/newer loading, anchor
-preservation, search, and navigation headlessly. The application adapter should
-only schedule engine work and commit the resulting frames.
+```rust
+pub trait RecordTimeline {
+    fn label(&self) -> &str;
+    fn snapshot(&self) -> TimelineSnapshot;
+    fn probe_prefix(&mut self, limit: RecordLoadLimit) -> Result<TimelineRead>;
+    fn load_older(&mut self, limit: RecordLoadLimit) -> Result<TimelineRead>;
+    fn load_newer(&mut self, limit: RecordLoadLimit) -> Result<TimelineRead>;
+    fn refresh(&mut self) -> Result<TimelineRefresh>;
+}
+```
+
+The contract has these invariants:
+
+- `label` is stable for the lifetime of the timeline. A snapshot reports the
+  source epoch plus committed, observed, and pending boundaries; it is not a
+  request to enumerate the source.
+- Older and newer cursors are independent. Opening a timeline positions both at
+  the current committed tail, `load_older` walks backward in source order, and
+  `load_newer` walks forward after refresh. `probe_prefix` reads the exact
+  committed source prefix without advancing either cursor. Every request has
+  record and byte budgets, though a single record may exceed the byte budget.
+- A returned record batch includes `next: More | Pending | End`, describing the
+  next same-direction read if the source stays unchanged. This lets consumers
+  distinguish a terminal boundary batch from a budget-limited batch without a
+  speculative read or file-specific cursor method.
+- `RecordId { epoch, start_offset, end_offset }` is stable for one committed
+  record in one source epoch. A record carries the exact source bytes, including
+  its line ending. The source implementation—not the formatter—decides whether
+  those bytes form a valid committed record.
+- `TimelineRead::Pending` means that a live boundary can yield more records
+  later. `End` means that direction is terminal. Refresh separately reports an
+  append, no change, pending bytes, terminal end, or a reset caused by
+  truncation, replacement, or identity change.
+- A reset starts a new identity epoch. The viewer keeps already displayed old
+  epoch records as immutable generation history, then appends the replacement
+  epoch at that boundary. A count- and byte-bounded, non-consuming prefix probe
+  supplies the only candidates for order-preserving longest
+  suffix(old)/prefix(new) reconciliation. Exact `RecordId` values for that
+  matched prefix are filtered from the initial tail and later older batches;
+  equal raw records elsewhere in the replacement are untouched. It never
+  performs set-based content deduplication, so legitimate adjacent duplicate
+  records remain visible. Later older loads from the new epoch insert at the
+  fixed epoch boundary and cannot interleave ahead of stale old-epoch history.
+
+`FileRecordTimeline` implements the seam for growing newline-delimited files.
+It locates committed EOF from bounded reverse chunks, never exposes an
+incomplete final line, and lets bounded forward loads do the record work after
+a refresh. Refresh validates bounded start/middle/end samples of committed
+history independently of file timestamps, catching same-identity rewrites when
+one of those windows changes without indexing the whole file. Inode/device
+identity is used on Unix; portable fallbacks never treat file length as
+identity.
+
+An unchanged incomplete suffix is not reread in full on every application
+poll. Pending ranges up to 4 MiB retain an exact immutable byte snapshot; the
+snapshot uses shared storage so an unchanged poll does not copy that body. An
+exact refresh may temporarily hold three bounded snapshots (about 12 MiB),
+while the retained steady-state snapshot remains at most 4 MiB.
+When size or the change stamp moves, the previous exact range is reread before
+the appended delta is scanned, so a delimiter inserted into old pending bytes
+cannot be skipped merely because the file also grew. Unchanged polls compare
+only small start/middle/end windows. Pending ranges above 4 MiB retain those
+bounded windows instead of the full body. Unix uses nanosecond ctime. On a
+platform/filesystem where timestamps are coarse, a same-size rewrite confined
+to unsampled bytes may remain pending. For an oversized pending range, a
+delimiter outside the sampled windows may remain pending until it enters a
+sampled window or newly appended delta, or until the suffix shrinks under the
+exact-verification cap. Committed history is protected by its independent
+bounded samples, but rewrites outside every sample have the same residual
+limitation; fully detecting arbitrary in-place rewrites would require reading
+or indexing the whole file and would violate tail-first opening. Stat/read races
+during refresh are retried, and snapshot fields are committed only after all
+reads succeed.
+
+`RecordTimelineViewFile` owns formatting, on-disk raw/formatted spools, reset
+reconciliation, and compact line/record indexes. `FileViewer` owns viewport
+anchors, prepend adjustment, search/navigation over lazy boundaries, and the
+backend-neutral `Following`/`Detached`/`Paused` state. A future
+checkpoint-committed producer can implement the same trait by mapping its own
+opaque stable ordering into epoch/offset identities; it needs no file methods,
+poll cadence, checkpoint storage rule, or terminal backend type.
+
+`probe_prefix` is source-neutral rather than a filesystem seek. It returns
+committed records from the source's true beginning under the same count/byte
+limit and single-record exception as directional reads, and it leaves both
+directional cursors unchanged. A file reads forward from offset zero; a
+checkpoint source can use an independent decoder cursor.
+
+The root package only decides when to call core preload/refresh work, maps `f`
+and other crossterm events into `InputEvent`/`ViewerCommand`, and commits the
+returned frame. Poll cadence, raw mode, terminal cleanup, and TTY detection do
+not enter `fmtview-core`.
 
 ## Load Plans
 

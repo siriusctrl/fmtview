@@ -6,9 +6,12 @@ use std::{
 use tempfile::NamedTempFile;
 
 use crate::{
-    load::{IndexedTempFile, LazyTransformedRecordsFile, ViewFile},
+    load::{IndexedTempFile, LazyTransformedRecordsFile, RecordTimelineViewFile, ViewFile},
+    timeline::{FileRecordTimeline, RecordLoadLimit},
     transform::{FormatKind, FormatOptions, format_source_to_temp},
+    viewer::FileViewer,
 };
+use ratatui::layout::Size;
 
 use super::{
     fixtures::{
@@ -48,6 +51,30 @@ pub(super) const CASES: &[BenchCase] = &[
         shape: "record-stream/huge-record",
         layer: "transform+spool",
         run: bench_lazy_huge_string_preload_format,
+    },
+    BenchCase {
+        label: "timeline tail-first open+format",
+        shape: "growing-record-stream/tail",
+        layer: "reverse-scan+transform+spool+readback",
+        run: bench_timeline_tail_open,
+    },
+    BenchCase {
+        label: "timeline older prepend+format",
+        shape: "growing-record-stream/older",
+        layer: "reverse-scan+transform+prepend",
+        run: bench_timeline_prepend,
+    },
+    BenchCase {
+        label: "timeline append refresh+format",
+        shape: "growing-record-stream/newer",
+        layer: "refresh+transform+append",
+        run: bench_timeline_refresh,
+    },
+    BenchCase {
+        label: "timeline follow refresh+render",
+        shape: "growing-record-stream/follow",
+        layer: "refresh+transform+viewport",
+        run: bench_timeline_follow,
     },
     BenchCase {
         label: "json whole-document eager view open",
@@ -215,6 +242,166 @@ fn bench_lazy_huge_string_preload_format() -> BenchSample {
         output_bytes: 0,
     }
 }
+
+fn bench_timeline_tail_open() -> BenchSample {
+    let temp = generated_follow_file(250_000);
+    let input_bytes = temp.as_file().metadata().unwrap().len() as usize;
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+
+    let started = Instant::now();
+    let timeline = FileRecordTimeline::open(temp.path(), "tail.jsonl").unwrap();
+    let file = RecordTimelineViewFile::new(Box::new(timeline), options).unwrap();
+    let line_count = file.line_count();
+    let window = file
+        .read_window(line_count.saturating_sub(120), 120)
+        .unwrap();
+    let elapsed = started.elapsed();
+
+    assert_eq!(window.len(), 120);
+    assert!(window.iter().any(|line| line.contains("249999")));
+    BenchSample {
+        elapsed,
+        records: 128,
+        items: 0,
+        string_bytes: 0,
+        lines: line_count,
+        indexed_lines: 0,
+        window_lines: window.len(),
+        input_bytes,
+        output_bytes: 0,
+    }
+}
+
+fn bench_timeline_prepend() -> BenchSample {
+    let temp = generated_follow_file(50_000);
+    let input_bytes = temp.as_file().metadata().unwrap().len() as usize;
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let timeline = FileRecordTimeline::open(temp.path(), "prepend.jsonl").unwrap();
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        options,
+        RecordLoadLimit::new(16, 512 * 1024),
+    )
+    .unwrap();
+    let before = file.line_count();
+
+    let started = Instant::now();
+    let change = file.load_older_records(512, 8 * 1024 * 1024).unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(change.inserted_lines > 0);
+    assert_eq!(change.inserted_at, 0);
+    assert!(file.line_count() > before);
+    BenchSample {
+        elapsed,
+        records: 512,
+        items: 0,
+        string_bytes: 0,
+        lines: change.inserted_lines,
+        indexed_lines: 0,
+        window_lines: 0,
+        input_bytes,
+        output_bytes: 0,
+    }
+}
+
+fn bench_timeline_refresh() -> BenchSample {
+    const APPENDED: usize = 512;
+    let mut temp = generated_follow_file(10_000);
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let timeline = FileRecordTimeline::open(temp.path(), "refresh.jsonl").unwrap();
+    let file = RecordTimelineViewFile::new(Box::new(timeline), options).unwrap();
+    for index in 10_000..10_000 + APPENDED {
+        writeln!(
+            temp,
+            "{{\"index\":{index},\"message\":\"timeline benchmark\"}}"
+        )
+        .unwrap();
+    }
+    temp.flush().unwrap();
+    let input_bytes = temp.as_file().metadata().unwrap().len() as usize;
+
+    let started = Instant::now();
+    let change = file.refresh_records(APPENDED, 8 * 1024 * 1024).unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(change.appended_lines > 0);
+    BenchSample {
+        elapsed,
+        records: APPENDED,
+        items: 0,
+        string_bytes: 0,
+        lines: change.appended_lines,
+        indexed_lines: 0,
+        window_lines: 0,
+        input_bytes,
+        output_bytes: 0,
+    }
+}
+
+fn bench_timeline_follow() -> BenchSample {
+    const APPENDED: usize = 32;
+    let mut temp = generated_follow_file(10_000);
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let timeline = FileRecordTimeline::open(temp.path(), "follow.jsonl").unwrap();
+    let file = RecordTimelineViewFile::new(Box::new(timeline), options).unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(100, 30);
+    viewer.render(size, None).unwrap();
+    for index in 10_000..10_000 + APPENDED {
+        writeln!(
+            temp,
+            "{{\"index\":{index},\"message\":\"follow benchmark\"}}"
+        )
+        .unwrap();
+    }
+    temp.flush().unwrap();
+    let input_bytes = temp.as_file().metadata().unwrap().len() as usize;
+
+    let started = Instant::now();
+    assert!(viewer.preload().unwrap());
+    let frame = viewer.render(size, None).unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(frame.footer_text.contains("follow:on"));
+    BenchSample {
+        elapsed,
+        records: APPENDED,
+        items: 0,
+        string_bytes: 0,
+        lines: frame.styled.len(),
+        indexed_lines: 0,
+        window_lines: frame.styled.len(),
+        input_bytes,
+        output_bytes: 0,
+    }
+}
+
+fn generated_follow_file(records: usize) -> NamedTempFile {
+    let mut temp = NamedTempFile::new().unwrap();
+    for index in 0..records {
+        writeln!(
+            temp,
+            "{{\"index\":{index},\"message\":\"timeline benchmark\"}}"
+        )
+        .unwrap();
+    }
+    temp.flush().unwrap();
+    temp
+}
+
 fn bench_json_whole_document_eager_view_open() -> BenchSample {
     let (_temp, source, input_bytes, items) = generated_json_document_source(32_768, 128);
     let options = FormatOptions {

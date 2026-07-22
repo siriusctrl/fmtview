@@ -51,6 +51,13 @@ pub enum MouseEventKind {
     Other,
 }
 
+/// Semantic actions that an embedding can send without synthesizing a key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewerCommand {
+    FollowTail,
+    ToggleFollowTail,
+}
+
 /// Input after an application backend has translated its native event type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputEvent {
@@ -63,6 +70,7 @@ pub enum InputEvent {
         modifiers: KeyModifiers,
     },
     Resize,
+    Command(ViewerCommand),
     Ignore,
 }
 

@@ -18,7 +18,7 @@ pub(in crate::viewer) fn adjust_state_for_visible_height(
     tail_cache: &mut TailPositionCache,
 ) -> Result<Option<ViewPosition>> {
     let logical_tail_top = last_full_logical_page_top(file.line_count(), visible_height);
-    let tail = if file.line_count_exact() && (!state.wrap || state.top >= logical_tail_top) {
+    let tail = if file.at_newer_boundary() && (!state.wrap || state.top >= logical_tail_top) {
         Some(tail_cache.position(file, visible_height, render_context)?)
     } else {
         None
@@ -30,7 +30,7 @@ pub(in crate::viewer) fn adjust_state_for_visible_height(
         state.wrap_bounds_stale = state.wrap;
     }
     let max_top = file.line_count().saturating_sub(1);
-    if file.line_count_exact() && state.top > max_top {
+    if file.at_newer_boundary() && state.top > max_top {
         state.top = max_top;
         reset_top_row_offset(state);
     }
