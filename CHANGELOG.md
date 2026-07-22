@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-22
+
 ### Added
 
 - Link nested typed JSON `tool_result`/`tool_response` objects to earlier tool
