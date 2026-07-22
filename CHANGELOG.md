@@ -28,8 +28,10 @@ for GitHub Release notes, so every published version must have a matching
   terminal, while the `fmtview` package keeps the same install and binary name.
 - Extend lazy record spooling, search, structure/chat/tool navigation, and
   viewport anchoring across tail-first older loads and live appends. Replacement
-  epochs use bounded ordered overlap reconciliation that preserves legitimate
-  duplicate records and prevents stale/new history interleaving.
+  epochs use a bounded committed-prefix probe plus exact record identities for
+  ordered overlap reconciliation, preserving legitimate duplicate records and
+  preventing stale/new history interleaving even when overlap spans lazy
+  reverse-load batches.
 
 ### Fixed
 

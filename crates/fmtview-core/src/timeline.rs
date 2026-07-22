@@ -53,12 +53,33 @@ impl RecordLoadLimit {
 }
 
 /// Result of moving toward older or newer records.
+///
+/// A non-empty batch reports the state that an immediate same-direction read
+/// would observe if the source stayed unchanged. This makes a terminal batch
+/// distinguishable from a budget-limited batch without a speculative extra
+/// read, and keeps the boundary semantics source-neutral.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TimelineRead {
-    Records(Vec<TimelineRecord>),
+    Records {
+        records: Vec<TimelineRecord>,
+        /// What the next read in the same direction would observe if the
+        /// source did not change between calls.
+        next: TimelineReadNext,
+    },
     /// The source may produce more committed records later.
     Pending,
     /// This direction has a terminal boundary.
+    End,
+}
+
+/// Boundary state immediately following a returned record batch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimelineReadNext {
+    /// More records are already available in this direction.
+    More,
+    /// The current live boundary has been reached and may advance later.
+    Pending,
+    /// The terminal boundary in this direction has been reached.
     End,
 }
 
@@ -96,10 +117,16 @@ pub enum TimelineRefresh {
 ///
 /// Implementations decide when a record is valid and committed. Every yielded
 /// record must be stable for its `RecordId`, and its `raw` bytes must be exact.
-/// `Pending` means a live boundary may advance; `End` is terminal.
+/// `Pending` means a live boundary may advance; `End` is terminal. A source
+/// should not advance its cursor unless the complete returned batch can be
+/// delivered successfully.
 pub trait RecordTimeline {
     fn label(&self) -> &str;
     fn snapshot(&self) -> TimelineSnapshot;
+    /// Read the exact committed source prefix without advancing either
+    /// directional cursor. The same single-record byte-budget exception as
+    /// `load_older` and `load_newer` applies.
+    fn probe_prefix(&mut self, limit: RecordLoadLimit) -> Result<TimelineRead>;
     fn load_older(&mut self, limit: RecordLoadLimit) -> Result<TimelineRead>;
     fn load_newer(&mut self, limit: RecordLoadLimit) -> Result<TimelineRead>;
     fn refresh(&mut self) -> Result<TimelineRefresh>;
@@ -355,6 +382,50 @@ impl RecordTimeline for FileRecordTimeline {
         }
     }
 
+    fn probe_prefix(&mut self, limit: RecordLoadLimit) -> Result<TimelineRead> {
+        if self.committed_end == 0 {
+            return Ok(TimelineRead::Pending);
+        }
+        let limit = limit.normalized();
+        let mut cursor = 0_u64;
+        let mut records = Vec::new();
+        let mut bytes = 0_usize;
+        while cursor < self.committed_end && records.len() < limit.max_records {
+            let (end, raw) = read_next_record(
+                &mut self.file,
+                cursor,
+                self.committed_end,
+                &mut self.instrumentation,
+                &self.label,
+            )?;
+            bytes = bytes.saturating_add(raw.len());
+            records.push(TimelineRecord {
+                id: RecordId {
+                    epoch: self.epoch,
+                    start_offset: cursor,
+                    end_offset: end,
+                },
+                raw,
+            });
+            cursor = end;
+            if bytes >= limit.max_bytes {
+                break;
+            }
+        }
+        self.instrumentation.records_yielded = self
+            .instrumentation
+            .records_yielded
+            .saturating_add(records.len() as u64);
+        Ok(TimelineRead::Records {
+            records,
+            next: if cursor < self.committed_end {
+                TimelineReadNext::More
+            } else {
+                TimelineReadNext::Pending
+            },
+        })
+    }
+
     fn load_older(&mut self, limit: RecordLoadLimit) -> Result<TimelineRead> {
         if self.older_cursor == 0 {
             return Ok(TimelineRead::End);
@@ -380,7 +451,14 @@ impl RecordTimeline for FileRecordTimeline {
             .instrumentation
             .records_yielded
             .saturating_add(records.len() as u64);
-        Ok(TimelineRead::Records(records))
+        Ok(TimelineRead::Records {
+            records,
+            next: if self.older_cursor == 0 {
+                TimelineReadNext::End
+            } else {
+                TimelineReadNext::More
+            },
+        })
     }
 
     fn load_newer(&mut self, limit: RecordLoadLimit) -> Result<TimelineRead> {
@@ -416,7 +494,14 @@ impl RecordTimeline for FileRecordTimeline {
             .instrumentation
             .records_yielded
             .saturating_add(records.len() as u64);
-        Ok(TimelineRead::Records(records))
+        Ok(TimelineRead::Records {
+            records,
+            next: if self.newer_cursor < self.committed_end {
+                TimelineReadNext::More
+            } else {
+                TimelineReadNext::Pending
+            },
+        })
     }
 
     fn refresh(&mut self) -> Result<TimelineRefresh> {

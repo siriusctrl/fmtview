@@ -9,8 +9,8 @@ use std::{
 use fmtview_core::{
     FileRecordTimeline, FileViewer, FormatKind, FormatOptions, InputEvent, KeyCode, KeyModifiers,
     RecordId, RecordLoadLimit, RecordTimeline, RecordTimelineViewFile, TimelineRead,
-    TimelineRecord, TimelineRefresh, TimelineResetReason, TimelineSnapshot, ViewFile,
-    ViewerCommand, render_frame_to_buffer,
+    TimelineReadNext, TimelineRecord, TimelineRefresh, TimelineResetReason, TimelineSnapshot,
+    ViewFile, ViewerCommand, render_frame_to_buffer,
 };
 use ratatui::{
     buffer::Buffer,
@@ -236,6 +236,148 @@ fn replacement_tail_overlap_is_not_duplicated() {
 }
 
 #[test]
+fn replacement_overlap_before_the_initial_tail_batch_is_not_duplicated() {
+    let overlap_a = b"{\"message\":\"overlap-a\"}\n".to_vec();
+    let overlap_b = b"{\"message\":\"overlap-b\"}\n".to_vec();
+    let (handle, timeline) = fake_timeline([overlap_a.clone(), overlap_b.clone()]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+
+    handle.replace(
+        [overlap_a, overlap_b]
+            .into_iter()
+            .chain((0..130).map(record)),
+    );
+    let change = file.refresh_records(64, 64 * 1024).unwrap();
+    assert!(change.reset);
+    while file.has_older_records() {
+        file.load_older_records(64, 64 * 1024).unwrap();
+    }
+
+    let text = file.read_window(0, file.line_count()).unwrap().join("\n");
+    assert_eq!(text.matches("overlap-a").count(), 1, "{text}");
+    assert_eq!(text.matches("overlap-b").count(), 1, "{text}");
+}
+
+#[test]
+fn matching_records_inside_a_replacement_are_not_mistaken_for_prefix_overlap() {
+    let overlap_a = b"{\"message\":\"overlap-a\"}\n".to_vec();
+    let overlap_b = b"{\"message\":\"overlap-b\"}\n".to_vec();
+    let (handle, timeline) = fake_timeline([overlap_a.clone(), overlap_b.clone()]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+
+    handle.replace(
+        [
+            b"{\"message\":\"replacement-prefix-a\"}\n".to_vec(),
+            b"{\"message\":\"replacement-prefix-b\"}\n".to_vec(),
+            overlap_a,
+            overlap_b,
+        ]
+        .into_iter()
+        .chain((0..62).map(record)),
+    );
+    let change = file.refresh_records(64, 64 * 1024).unwrap();
+    assert!(change.reset);
+    while file.has_older_records() {
+        file.load_older_records(64, 64 * 1024).unwrap();
+    }
+
+    let text = file.read_window(0, file.line_count()).unwrap().join("\n");
+    assert_eq!(text.matches("overlap-a").count(), 2, "{text}");
+    assert_eq!(text.matches("overlap-b").count(), 2, "{text}");
+}
+
+#[test]
+fn replacement_larger_than_the_overlap_window_reconciles_by_probed_record_ids() {
+    let overlap = b"{\"message\":\"overlap\"}\n".to_vec();
+    let (handle, timeline) = fake_timeline([overlap.clone()]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+
+    handle.replace([overlap].into_iter().chain((0..300).map(record)));
+    let change = file.refresh_records(64, 64 * 1024).unwrap();
+    assert!(change.reset);
+    assert!(change.appended_lines > 0);
+    assert!(file.has_older_records());
+    let visible = file.read_window(0, file.line_count()).unwrap().join("\n");
+    assert!(visible.contains("record-299"), "{visible}");
+
+    while file.has_older_records() {
+        file.load_older_records(64, 64 * 1024).unwrap();
+    }
+    let complete = file.read_window(0, file.line_count()).unwrap().join("\n");
+    assert_eq!(complete.matches("\"overlap\"").count(), 1, "{complete}");
+}
+
+#[test]
+fn replacement_overlap_split_across_reverse_batches_is_filtered_exactly_once() {
+    let overlap = (0..100)
+        .map(|index| format!("{{\"message\":\"overlap-{index}\"}}\n").into_bytes())
+        .collect::<Vec<_>>();
+    let (handle, timeline) = fake_timeline(overlap.clone());
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(128, 64 * 1024),
+    )
+    .unwrap();
+
+    handle.replace(overlap.into_iter().chain((0..200).map(record)));
+    let change = file.refresh_records(64, 64 * 1024).unwrap();
+    assert!(change.reset);
+    let tail = file.read_window(0, file.line_count()).unwrap().join("\n");
+    assert!(tail.contains("record-199"), "{tail}");
+
+    while file.has_older_records() {
+        file.load_older_records(64, 64 * 1024).unwrap();
+    }
+    let complete = file.read_window(0, file.line_count()).unwrap().join("\n");
+    for index in [0, 43, 44, 99] {
+        assert_eq!(
+            complete.matches(&format!("\"overlap-{index}\"")).count(),
+            1,
+            "{complete}"
+        );
+    }
+    assert!(complete.find("overlap-99").unwrap() < complete.find("record-0").unwrap());
+}
+
+#[test]
+fn failed_prefix_probe_does_not_consume_the_reset_tail() {
+    let (handle, timeline) = fake_timeline([record(1), record(2)]);
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+    handle.replace([record(1), record(2), record(3)]);
+    handle.fail_next_prefix_probe();
+
+    let error = file.refresh_records(16, 4096).unwrap_err();
+    assert!(error.to_string().contains("injected prefix probe failure"));
+    let retry = file.refresh_records(16, 4096).unwrap();
+    assert!(retry.reset);
+    let text = file.read_window(0, file.line_count()).unwrap().join("\n");
+    assert_eq!(text.matches("\"record-1\"").count(), 1, "{text}");
+    assert_eq!(text.matches("\"record-2\"").count(), 1, "{text}");
+    assert_eq!(text.matches("\"record-3\"").count(), 1, "{text}");
+}
+
+#[test]
 fn legitimate_adjacent_duplicate_records_remain_visible() {
     let duplicate = b"{\"message\":\"same\"}\n".to_vec();
     let (handle, timeline) = fake_timeline([duplicate.clone(), duplicate.clone()]);
@@ -377,12 +519,13 @@ fn file_timeline_preserves_crlf_empty_records_and_ignores_incomplete_eof() {
     temp.flush().unwrap();
     let mut timeline = FileRecordTimeline::open(temp.path(), "edge.jsonl").unwrap();
 
-    let TimelineRead::Records(records) = timeline
+    let TimelineRead::Records { records, next } = timeline
         .load_older(RecordLoadLimit::new(16, 1024 * 1024))
         .unwrap()
     else {
         panic!("expected committed tail records");
     };
+    assert_eq!(next, TimelineReadNext::End);
     assert_eq!(
         records
             .iter()
@@ -398,12 +541,16 @@ fn file_timeline_preserves_crlf_empty_records_and_ignores_incomplete_eof() {
         timeline.refresh().unwrap(),
         TimelineRefresh::Appended(_)
     ));
-    let TimelineRead::Records(appended) = timeline
+    let TimelineRead::Records {
+        records: appended,
+        next,
+    } = timeline
         .load_newer(RecordLoadLimit::new(16, 1024 * 1024))
         .unwrap()
     else {
         panic!("expected committed appended record");
     };
+    assert_eq!(next, TimelineReadNext::Pending);
     assert_eq!(appended.len(), 1);
     assert_eq!(appended[0].raw, b"{\"pending\":true}\n");
     assert_eq!(
@@ -422,15 +569,74 @@ fn file_timeline_reverse_scan_handles_a_very_large_single_record() {
     temp.flush().unwrap();
     let mut timeline = FileRecordTimeline::open(temp.path(), "large-record.jsonl").unwrap();
 
-    let TimelineRead::Records(records) = timeline
+    let TimelineRead::Records { records, next } = timeline
         .load_older(RecordLoadLimit::new(8, 64 * 1024))
         .unwrap()
     else {
         panic!("expected the large committed record");
     };
+    assert_eq!(next, TimelineReadNext::End);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].raw.len(), payload.len() + 15);
     assert!(timeline.instrumentation().read_operations > 4);
+}
+
+#[test]
+fn prefix_probe_is_bounded_and_does_not_advance_tail_cursors() {
+    let mut temp = NamedTempFile::new().unwrap();
+    for index in 0..100 {
+        writeln!(temp, "{{\"index\":{index}}}").unwrap();
+    }
+    temp.flush().unwrap();
+    let mut timeline = FileRecordTimeline::open(temp.path(), "probe.jsonl").unwrap();
+
+    let TimelineRead::Records { records, next } = timeline
+        .probe_prefix(RecordLoadLimit::new(2, 4096))
+        .unwrap()
+    else {
+        panic!("expected a probed prefix");
+    };
+    assert_eq!(next, TimelineReadNext::More);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].raw, b"{\"index\":0}\n");
+    assert_eq!(records[1].raw, b"{\"index\":1}\n");
+
+    let TimelineRead::Records { records, next } =
+        timeline.load_older(RecordLoadLimit::new(1, 4096)).unwrap()
+    else {
+        panic!("expected the untouched tail cursor");
+    };
+    assert_eq!(next, TimelineReadNext::More);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].raw, b"{\"index\":99}\n");
+}
+
+#[test]
+fn prefix_probe_allows_one_record_to_exceed_its_byte_budget() {
+    let mut temp = NamedTempFile::new().unwrap();
+    let payload = "x".repeat(512 * 1024);
+    writeln!(temp, "{{\"payload\":\"{payload}\"}}").unwrap();
+    temp.write_all(b"{\"after\":true}\n").unwrap();
+    temp.flush().unwrap();
+    let mut timeline = FileRecordTimeline::open(temp.path(), "huge-prefix.jsonl").unwrap();
+
+    let TimelineRead::Records { records, next } = timeline
+        .probe_prefix(RecordLoadLimit::new(8, 64 * 1024))
+        .unwrap()
+    else {
+        panic!("expected the huge prefix record");
+    };
+    assert_eq!(records.len(), 1);
+    assert!(records[0].raw.len() > 64 * 1024);
+    assert_eq!(next, TimelineReadNext::More);
+
+    let TimelineRead::Records { records, .. } = timeline
+        .load_older(RecordLoadLimit::new(1, 64 * 1024))
+        .unwrap()
+    else {
+        panic!("expected the tail after a non-consuming probe");
+    };
+    assert_eq!(records[0].raw, b"{\"after\":true}\n");
 }
 
 #[test]
@@ -442,12 +648,13 @@ fn million_record_tail_open_has_bounded_instrumented_work() {
     temp.flush().unwrap();
     let file_bytes = temp.as_file().metadata().unwrap().len();
     let mut timeline = FileRecordTimeline::open(temp.path(), "million.jsonl").unwrap();
-    let TimelineRead::Records(records) = timeline
+    let TimelineRead::Records { records, next } = timeline
         .load_older(RecordLoadLimit::new(128, 4 * 1024 * 1024))
         .unwrap()
     else {
         panic!("expected tail records");
     };
+    assert_eq!(next, TimelineReadNext::More);
 
     let stats = timeline.instrumentation();
     assert_eq!(records.len(), 128);
@@ -490,7 +697,7 @@ fn large_append_refresh_finds_the_tail_with_bounded_reverse_work() {
         "refresh read {refresh_bytes} bytes for a {appended_bytes}-byte burst"
     );
 
-    let TimelineRead::Records(records) =
+    let TimelineRead::Records { records, .. } =
         timeline.load_newer(RecordLoadLimit::new(4, 4096)).unwrap()
     else {
         panic!("expected bounded newer records");
@@ -561,7 +768,7 @@ fn same_size_uncommitted_tail_rewrite_uses_change_signals() {
         timeline.refresh().unwrap(),
         TimelineRefresh::Appended(_)
     ));
-    let TimelineRead::Records(records) =
+    let TimelineRead::Records { records, .. } =
         timeline.load_newer(RecordLoadLimit::new(8, 4096)).unwrap()
     else {
         panic!("expected newly committed rewritten tail record");
@@ -575,8 +782,9 @@ fn truncating_only_an_uncommitted_tail_does_not_duplicate_committed_records() {
     temp.write_all(b"{\"id\":1}\n{\"partial\":").unwrap();
     temp.flush().unwrap();
     let mut timeline = FileRecordTimeline::open(temp.path(), "rewrite.jsonl").unwrap();
-    let TimelineRead::Records(initial) =
-        timeline.load_older(RecordLoadLimit::new(8, 4096)).unwrap()
+    let TimelineRead::Records {
+        records: initial, ..
+    } = timeline.load_older(RecordLoadLimit::new(8, 4096)).unwrap()
     else {
         panic!("expected initial record");
     };
@@ -593,8 +801,9 @@ fn truncating_only_an_uncommitted_tail_does_not_duplicate_committed_records() {
         timeline.refresh().unwrap(),
         TimelineRefresh::Appended(_)
     ));
-    let TimelineRead::Records(appended) =
-        timeline.load_newer(RecordLoadLimit::new(8, 4096)).unwrap()
+    let TimelineRead::Records {
+        records: appended, ..
+    } = timeline.load_newer(RecordLoadLimit::new(8, 4096)).unwrap()
     else {
         panic!("expected rewritten committed record");
     };
@@ -774,12 +983,17 @@ impl FakeHandle {
         state.records = records.into_iter().collect();
         state.generation = state.generation.saturating_add(1);
     }
+
+    fn fail_next_prefix_probe(&self) {
+        self.state.borrow_mut().probe_failures += 1;
+    }
 }
 
 struct FakeState {
     records: Vec<Vec<u8>>,
     generation: u64,
     terminal: bool,
+    probe_failures: usize,
 }
 
 struct FakeTimeline {
@@ -794,6 +1008,7 @@ fn fake_timeline(records: impl IntoIterator<Item = Vec<u8>>) -> (FakeHandle, Fak
         records: records.into_iter().collect(),
         generation: 1,
         terminal: false,
+        probe_failures: 0,
     }));
     let len = state.borrow().records.len();
     (
@@ -824,6 +1039,47 @@ impl RecordTimeline for FakeTimeline {
         }
     }
 
+    fn probe_prefix(&mut self, limit: RecordLoadLimit) -> anyhow::Result<TimelineRead> {
+        let mut state = self.state.borrow_mut();
+        if state.probe_failures > 0 {
+            state.probe_failures -= 1;
+            anyhow::bail!("injected prefix probe failure");
+        }
+        if state.records.is_empty() {
+            return Ok(if state.terminal {
+                TimelineRead::End
+            } else {
+                TimelineRead::Pending
+            });
+        }
+        let max_records = limit.max_records.max(1);
+        let max_bytes = limit.max_bytes.max(1);
+        let mut records = Vec::new();
+        let mut bytes = 0_usize;
+        for (offset, raw) in state.records.iter().enumerate().take(max_records) {
+            bytes = bytes.saturating_add(raw.len());
+            records.push(TimelineRecord {
+                id: RecordId {
+                    epoch: self.generation,
+                    start_offset: offset as u64,
+                    end_offset: (offset + 1) as u64,
+                },
+                raw: raw.clone(),
+            });
+            if bytes >= max_bytes {
+                break;
+            }
+        }
+        let next = if records.len() < state.records.len() {
+            TimelineReadNext::More
+        } else if state.terminal {
+            TimelineReadNext::End
+        } else {
+            TimelineReadNext::Pending
+        };
+        Ok(TimelineRead::Records { records, next })
+    }
+
     fn load_older(&mut self, limit: RecordLoadLimit) -> anyhow::Result<TimelineRead> {
         if self.older_cursor == 0 {
             return Ok(TimelineRead::End);
@@ -843,7 +1099,14 @@ impl RecordTimeline for FakeTimeline {
             })
             .collect();
         self.older_cursor = start;
-        Ok(TimelineRead::Records(records))
+        Ok(TimelineRead::Records {
+            records,
+            next: if self.older_cursor == 0 {
+                TimelineReadNext::End
+            } else {
+                TimelineReadNext::More
+            },
+        })
     }
 
     fn load_newer(&mut self, limit: RecordLoadLimit) -> anyhow::Result<TimelineRead> {
@@ -872,7 +1135,16 @@ impl RecordTimeline for FakeTimeline {
             })
             .collect();
         self.newer_cursor = end;
-        Ok(TimelineRead::Records(records))
+        Ok(TimelineRead::Records {
+            records,
+            next: if self.newer_cursor < state.records.len() {
+                TimelineReadNext::More
+            } else if state.terminal {
+                TimelineReadNext::End
+            } else {
+                TimelineReadNext::Pending
+            },
+        })
     }
 
     fn refresh(&mut self) -> anyhow::Result<TimelineRefresh> {
