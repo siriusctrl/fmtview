@@ -25,20 +25,21 @@ pub(in crate::viewer) fn file_title_text(
 }
 
 pub(in crate::viewer) fn file_footer_text(file: &dyn ViewFile, state: &ViewState) -> String {
+    let follow = follow_status(state);
     if state.search_active {
         format!(
-            " search: {} | Enter find | Backspace edit | Esc cancel ",
+            " {follow}search: {} | Enter find | Backspace edit | Esc cancel ",
             state.search_buffer
         )
     } else if !state.jump_buffer.is_empty() {
         format!(
-            " go to line: {} / {} | Enter jump | Backspace edit | Esc cancel ",
+            " {follow}go to line: {} / {} | Enter jump | Backspace edit | Esc cancel ",
             state.jump_buffer,
             line_count_text(file)
         )
     } else if let Some(message) = state.visible_footer_message() {
         format!(
-            " {}{}{} | / search | n/N | Esc clear ",
+            " {follow}{}{}{} | / search | n/N | Esc clear ",
             footer_message_label(message.kind),
             message.text,
             search_count_suffix(state)
@@ -98,12 +99,21 @@ fn follow_hint(state: &ViewState) -> &'static str {
     }
 }
 
+fn follow_status(state: &ViewState) -> &'static str {
+    match state.follow {
+        Some(FollowState::Following) => "follow:on | ",
+        Some(FollowState::Detached) => "follow:detached | ",
+        Some(FollowState::Paused) => "follow:off | ",
+        None => "",
+    }
+}
+
 fn tool_context_footer_text(state: &ViewState) -> String {
     let Some(link) = state.tool_context.as_ref() else {
         return idle_footer_text(state);
     };
     let id = compact_tool_id(link.id.as_ref());
-    match (link.status, link.call_line) {
+    let text = match (link.status, link.call_line) {
         (ToolLinkStatus::Matched, Some(call_line)) => {
             let at_call = state.tool_context_line == Some(call_line);
             if at_call {
@@ -122,6 +132,12 @@ fn tool_context_footer_text(state: &ViewState) -> String {
             format!(" ambiguous tool result | id: {id} | multiple earlier calls ")
         }
         _ => format!(" unmatched tool result | id: {id} | no earlier call "),
+    };
+    let follow = follow_status(state);
+    if follow.is_empty() {
+        text
+    } else {
+        format!(" {follow}{}", text.trim_start())
     }
 }
 
