@@ -54,7 +54,8 @@ FMTVIEW_EMULATOR_FOLLOW_FILE=target/follow-demo.jsonl \
 
 For the generic conversation fixture, select the dedicated interaction
 scenario. It records nested tool-pair navigation, exact raw argument and media
-records, the structured media summary, search, wrap, and clean quit:
+records, a raw-record scroll followed by a structured redraw, the structured
+media summary, search, wrap, and clean quit:
 
 ```sh
 FMTVIEW_EMULATOR_SCENARIO=conversation \

@@ -278,6 +278,8 @@ elif [[ "$scenario" == "conversation" ]]; then
   sleep 0.2
   send_key "raw_search_enter" "Return"
   sleep 0.7
+  send_key "raw_scroll" "j"
+  sleep 0.7
   send_key "structured_from_arguments" "r"
   sleep 0.7
   send_key "media_search_open" "slash"

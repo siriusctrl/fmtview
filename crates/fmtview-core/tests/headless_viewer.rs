@@ -199,6 +199,52 @@ fn raw_toggle_prefers_the_active_search_match_record_over_the_viewport_top() {
 }
 
 #[test]
+fn raw_content_space_transitions_never_reuse_terminal_scroll_hints() {
+    let record = format!(r#"{{"text":"{}"}}\n"#, "payload ".repeat(2_000));
+    let source = source("long-raw.jsonl", &record);
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let profile = TypeProfile::resolve(&source, &options).unwrap();
+    let opened = open_view_file(&source, &options, profile).unwrap();
+    let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
+    let size = Size::new(48, 8);
+    viewer.render(size, None).unwrap();
+
+    send_key(&mut viewer, size, KeyCode::Char('r'));
+    let raw = viewer
+        .render(
+            size,
+            Some(fmtview_core::ScrollPosition {
+                top: 0,
+                row_offset: 1,
+            }),
+        )
+        .unwrap();
+    assert!(raw.title.contains("raw record"));
+    assert_eq!(raw.scroll_hint, None);
+
+    send_key(&mut viewer, size, KeyCode::Char('j'));
+    let raw_scrolled = viewer.render(size, Some(raw.position)).unwrap();
+    assert!(raw_scrolled.position.row_offset > raw.position.row_offset);
+
+    send_key(&mut viewer, size, KeyCode::Char('r'));
+    let structured = viewer
+        .render(
+            size,
+            Some(fmtview_core::ScrollPosition {
+                top: 0,
+                row_offset: 1,
+            }),
+        )
+        .unwrap();
+    assert!(!structured.title.contains("raw record"));
+    assert_eq!(structured.scroll_hint, None);
+    assert!(buffer_text(structured).contains("payload"));
+}
+
+#[test]
 fn pretty_nested_tool_pair_navigation_round_trips_between_records() {
     let source = source(
         "conversation.jsonl",
@@ -239,6 +285,48 @@ fn pretty_nested_tool_pair_navigation_round_trips_between_records() {
     let returned = viewer.render(size, None).unwrap();
     assert!(returned.position.top < result_top);
     assert!(buffer_text(returned).contains("tool_call"));
+}
+
+#[test]
+fn nested_tool_navigation_ignores_the_role_tool_envelope_message_id() {
+    let source = source(
+        "tool-envelope.jsonl",
+        concat!(
+            r#"{"role":"assistant","content":[{"type":"tool_call","id":"c1","name":"first"}]}"#,
+            "\n",
+            r#"{"role":"assistant","content":[{"type":"tool_call","id":"m3","name":"second"}]}"#,
+            "\n",
+            r#"{"id":"m3","role":"tool","content":[{"type":"tool_result","call_id":"c1","content":"ok"}]}"#,
+            "\n"
+        ),
+    );
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let profile = TypeProfile::resolve(&source, &options).unwrap();
+    let opened = open_view_file(&source, &options, profile).unwrap();
+    let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
+    let size = Size::new(72, 9);
+    viewer.render(size, None).unwrap();
+
+    send_key(&mut viewer, size, KeyCode::Char('/'));
+    for ch in "tool_result".chars() {
+        send_key(&mut viewer, size, KeyCode::Char(ch));
+    }
+    send_key(&mut viewer, size, KeyCode::Enter);
+    while viewer.advance(std::time::Instant::now()).unwrap() {}
+    let searched = viewer.render(size, None).unwrap();
+    send_key(&mut viewer, size, KeyCode::Esc);
+    let result = viewer.render(size, Some(searched.position)).unwrap();
+    assert!(result.footer_text.contains("c1"), "{}", result.footer_text);
+    assert!(!result.footer_text.contains("m3"), "{}", result.footer_text);
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('t')).dirty);
+    let call = viewer.render(size, Some(result.position)).unwrap();
+    let call_text = buffer_text(call);
+    assert!(call_text.contains("first"), "{call_text}");
+    assert!(!call_text.contains("second"), "{call_text}");
 }
 
 #[test]

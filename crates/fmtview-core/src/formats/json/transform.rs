@@ -101,7 +101,9 @@ struct JsonFormatter<R> {
 #[derive(Default)]
 struct ObjectMediaContext {
     media_type: Option<String>,
-    base64_encoding: bool,
+    inherited_encoding: Option<Base64Encoding>,
+    object_type: Option<MediaObjectType>,
+    encoding_field: Option<Option<Base64Encoding>>,
 }
 
 struct StringPrefix {
@@ -109,12 +111,40 @@ struct StringPrefix {
     ended: bool,
 }
 
-#[derive(Default)]
 struct Base64Stats {
+    encoding: Base64Encoding,
     data: usize,
     padding: usize,
     invalid: bool,
     saw_padding: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Base64Encoding {
+    Standard,
+    UrlSafe,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MediaObjectType {
+    Encoded(Base64Encoding),
+    Image,
+    Other,
+}
+
+impl ObjectMediaContext {
+    fn encoding(&self) -> Option<Base64Encoding> {
+        self.encoding_field.unwrap_or(match self.object_type {
+            Some(MediaObjectType::Encoded(encoding)) => Some(encoding),
+            Some(MediaObjectType::Image) => Some(Base64Encoding::Standard),
+            Some(MediaObjectType::Other) => None,
+            None => self.inherited_encoding,
+        })
+    }
+
+    fn is_typed_image(&self) -> bool {
+        self.object_type == Some(MediaObjectType::Image)
+    }
 }
 
 impl<R: BufRead> JsonFormatter<R> {
@@ -148,6 +178,15 @@ impl<R: BufRead> JsonFormatter<R> {
     }
 
     fn write_object<W: Write>(&mut self, output: &mut W, depth: usize) -> Result<()> {
+        self.write_object_with_media_hint(output, depth, None)
+    }
+
+    fn write_object_with_media_hint<W: Write>(
+        &mut self,
+        output: &mut W,
+        depth: usize,
+        inherited_encoding: Option<Base64Encoding>,
+    ) -> Result<()> {
         self.expect_byte(b'{')?;
         output.write_all(b"{")?;
         self.skip_ws()?;
@@ -156,11 +195,19 @@ impl<R: BufRead> JsonFormatter<R> {
             return Ok(());
         }
 
-        self.write_pretty_object(output, depth)
+        self.write_pretty_object(output, depth, inherited_encoding)
     }
 
-    fn write_pretty_object<W: Write>(&mut self, output: &mut W, depth: usize) -> Result<()> {
-        let mut media = ObjectMediaContext::default();
+    fn write_pretty_object<W: Write>(
+        &mut self,
+        output: &mut W,
+        depth: usize,
+        inherited_encoding: Option<Base64Encoding>,
+    ) -> Result<()> {
+        let mut media = ObjectMediaContext {
+            inherited_encoding,
+            ..ObjectMediaContext::default()
+        };
         loop {
             output.write_all(b"\n")?;
             self.write_indent(output, depth + 1)?;
@@ -175,19 +222,30 @@ impl<R: BufRead> JsonFormatter<R> {
                         let value = self.write_captured_string(output, 128)?;
                         media.media_type = value.filter(|value| valid_media_type(value));
                     }
-                    Some("type" | "encoding") => {
+                    Some("type") => {
                         let value = self.write_captured_string(output, 32)?;
-                        if value.as_deref().is_some_and(|value| {
-                            value.eq_ignore_ascii_case("base64")
-                                || value.eq_ignore_ascii_case("base64url")
-                        }) {
-                            media.base64_encoding = true;
-                        }
+                        media.object_type = value.as_deref().map(media_object_type);
+                    }
+                    Some("encoding") => {
+                        let value = self.write_captured_string(output, 32)?;
+                        media.encoding_field = Some(value.as_deref().and_then(base64_encoding));
                     }
                     key => self.write_string_for_view(output, key, &media)?,
                 }
             } else {
-                self.write_value(output, depth + 1)?;
+                let typed_attachment = self.collapse_media
+                    && key.as_deref() == Some("attachment")
+                    && media.is_typed_image()
+                    && self.peek_byte()? == Some(b'{');
+                if typed_attachment {
+                    self.write_object_with_media_hint(
+                        output,
+                        depth + 1,
+                        Some(Base64Encoding::Standard),
+                    )?;
+                } else {
+                    self.write_value(output, depth + 1)?;
+                }
             }
 
             match self.read_separator(b'}')? {
@@ -291,18 +349,41 @@ impl<R: BufRead> JsonFormatter<R> {
                     return Ok(capture.and_then(|bytes| String::from_utf8(bytes).ok()));
                 }
                 b'\\' => {
-                    capture = None;
                     let escaped = self.next_required("unterminated JSON string escape")?;
                     output.write_all(&[escaped])?;
                     match escaped {
-                        b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't' => {}
+                        b'"' => push_capture_byte(&mut capture, b'"', max_bytes),
+                        b'\\' => push_capture_byte(&mut capture, b'\\', max_bytes),
+                        b'/' => push_capture_byte(&mut capture, b'/', max_bytes),
+                        b'b' => push_capture_byte(&mut capture, 0x08, max_bytes),
+                        b'f' => push_capture_byte(&mut capture, 0x0c, max_bytes),
+                        b'n' => push_capture_byte(&mut capture, b'\n', max_bytes),
+                        b'r' => push_capture_byte(&mut capture, b'\r', max_bytes),
+                        b't' => push_capture_byte(&mut capture, b'\t', max_bytes),
                         b'u' => {
+                            let mut value = 0_u32;
                             for _ in 0..4 {
                                 let hex = self.next_required("unterminated unicode escape")?;
                                 if !hex.is_ascii_hexdigit() {
                                     bail!("invalid unicode escape digit {}", describe_byte(hex));
                                 }
                                 output.write_all(&[hex])?;
+                                value = value
+                                    .checked_mul(16)
+                                    .and_then(|value| value.checked_add(hex_value(hex)))
+                                    .expect("four hex digits fit in u32");
+                            }
+                            if let Some(ch) = char::from_u32(value)
+                                && !(0xd800..=0xdfff).contains(&value)
+                            {
+                                let mut encoded = [0_u8; 4];
+                                push_capture_bytes(
+                                    &mut capture,
+                                    ch.encode_utf8(&mut encoded).as_bytes(),
+                                    max_bytes,
+                                );
+                            } else {
+                                capture = None;
                             }
                         }
                         _ => bail!("invalid JSON string escape {}", describe_byte(escaped)),
@@ -335,14 +416,16 @@ impl<R: BufRead> JsonFormatter<R> {
         self.expect_byte(b'"')?;
         let prefix = self.read_safe_ascii_prefix(256)?;
         let data_uri = data_uri_header(&prefix.bytes);
-        let sibling_media = key == Some("data")
-            && media.media_type.is_some()
-            && (media.base64_encoding || prefix_looks_base64(&prefix.bytes));
+        let sibling_media =
+            key == Some("data") && media.media_type.is_some() && media.encoding().is_some();
 
-        if let Some((media_type, payload_start)) = data_uri {
+        if key != Some("arguments")
+            && let Some((media_type, payload_start)) = data_uri
+        {
             return self.write_media_summary(
                 output,
                 media_type,
+                Base64Encoding::Standard,
                 &prefix.bytes[payload_start..],
                 prefix.ended,
             );
@@ -350,7 +433,11 @@ impl<R: BufRead> JsonFormatter<R> {
         if sibling_media {
             return self.write_media_summary(
                 output,
-                media.media_type.as_deref(),
+                media
+                    .media_type
+                    .as_deref()
+                    .expect("sibling media type checked"),
+                media.encoding().expect("sibling media encoding checked"),
                 &prefix.bytes,
                 prefix.ended,
             );
@@ -426,11 +513,12 @@ impl<R: BufRead> JsonFormatter<R> {
     fn write_media_summary<W: Write>(
         &mut self,
         output: &mut W,
-        media_type: Option<&str>,
+        media_type: &str,
+        encoding: Base64Encoding,
         prefix_payload: &[u8],
         ended: bool,
     ) -> Result<()> {
-        let mut stats = Base64Stats::default();
+        let mut stats = Base64Stats::new(encoding);
         for &byte in prefix_payload {
             stats.accept(byte);
         }
@@ -438,7 +526,6 @@ impl<R: BufRead> JsonFormatter<R> {
             self.scan_base64_string_tail(&mut stats)?;
         }
 
-        let media_type = media_type.unwrap_or("unknown media type");
         match stats.decoded_bytes() {
             Some(bytes) => write!(output, "\"<media {media_type}; {bytes} decoded bytes>\"")?,
             None => write!(output, "\"<media {media_type}; invalid base64>\"")?,
@@ -471,10 +558,10 @@ impl<R: BufRead> JsonFormatter<R> {
             let byte = self.next_required("unterminated JSON string")?;
             match byte {
                 b'"' if utf8.is_idle() => return Ok(()),
-                b'\\' if utf8.is_idle() => {
-                    stats.invalid = true;
-                    self.consume_string_escape()?;
-                }
+                b'\\' if utf8.is_idle() => match self.consume_string_escape_ascii()? {
+                    Some(byte) => stats.accept(byte),
+                    None => stats.invalid = true,
+                },
                 0x00..=0x1f if utf8.is_idle() => {
                     bail!("unescaped control byte in JSON string")
                 }
@@ -486,18 +573,30 @@ impl<R: BufRead> JsonFormatter<R> {
         }
     }
 
-    fn consume_string_escape(&mut self) -> Result<()> {
+    fn consume_string_escape_ascii(&mut self) -> Result<Option<u8>> {
         let escaped = self.next_required("unterminated JSON string escape")?;
         match escaped {
-            b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't' => Ok(()),
+            b'"' => Ok(Some(b'"')),
+            b'\\' => Ok(Some(b'\\')),
+            b'/' => Ok(Some(b'/')),
+            b'b' => Ok(Some(0x08)),
+            b'f' => Ok(Some(0x0c)),
+            b'n' => Ok(Some(b'\n')),
+            b'r' => Ok(Some(b'\r')),
+            b't' => Ok(Some(b'\t')),
             b'u' => {
+                let mut value = 0_u32;
                 for _ in 0..4 {
                     let hex = self.next_required("unterminated unicode escape")?;
                     if !hex.is_ascii_hexdigit() {
                         bail!("invalid unicode escape digit {}", describe_byte(hex));
                     }
+                    value = value
+                        .checked_mul(16)
+                        .and_then(|value| value.checked_add(hex_value(hex)))
+                        .expect("four hex digits fit in u32");
                 }
-                Ok(())
+                Ok(u8::try_from(value).ok())
             }
             _ => bail!("invalid JSON string escape {}", describe_byte(escaped)),
         }
@@ -651,11 +750,25 @@ impl<R: BufRead> JsonFormatter<R> {
 }
 
 impl Base64Stats {
+    fn new(encoding: Base64Encoding) -> Self {
+        Self {
+            encoding,
+            data: 0,
+            padding: 0,
+            invalid: false,
+            saw_padding: false,
+        }
+    }
+
     fn accept(&mut self, byte: u8) {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'+' | b'/' | b'-' | b'_'
-                if !self.saw_padding =>
-            {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' if !self.saw_padding => {
+                self.data = self.data.saturating_add(1);
+            }
+            b'+' | b'/' if self.encoding == Base64Encoding::Standard && !self.saw_padding => {
+                self.data = self.data.saturating_add(1);
+            }
+            b'-' | b'_' if self.encoding == Base64Encoding::UrlSafe && !self.saw_padding => {
                 self.data = self.data.saturating_add(1);
             }
             b'=' if self.padding < 2 => {
@@ -699,15 +812,18 @@ impl Base64Stats {
     }
 }
 
-fn data_uri_header(prefix: &[u8]) -> Option<(Option<&str>, usize)> {
+fn data_uri_header(prefix: &[u8]) -> Option<(&str, usize)> {
     let header_end = prefix
         .windows(8)
         .position(|window| window.eq_ignore_ascii_case(b";base64,"))?;
     if !prefix.get(..5)?.eq_ignore_ascii_case(b"data:") {
         return None;
     }
-    let media_type = std::str::from_utf8(prefix.get(5..header_end)?).ok()?;
-    let media_type = (!media_type.is_empty() && valid_media_type(media_type)).then_some(media_type);
+    let metadata = std::str::from_utf8(prefix.get(5..header_end)?).ok()?;
+    let media_type = metadata.split(';').next()?;
+    if !valid_media_type(media_type) {
+        return None;
+    }
     Some((media_type, header_end + 8))
 }
 
@@ -724,21 +840,46 @@ fn valid_media_type(value: &str) -> bool {
         })
 }
 
-fn prefix_looks_base64(prefix: &[u8]) -> bool {
-    prefix.len() >= 8
-        && prefix.iter().all(|byte| {
-            matches!(
-                byte,
-                b'A'..=b'Z'
-                    | b'a'..=b'z'
-                    | b'0'..=b'9'
-                    | b'+'
-                    | b'/'
-                    | b'-'
-                    | b'_'
-                    | b'='
-            )
-        })
+fn base64_encoding(value: &str) -> Option<Base64Encoding> {
+    if value.eq_ignore_ascii_case("base64") {
+        Some(Base64Encoding::Standard)
+    } else if value.eq_ignore_ascii_case("base64url") {
+        Some(Base64Encoding::UrlSafe)
+    } else {
+        None
+    }
+}
+
+fn media_object_type(value: &str) -> MediaObjectType {
+    match base64_encoding(value) {
+        Some(encoding) => MediaObjectType::Encoded(encoding),
+        None if value.eq_ignore_ascii_case("image") => MediaObjectType::Image,
+        None => MediaObjectType::Other,
+    }
+}
+
+fn push_capture_byte(capture: &mut Option<Vec<u8>>, byte: u8, max_bytes: usize) {
+    push_capture_bytes(capture, &[byte], max_bytes);
+}
+
+fn push_capture_bytes(capture: &mut Option<Vec<u8>>, bytes: &[u8], max_bytes: usize) {
+    let Some(buffer) = capture.as_mut() else {
+        return;
+    };
+    if buffer.len().saturating_add(bytes.len()) > max_bytes {
+        *capture = None;
+    } else {
+        buffer.extend_from_slice(bytes);
+    }
+}
+
+fn hex_value(byte: u8) -> u32 {
+    match byte {
+        b'0'..=b'9' => u32::from(byte - b'0'),
+        b'a'..=b'f' => u32::from(byte - b'a' + 10),
+        b'A'..=b'F' => u32::from(byte - b'A' + 10),
+        _ => unreachable!("caller validates ASCII hex digit"),
+    }
 }
 
 #[derive(Default)]

@@ -18,6 +18,10 @@ const DIRECT_READ_LINE_BYTES: u64 = 64 * 1024;
 
 pub(crate) trait LazyProducer {
     fn produce(&mut self, source_offset: u64) -> Result<LazyBatch>;
+
+    fn write_last_raw_record(&self, _output: &mut dyn Write) -> Result<Option<u64>> {
+        Ok(None)
+    }
 }
 
 pub(crate) enum LazyBatch {
@@ -38,14 +42,14 @@ pub(crate) struct LazyFile<P> {
 impl<P: LazyProducer> LazyFile<P> {
     #[cfg(test)]
     pub(crate) fn new(label: String, len: u64, producer: P) -> Result<Self> {
-        Self::with_raw_source(label, len, producer, None)
+        Self::with_raw_records(label, len, producer, false)
     }
 
-    pub(crate) fn with_raw_source(
+    pub(crate) fn with_raw_records(
         label: String,
         len: u64,
         producer: P,
-        raw_source: Option<File>,
+        retain_raw_records: bool,
     ) -> Result<Self> {
         Ok(Self {
             label,
@@ -59,7 +63,11 @@ impl<P: LazyProducer> LazyFile<P> {
                 source_line_offsets: Vec::new(),
                 complete: len == 0,
                 units_produced: 0,
-                raw_source,
+                raw_spool: retain_raw_records
+                    .then(NamedTempFile::new)
+                    .transpose()
+                    .context("failed to create lazy raw record spool")?,
+                raw_spool_len: 0,
                 raw_records: Vec::new(),
             }),
         })
@@ -194,16 +202,16 @@ impl<P: LazyProducer> ViewFile for LazyFile<P> {
         }) else {
             return Ok(None);
         };
-        let Some(source) = state.raw_source.as_ref() else {
+        let Some(spool) = state.raw_spool.as_ref() else {
             return Ok(None);
         };
         let raw = RawRecordViewFile::new(
-            source
-                .try_clone()
-                .context("failed to clone raw record source")?,
+            spool
+                .reopen()
+                .context("failed to reopen lazy raw record spool")?,
             &self.label,
-            record.source_offset,
-            record.source_bytes,
+            record.raw_offset,
+            record.raw_len,
             line,
         )?;
         Ok(Some(Box::new(raw)))
@@ -219,15 +227,16 @@ struct LazyState<P> {
     source_line_offsets: Vec<u64>,
     complete: bool,
     units_produced: usize,
-    raw_source: Option<File>,
+    raw_spool: Option<NamedTempFile>,
+    raw_spool_len: u64,
     raw_records: Vec<LazyRawRecordRef>,
 }
 
 struct LazyRawRecordRef {
     first_line: usize,
     line_count: usize,
-    source_offset: u64,
-    source_bytes: u64,
+    raw_offset: u64,
+    raw_len: u64,
 }
 
 impl<P: LazyProducer> LazyState<P> {
@@ -247,13 +256,29 @@ impl<P: LazyProducer> LazyState<P> {
                     bail!("lazy producer returned no progress");
                 }
                 let first_line = self.line_offsets.len();
+                let raw_record = if let Some(raw_spool) = self.raw_spool.as_mut() {
+                    let raw_offset = self.raw_spool_len;
+                    let raw_len = self
+                        .producer
+                        .write_last_raw_record(raw_spool.as_file_mut())?
+                        .context("lazy producer did not expose its raw record")?;
+                    if raw_len != source_bytes {
+                        bail!(
+                            "lazy producer raw record length {raw_len} did not match source progress {source_bytes}"
+                        );
+                    }
+                    self.raw_spool_len = self.raw_spool_len.saturating_add(raw_len);
+                    Some((raw_offset, raw_len))
+                } else {
+                    None
+                };
                 self.append_bytes(source_offset, &bytes)?;
-                if self.raw_source.is_some() {
+                if let Some((raw_offset, raw_len)) = raw_record {
                     self.raw_records.push(LazyRawRecordRef {
                         first_line,
                         line_count: self.line_offsets.len().saturating_sub(first_line),
-                        source_offset,
-                        source_bytes,
+                        raw_offset,
+                        raw_len,
                     });
                 }
                 source_bytes

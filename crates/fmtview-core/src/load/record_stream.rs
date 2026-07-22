@@ -151,6 +151,10 @@ impl RecoveringFormattedRecordReader {
             diagnostic: None,
         }))
     }
+
+    pub(crate) fn last_raw_record(&self) -> &[u8] {
+        &self.raw.line
+    }
 }
 
 pub(crate) struct RecoveringFormattedRecordBytes {
