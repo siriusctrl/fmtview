@@ -8,6 +8,8 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-07-22
+
 ### Fixed
 
 - Keep tail-first follow views attached when pretty-printed JSON breadcrumbs
