@@ -54,6 +54,7 @@ struct ToolContainer {
     start_line: usize,
     role_tool: bool,
     toolish_type: bool,
+    tool_result_type: bool,
     ids: Vec<IdCandidate>,
     provisional_link: Option<ToolLink>,
     pending_child: Option<ContainerContext>,
@@ -223,6 +224,7 @@ impl ToolLinkTracker {
             start_line: line_number,
             role_tool: false,
             toolish_type: false,
+            tool_result_type: false,
             ids: Vec::new(),
             provisional_link: None,
             pending_child: None,
@@ -235,7 +237,7 @@ impl ToolLinkTracker {
                 continue;
             }
             if expected == ContainerKind::Object {
-                if container.role_tool {
+                if container.role_tool || container.tool_result_type {
                     let link = self.link_result(container.start_line, &container.ids);
                     return link.map(|link| ToolDiscovery {
                         start_line: container.start_line,
@@ -268,7 +270,10 @@ impl ToolLinkTracker {
         if let Some(value) = property.string_value {
             match key.as_str() {
                 "role" => container.role_tool = value.eq_ignore_ascii_case("tool"),
-                "type" => container.toolish_type = is_tool_call_type(&value),
+                "type" => {
+                    container.toolish_type = is_tool_call_type(&value);
+                    container.tool_result_type = is_tool_result_type(&value);
+                }
                 _ if is_id_key(&key)
                     && key.len() <= MAX_TOOL_ID_KEY_BYTES
                     && value.len() <= MAX_TOOL_ID_BYTES =>
@@ -297,8 +302,7 @@ impl ToolLinkTracker {
         let Some(container) = self.containers.last() else {
             return;
         };
-        let link = container
-            .role_tool
+        let link = (container.role_tool || container.tool_result_type)
             .then(|| self.preview_result(container.start_line, &container.ids))
             .flatten();
         if let Some(container) = self.containers.last_mut() {
@@ -530,6 +534,13 @@ fn is_tool_call_type(value: &str) -> bool {
     matches!(
         value.to_ascii_lowercase().as_str(),
         "tool_call" | "tool_use" | "function_call"
+    )
+}
+
+fn is_tool_result_type(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "tool_result" | "tool_response" | "function_result" | "function_response"
     )
 }
 

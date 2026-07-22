@@ -1,0 +1,4 @@
+{"ref":"m1","role":"system","content":[{"type":"runtime_reminder","text":"Keep output concise."}],"runtime":{"model":"example-model"}}
+{"ref":"m2","role":"assistant","content":[{"type":"reasoning","text":"I will run the tests."},{"type":"tool_call","id":"call_1","name":"shell","arguments":"{\"cmd\":\"cargo test --workspace\",\"note\":\"keep  spaces\"}"}],"artifact":{"kind":"test-report","path":"target/report.json"}}
+{"ref":"m3","role":"tool","content":[{"type":"tool_result","call_id":"call_1","content":"ok"}]}
+{"ref":"m4","role":"assistant","content":[{"type":"text","text":"Tests passed."},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}}]}

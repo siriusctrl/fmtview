@@ -35,6 +35,21 @@ fn links_tool_use_by_shared_id() {
 }
 
 #[test]
+fn links_nested_typed_tool_call_to_nested_typed_result() {
+    let marks = marks(&[
+        r#"{"ref":"m2","role":"assistant","content":[{"type":"tool_call","id":"call_1","name":"shell","arguments":"{\"cmd\":\"cargo test\"}"}]}"#,
+        r#"{"ref":"m3","role":"tool","content":[{"type":"tool_result","call_id":"call_1","content":"ok"}]}"#,
+    ]);
+
+    assert_eq!(marks[0].relation, ToolRelationMark::MatchedCall);
+    assert_eq!(marks[1].relation, ToolRelationMark::MatchedResult);
+    let link = marks[1].link.as_ref().unwrap();
+    assert_eq!(link.id.as_ref(), "call_1");
+    assert_eq!(link.call_line, Some(0));
+    assert_eq!(link.result_line, 1);
+}
+
+#[test]
 fn supports_custom_shared_id_field_without_matching_unrelated_objects() {
     let marks = marks(&[
         r#"{"request_id":"outside"}"#,
