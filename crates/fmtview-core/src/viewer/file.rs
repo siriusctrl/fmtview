@@ -205,13 +205,14 @@ impl FileViewer {
             page,
         );
         if self.file.is_follow_source() && !had_active_prompt {
-            if action.dirty && event_moves_away_from_tail(event) {
+            if action.dirty && event_moves_away_from_tail(event, self.state.wrap) {
                 if self.state.follow == Some(FollowState::Following) {
                     self.state.follow = Some(FollowState::Detached);
                 }
                 self.state.viewport_at_tail = false;
                 self.state.follow_reattach_pending = false;
-            } else if event_forces_tail(event)
+            } else if self.state.follow != Some(FollowState::Paused)
+                && event_forces_tail(event)
                 && (action.dirty
                     || matches!(
                         event,
@@ -224,7 +225,7 @@ impl FileViewer {
                 self.state.follow = Some(FollowState::Following);
                 self.state.viewport_at_tail = true;
                 self.state.follow_reattach_pending = false;
-            } else if event_moves_toward_tail(event)
+            } else if event_moves_toward_tail(event, self.state.wrap)
                 && self.state.follow == Some(FollowState::Detached)
             {
                 if !action.dirty || self.state.top >= self.file.line_count().saturating_sub(1) {
@@ -318,17 +319,18 @@ impl FileViewer {
     }
 }
 
-fn event_moves_away_from_tail(event: InputEvent) -> bool {
-    matches!(
-        event,
+fn event_moves_away_from_tail(event: InputEvent, wrap: bool) -> bool {
+    match event {
         InputEvent::Key {
             code: KeyCode::Up | KeyCode::PageUp | KeyCode::Home | KeyCode::Char('k' | 'b' | 'g'),
             ..
-        } | InputEvent::Mouse {
+        } => true,
+        InputEvent::Mouse {
             kind: crate::viewer::MouseEventKind::ScrollUp,
-            ..
-        }
-    )
+            modifiers,
+        } => wrap || !modifiers.contains(crate::viewer::KeyModifiers::SHIFT),
+        _ => false,
+    }
 }
 
 fn event_forces_tail(event: InputEvent) -> bool {
@@ -341,17 +343,18 @@ fn event_forces_tail(event: InputEvent) -> bool {
     )
 }
 
-fn event_moves_toward_tail(event: InputEvent) -> bool {
-    matches!(
-        event,
+fn event_moves_toward_tail(event: InputEvent, wrap: bool) -> bool {
+    match event {
         InputEvent::Key {
             code: KeyCode::Down | KeyCode::PageDown | KeyCode::Char('j' | ' '),
             ..
-        } | InputEvent::Mouse {
+        } => true,
+        InputEvent::Mouse {
             kind: crate::viewer::MouseEventKind::ScrollDown,
-            ..
-        }
-    )
+            modifiers,
+        } => wrap || !modifiers.contains(crate::viewer::KeyModifiers::SHIFT),
+        _ => false,
+    }
 }
 
 fn draw_view(

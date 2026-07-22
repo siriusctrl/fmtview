@@ -8,8 +8,8 @@ use std::{
 
 use fmtview_core::{
     FileRecordTimeline, FileViewer, FormatKind, FormatOptions, InputEvent, KeyCode, KeyModifiers,
-    RecordId, RecordLoadLimit, RecordTimeline, RecordTimelineViewFile, TimelineRead,
-    TimelineRecord, TimelineRefresh, TimelineResetReason, TimelineSnapshot, ViewFile,
+    MouseEventKind, RecordId, RecordLoadLimit, RecordTimeline, RecordTimelineViewFile,
+    TimelineRead, TimelineRecord, TimelineRefresh, TimelineResetReason, TimelineSnapshot, ViewFile,
     ViewerCommand, render_frame_to_buffer,
 };
 use ratatui::{
@@ -146,6 +146,69 @@ fn follow_search_prompt_accepts_the_f_character() {
     );
     assert!(
         frame.footer_text.contains("search: fgjb"),
+        "{}",
+        frame.footer_text
+    );
+}
+
+#[test]
+fn end_navigation_does_not_resume_explicitly_paused_follow() {
+    let (_handle, timeline) = fake_timeline((0..10).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(16, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+    viewer.render(size, None).unwrap();
+    viewer.handle_event(key(KeyCode::Char('f')), FileViewer::page_for_size(size));
+
+    for code in [KeyCode::End, KeyCode::Char('G')] {
+        viewer.handle_event(key(code), FileViewer::page_for_size(size));
+        let frame = viewer.render(size, None).unwrap();
+        assert!(
+            frame.footer_text.contains("follow:off"),
+            "{}",
+            frame.footer_text
+        );
+    }
+}
+
+#[test]
+fn shifted_wheel_horizontal_scroll_does_not_reattach_follow() {
+    let (_handle, timeline) = fake_timeline((0..20).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(32, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(60, 8);
+    viewer.render(size, None).unwrap();
+    viewer.handle_event(key(KeyCode::Up), FileViewer::page_for_size(size));
+    viewer.handle_event(key(KeyCode::Char('w')), FileViewer::page_for_size(size));
+    assert!(
+        viewer
+            .render(size, None)
+            .unwrap()
+            .footer_text
+            .contains("follow:detached")
+    );
+
+    viewer.handle_event(
+        InputEvent::Mouse {
+            kind: MouseEventKind::ScrollDown,
+            modifiers: KeyModifiers::SHIFT,
+        },
+        FileViewer::page_for_size(size),
+    );
+    let frame = viewer.render(size, None).unwrap();
+
+    assert!(
+        frame.footer_text.contains("follow:detached"),
         "{}",
         frame.footer_text
     );
