@@ -203,6 +203,7 @@ impl TimelineViewState {
             TimelineRead::Pending => Ok(ViewFileChange::default()),
             TimelineRead::End => {
                 self.older_end = true;
+                self.reset_overlap_ids.clear();
                 Ok(ViewFileChange::default())
             }
         }

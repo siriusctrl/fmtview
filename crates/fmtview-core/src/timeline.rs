@@ -4,6 +4,7 @@ use std::{
     fs::{File, Metadata},
     io::{self, Read, Seek, SeekFrom},
     path::PathBuf,
+    sync::Arc,
 };
 
 use anyhow::{Context, Result, bail};
@@ -13,6 +14,8 @@ const REVERSE_SCAN_CHUNK_BYTES: usize = 64 * 1024;
 const FORWARD_SCAN_CHUNK_BYTES: usize = 16 * 1024;
 const REFRESH_SHORT_READ_ATTEMPTS: usize = 3;
 const RANGE_SAMPLE_BYTES: u64 = 64;
+const PENDING_SAMPLE_BYTES: u64 = 64;
+const PENDING_EXACT_VERIFY_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Stable identity for one committed record within a source epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -153,7 +156,7 @@ pub struct FileRecordTimeline {
     older_cursor: u64,
     newer_cursor: u64,
     committed_sample: Vec<u8>,
-    pending_sample: Vec<u8>,
+    pending_verification: PendingVerification,
     instrumentation: FileTimelineInstrumentation,
 }
 
@@ -177,7 +180,7 @@ impl FileRecordTimeline {
             find_committed_end(&mut file, observed_end, &mut instrumentation, &label)?;
         let committed_sample =
             read_committed_sample(&mut file, committed_end, &mut instrumentation, &label)?;
-        let pending_sample = read_pending_sample(
+        let pending_verification = read_pending_verification(
             &mut file,
             committed_end,
             observed_end,
@@ -197,7 +200,7 @@ impl FileRecordTimeline {
             older_cursor: committed_end,
             newer_cursor: committed_end,
             committed_sample,
-            pending_sample,
+            pending_verification,
             instrumentation,
         })
     }
@@ -225,7 +228,7 @@ impl FileRecordTimeline {
             &mut self.instrumentation,
             &self.label,
         )?;
-        let pending_sample = read_pending_sample(
+        let pending_verification = read_pending_verification(
             &mut file,
             committed_end,
             observed_end,
@@ -241,7 +244,7 @@ impl FileRecordTimeline {
         self.older_cursor = committed_end;
         self.newer_cursor = committed_end;
         self.committed_sample = committed_sample;
-        self.pending_sample = pending_sample;
+        self.pending_verification = pending_verification;
         Ok(TimelineRefresh::Reset {
             reason,
             snapshot: self.snapshot(),
@@ -283,62 +286,67 @@ impl FileRecordTimeline {
         }
 
         let previous_committed_end = self.committed_end;
-        let prior_pending_sample =
-            if self.observed_end > previous_committed_end && observed_end >= self.observed_end {
-                Some(read_pending_sample(
-                    &mut replacement,
-                    previous_committed_end,
-                    self.observed_end,
-                    &mut self.instrumentation,
-                    &self.label,
-                )?)
+        let previous_observed_end = self.observed_end;
+        let had_pending = previous_observed_end > previous_committed_end;
+        let pending_metadata_changed =
+            observed_end != previous_observed_end || change_stamp != self.change_stamp;
+        let current_prior_pending = if had_pending {
+            let read = if pending_metadata_changed {
+                read_pending_verification
             } else {
-                None
+                read_pending_samples
             };
-        let prior_pending_matches = prior_pending_sample
-            .as_ref()
-            .is_none_or(|sample| sample == &self.pending_sample);
-        let scan_start = if observed_end > self.observed_end {
-            if prior_pending_matches {
-                self.observed_end.max(previous_committed_end)
-            } else {
-                previous_committed_end
-            }
-        } else if observed_end == self.observed_end && observed_end == previous_committed_end {
-            observed_end
-        } else if observed_end == self.observed_end
-            && change_stamp == self.change_stamp
-            && prior_pending_matches
-        {
-            // The pending range still has the same size and cheap change
-            // signals, so retain its previously established newline-free
-            // boundary without rereading the record body.
-            observed_end
+            Some(read(
+                &mut replacement,
+                previous_committed_end,
+                observed_end.min(previous_observed_end),
+                &mut self.instrumentation,
+                &self.label,
+            )?)
         } else {
-            // The uncommitted suffix was rewritten or truncated without
-            // disturbing committed history, so its delimiter status must be
-            // established again from the last committed boundary.
-            previous_committed_end
+            None
         };
-        let committed_end = find_last_newline_reverse(
-            &mut replacement,
-            scan_start,
-            observed_end,
-            &mut self.instrumentation,
-            &self.label,
-        )?
-        .map_or(previous_committed_end, |offset| offset.saturating_add(1));
-        let committed_sample = read_committed_sample(
-            &mut replacement,
-            committed_end,
-            &mut self.instrumentation,
-            &self.label,
-        )?;
-        let pending_sample =
-            if committed_end == previous_committed_end && observed_end == self.observed_end {
-                prior_pending_sample.unwrap_or_default()
+        let prior_pending_matches = if !had_pending {
+            true
+        } else if observed_end >= previous_observed_end {
+            current_prior_pending
+                .as_ref()
+                .is_some_and(|verification| self.pending_verification.matches_current(verification))
+        } else {
+            false
+        };
+        let rewritten_pending_newline = (!prior_pending_matches)
+            .then(|| {
+                current_prior_pending
+                    .as_ref()
+                    .and_then(PendingVerification::latest_newline)
+            })
+            .flatten();
+        let appended_newline = if observed_end > previous_observed_end {
+            find_last_newline_reverse(
+                &mut replacement,
+                previous_observed_end.max(previous_committed_end),
+                observed_end,
+                &mut self.instrumentation,
+                &self.label,
+            )?
+        } else {
+            None
+        };
+        let mut committed_end = rewritten_pending_newline
+            .into_iter()
+            .chain(appended_newline)
+            .max()
+            .map_or(previous_committed_end, |offset| offset.saturating_add(1));
+        let mut pending_verification =
+            if committed_end == previous_committed_end && observed_end == previous_observed_end {
+                if pending_metadata_changed {
+                    current_prior_pending.unwrap_or_else(|| self.pending_verification.clone())
+                } else {
+                    self.pending_verification.clone()
+                }
             } else {
-                read_pending_sample(
+                read_pending_verification(
                     &mut replacement,
                     committed_end,
                     observed_end,
@@ -346,6 +354,28 @@ impl FileRecordTimeline {
                     &self.label,
                 )?
             };
+        // A sampled oversized range can reveal one delimiter that makes the
+        // remaining suffix small enough for exact capture. Finish that exact
+        // transition in the same refresh so a later unsampled delimiter in the
+        // newly exact body cannot remain hidden without another metadata event.
+        if matches!(pending_verification, PendingVerification::Exact { .. }) {
+            if let Some(newline) = pending_verification.latest_newline() {
+                committed_end = newline.saturating_add(1);
+                pending_verification = read_pending_verification(
+                    &mut replacement,
+                    committed_end,
+                    observed_end,
+                    &mut self.instrumentation,
+                    &self.label,
+                )?;
+            }
+        }
+        let committed_sample = read_committed_sample(
+            &mut replacement,
+            committed_end,
+            &mut self.instrumentation,
+            &self.label,
+        )?;
 
         // Commit the new snapshot only after every read against the statted
         // length succeeds. A concurrent shrink therefore leaves the prior
@@ -355,7 +385,7 @@ impl FileRecordTimeline {
         self.observed_end = observed_end;
         self.committed_end = committed_end;
         self.committed_sample = committed_sample;
-        self.pending_sample = pending_sample;
+        self.pending_verification = pending_verification;
 
         let snapshot = self.snapshot();
         if self.committed_end > previous_committed_end {
@@ -680,14 +710,109 @@ fn read_next_record(
     bail!("source {label} ended before its committed record delimiter")
 }
 
-fn read_pending_sample(
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PendingVerification {
+    Empty,
+    // Shared storage keeps unchanged-poll snapshot clones O(1) at the exact
+    // verification cap instead of allocating and copying up to 4 MiB.
+    Exact { start: u64, bytes: Arc<[u8]> },
+    Sampled(Vec<PendingWindow>),
+}
+
+impl PendingVerification {
+    fn latest_newline(&self) -> Option<u64> {
+        match self {
+            Self::Empty => None,
+            Self::Exact { start, bytes } => {
+                memrchr(b'\n', bytes.as_ref()).map(|index| start.saturating_add(index as u64))
+            }
+            Self::Sampled(windows) => windows
+                .iter()
+                .filter_map(|window| {
+                    memrchr(b'\n', &window.bytes)
+                        .map(|index| window.offset.saturating_add(index as u64))
+                })
+                .max(),
+        }
+    }
+
+    fn matches_current(&self, current: &Self) -> bool {
+        match (self, current) {
+            (
+                Self::Exact {
+                    start,
+                    bytes: expected,
+                },
+                Self::Sampled(windows),
+            ) => windows.iter().all(|window| {
+                let Some(relative) = window.offset.checked_sub(*start) else {
+                    return false;
+                };
+                let Ok(relative) = usize::try_from(relative) else {
+                    return false;
+                };
+                expected.get(relative..relative.saturating_add(window.bytes.len()))
+                    == Some(window.bytes.as_slice())
+            }),
+            _ => self == current,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PendingWindow {
+    offset: u64,
+    bytes: Vec<u8>,
+}
+
+fn read_pending_verification(
     file: &mut File,
     start: u64,
     end: u64,
     instrumentation: &mut FileTimelineInstrumentation,
     label: &str,
-) -> Result<Vec<u8>> {
-    read_range_sample(file, start, end, instrumentation, label)
+) -> Result<PendingVerification> {
+    if start >= end {
+        return Ok(PendingVerification::Empty);
+    }
+    let len = end - start;
+    if len <= PENDING_EXACT_VERIFY_BYTES {
+        let mut bytes = vec![0_u8; usize::try_from(len).context("pending range was too large")?];
+        read_exact_at(file, start, &mut bytes, instrumentation, label)?;
+        return Ok(PendingVerification::Exact {
+            start,
+            bytes: bytes.into(),
+        });
+    }
+    read_pending_samples(file, start, end, instrumentation, label)
+}
+
+fn read_pending_samples(
+    file: &mut File,
+    start: u64,
+    end: u64,
+    instrumentation: &mut FileTimelineInstrumentation,
+    label: &str,
+) -> Result<PendingVerification> {
+    if start >= end {
+        return Ok(PendingVerification::Empty);
+    }
+    let len = end - start;
+    let width = len.min(PENDING_SAMPLE_BYTES);
+    let mut offsets = [start, start + (len - width) / 2, end.saturating_sub(width)];
+    offsets.sort_unstable();
+    let mut windows = Vec::with_capacity(offsets.len());
+    let mut previous = None;
+    for offset in offsets {
+        if previous == Some(offset) {
+            continue;
+        }
+        let mut bytes = vec![0_u8; width as usize];
+        read_exact_at(file, offset, &mut bytes, instrumentation, label)?;
+        windows.push(PendingWindow { offset, bytes });
+        previous = Some(offset);
+    }
+    Ok(PendingVerification::Sampled(windows))
 }
 
 fn read_committed_sample(
@@ -816,6 +941,24 @@ impl FileIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_pending_verification_clones_share_the_snapshot_bytes() {
+        let bytes: Arc<[u8]> = vec![b'x'; 1024].into();
+        let verification = PendingVerification::Exact {
+            start: 7,
+            bytes: Arc::clone(&bytes),
+        };
+        let cloned = verification.clone();
+        let PendingVerification::Exact {
+            bytes: cloned_bytes,
+            ..
+        } = cloned
+        else {
+            panic!("expected exact verification");
+        };
+        assert!(Arc::ptr_eq(&bytes, &cloned_bytes));
+    }
 
     #[test]
     fn newer_batch_failure_does_not_publish_partial_cursor_progress() {

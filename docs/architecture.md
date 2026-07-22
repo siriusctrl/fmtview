@@ -323,20 +323,30 @@ The contract has these invariants:
 It locates committed EOF from bounded reverse chunks, never exposes an
 incomplete final line, and lets bounded forward loads do the record work after
 a refresh. Refresh validates bounded start/middle/end samples of committed
-history independently of file timestamps, so same-identity copytruncate
-rewrites outside the old tail are still detected without indexing the whole
-file. Inode/device identity is used on Unix; portable fallbacks never treat file
-length as identity.
+history independently of file timestamps, catching same-identity rewrites when
+one of those windows changes without indexing the whole file. Inode/device
+identity is used on Unix; portable fallbacks never treat file length as
+identity.
 
-An unchanged incomplete suffix is not reread on every application poll. The
-file implementation retains start/middle/end samples for both committed and
-pending ranges plus a change stamp for the previously verified newline-free
-range. Unix uses nanosecond ctime. On a platform/filesystem where timestamps are
-coarse, a same-size rewrite confined to bytes outside every bounded sample may
-be detected only after a later observable size, stamp, or sample change; fully
-detecting arbitrary in-place rewrites would require reading or indexing the
-whole file and would violate tail-first opening. Stat/read races caused by a
-concurrent shrink are retried, and snapshot fields are committed only after all
+An unchanged incomplete suffix is not reread in full on every application
+poll. Pending ranges up to 4 MiB retain an exact immutable byte snapshot; the
+snapshot uses shared storage so an unchanged poll does not copy that body. An
+exact refresh may temporarily hold three bounded snapshots (about 12 MiB),
+while the retained steady-state snapshot remains at most 4 MiB.
+When size or the change stamp moves, the previous exact range is reread before
+the appended delta is scanned, so a delimiter inserted into old pending bytes
+cannot be skipped merely because the file also grew. Unchanged polls compare
+only small start/middle/end windows. Pending ranges above 4 MiB retain those
+bounded windows instead of the full body. Unix uses nanosecond ctime. On a
+platform/filesystem where timestamps are coarse, a same-size rewrite confined
+to unsampled bytes may remain pending. For an oversized pending range, a
+delimiter outside the sampled windows may remain pending until it enters a
+sampled window or newly appended delta, or until the suffix shrinks under the
+exact-verification cap. Committed history is protected by its independent
+bounded samples, but rewrites outside every sample have the same residual
+limitation; fully detecting arbitrary in-place rewrites would require reading
+or indexing the whole file and would violate tail-first opening. Stat/read races
+during refresh are retried, and snapshot fields are committed only after all
 reads succeed.
 
 `RecordTimelineViewFile` owns formatting, on-disk raw/formatted spools, reset

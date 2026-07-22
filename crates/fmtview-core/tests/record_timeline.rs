@@ -777,6 +777,104 @@ fn same_size_uncommitted_tail_rewrite_uses_change_signals() {
 }
 
 #[test]
+fn growing_file_rechecks_an_exact_pending_range_before_scanning_the_append() {
+    let mut temp = NamedTempFile::new().unwrap();
+    temp.write_all(b"{\"id\":1}\n").unwrap();
+    temp.write_all(&vec![b'x'; 4096]).unwrap();
+    temp.flush().unwrap();
+    let mut timeline = FileRecordTimeline::open(temp.path(), "pending-grow-rewrite.jsonl").unwrap();
+    let pending_start = timeline.snapshot().committed_end;
+
+    let mut writer = OpenOptions::new().write(true).open(temp.path()).unwrap();
+    writer.seek(SeekFrom::Start(pending_start + 1000)).unwrap();
+    writer.write_all(b"\n").unwrap();
+    writer.seek(SeekFrom::End(0)).unwrap();
+    writer.write_all(b"yyy").unwrap();
+    writer.flush().unwrap();
+
+    assert!(matches!(
+        timeline.refresh().unwrap(),
+        TimelineRefresh::Appended(_)
+    ));
+    let TimelineRead::Records { records, .. } =
+        timeline.load_newer(RecordLoadLimit::new(8, 8192)).unwrap()
+    else {
+        panic!("expected the record committed inside the old pending range");
+    };
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].raw.len(), 1001);
+    assert_eq!(records[0].raw.last(), Some(&b'\n'));
+}
+
+#[test]
+fn oversized_pending_rewrite_and_growth_keep_refresh_work_bounded() {
+    let mut temp = NamedTempFile::new().unwrap();
+    temp.write_all(b"{\"id\":1}\n").unwrap();
+    temp.write_all(&vec![b'x'; 5 * 1024 * 1024]).unwrap();
+    temp.flush().unwrap();
+    let mut timeline = FileRecordTimeline::open(temp.path(), "sampled-pending.jsonl").unwrap();
+    let pending_start = timeline.snapshot().committed_end;
+
+    let mut writer = OpenOptions::new().write(true).open(temp.path()).unwrap();
+    writer
+        .seek(SeekFrom::Start(pending_start + 1024 * 1024))
+        .unwrap();
+    writer.write_all(b"\n").unwrap();
+    writer.seek(SeekFrom::End(0)).unwrap();
+    writer.write_all(b"yyy").unwrap();
+    writer.flush().unwrap();
+
+    let before = timeline.instrumentation();
+    assert!(matches!(
+        timeline.refresh().unwrap(),
+        TimelineRefresh::Pending(_)
+    ));
+    let read = timeline.instrumentation().bytes_read - before.bytes_read;
+    assert!(read < 2048, "sampled refresh read {read} bytes");
+}
+
+#[test]
+fn sampled_pending_transition_finishes_newly_exact_delimiters_in_one_refresh() {
+    const PENDING_LEN: u64 = 5 * 1024 * 1024;
+    let mut temp = NamedTempFile::new().unwrap();
+    temp.write_all(b"{\"id\":1}\n").unwrap();
+    temp.write_all(&vec![b'x'; PENDING_LEN as usize]).unwrap();
+    temp.flush().unwrap();
+    let mut timeline = FileRecordTimeline::open(temp.path(), "sample-to-exact.jsonl").unwrap();
+    let pending_start = timeline.snapshot().committed_end;
+    let sampled_newline = (PENDING_LEN - 64) / 2 + 10;
+    let exact_only_newline = sampled_newline + 1000;
+
+    let mut writer = OpenOptions::new().write(true).open(temp.path()).unwrap();
+    writer
+        .seek(SeekFrom::Start(pending_start + sampled_newline))
+        .unwrap();
+    writer.write_all(b"\n").unwrap();
+    writer
+        .seek(SeekFrom::Start(pending_start + exact_only_newline))
+        .unwrap();
+    writer.write_all(b"\n").unwrap();
+    writer.flush().unwrap();
+
+    assert!(matches!(
+        timeline.refresh().unwrap(),
+        TimelineRefresh::Appended(_)
+    ));
+    assert_eq!(
+        timeline.snapshot().committed_end,
+        pending_start + exact_only_newline + 1
+    );
+    assert!(matches!(
+        timeline.refresh().unwrap(),
+        TimelineRefresh::Pending(_)
+    ));
+    assert_eq!(
+        timeline.snapshot().committed_end,
+        pending_start + exact_only_newline + 1
+    );
+}
+
+#[test]
 fn truncating_only_an_uncommitted_tail_does_not_duplicate_committed_records() {
     let mut temp = NamedTempFile::new().unwrap();
     temp.write_all(b"{\"id\":1}\n{\"partial\":").unwrap();
