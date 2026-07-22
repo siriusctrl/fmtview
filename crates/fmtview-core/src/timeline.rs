@@ -411,10 +411,11 @@ impl RecordTimeline for FileRecordTimeline {
         let limit = limit.normalized();
         let mut records = Vec::new();
         let mut bytes = 0_usize;
-        while self.newer_cursor < self.committed_end && records.len() < limit.max_records {
+        let mut cursor = self.newer_cursor;
+        while cursor < self.committed_end && records.len() < limit.max_records {
             let (end, raw) = read_next_record(
                 &mut self.file,
-                self.newer_cursor,
+                cursor,
                 self.committed_end,
                 &mut self.instrumentation,
                 &self.label,
@@ -423,16 +424,17 @@ impl RecordTimeline for FileRecordTimeline {
             records.push(TimelineRecord {
                 id: RecordId {
                     epoch: self.epoch,
-                    start_offset: self.newer_cursor,
+                    start_offset: cursor,
                     end_offset: end,
                 },
                 raw,
             });
-            self.newer_cursor = end;
+            cursor = end;
             if bytes >= limit.max_bytes {
                 break;
             }
         }
+        self.newer_cursor = cursor;
         self.instrumentation.records_yielded = self
             .instrumentation
             .records_yielded
@@ -724,5 +726,37 @@ impl FileIdentity {
             first: created,
             second: 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    use tempfile::NamedTempFile;
+
+    use super::*;
+
+    #[test]
+    fn failed_newer_batch_does_not_advance_past_unreturned_records() {
+        let first = b"{\"id\":1}\n";
+        let mut temp = NamedTempFile::new().unwrap();
+        temp.write_all(first).unwrap();
+        temp.write_all(b"{\"id\":2}\n").unwrap();
+        temp.flush().unwrap();
+        let mut timeline = FileRecordTimeline::open(temp.path(), "atomic-newer.jsonl").unwrap();
+        timeline.newer_cursor = 0;
+        temp.as_file_mut().set_len(first.len() as u64).unwrap();
+
+        let error = timeline
+            .load_newer(RecordLoadLimit::new(2, 4096))
+            .unwrap_err();
+
+        assert!(error.chain().any(|cause| {
+            cause
+                .downcast_ref::<io::Error>()
+                .is_some_and(|error| error.kind() == io::ErrorKind::UnexpectedEof)
+        }));
+        assert_eq!(timeline.newer_cursor, 0);
     }
 }
