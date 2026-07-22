@@ -178,8 +178,9 @@ role-colored guide active through nested and wrapped interior rows. The guide
 is neutral on opening and closing brace rows so adjacent role colors stay
 visually separated; sibling objects without a direct role are neutral too. The
 same JSON format package owns a bounded tool-link tracker. It only accepts
-ID-like fields from contextual tool-call objects or direct `role: tool` result
-objects and matches exact values against bounded earlier pending calls. The
+ID-like fields from contextual tool-call objects, direct `role: tool` result
+objects, or nested typed tool-result objects and matches exact values against
+bounded earlier pending calls. The
 viewer consumes those relations as compact endpoint directions in the existing
 line-number separator, footer context, and exact `t` navigation. Role and
 relation marks are cached in checkpointed windows so adjacent scroll positions
@@ -356,6 +357,26 @@ backend-neutral `Following`/`Detached`/`Paused` state. A future
 checkpoint-committed producer can implement the same trait by mapping its own
 opaque stable ordering into epoch/offset identities; it needs no file methods,
 poll cadence, checkpoint storage rule, or terminal backend type.
+
+Record-backed `ViewFile` implementations can expose an exact raw-record seam.
+The seam retains source or raw-spool offsets and `u64` lengths, then presents a
+snapshot through nominal 32 KiB virtual-line chunks with up to a three-byte
+UTF-8 boundary adjustment. Opening raw mode does not copy or reconstruct the
+record from formatted output. An open snapshot
+keeps the selected old record stable through later prepend, append, or reset
+work, while the main stream continues refreshing behind it. `FileViewer` owns
+the `r` toggle plus raw search, wrap, and viewport state; it synchronizes wrap
+and mouse-capture state when returning to the structured view. The terminal
+package only forwards backend-neutral input and draws the resulting frame.
+
+Record streams also have a viewer-only JSON display formatter for
+high-confidence inline base64 media. Data URIs are self-describing; sibling
+`data` fields require earlier media-type and base64-encoding metadata in the
+same object. The formatter validates the payload and computes decoded size by
+scanning buffered input without allocating a decoded buffer or copying the
+payload into the formatted spool. The ordinary transform path remains
+token-preserving, so redirected output, diffs, tool arguments, and unknown
+fields are unchanged.
 
 `probe_prefix` is source-neutral rather than a filesystem seek. It returns
 committed records from the source's true beginning under the same count/byte

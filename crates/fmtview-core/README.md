@@ -18,6 +18,20 @@ The core viewer owns viewport-anchor preservation and follow state through
 backend-neutral events, including `ViewerCommand::FollowTail` and
 `ViewerCommand::ToggleFollowTail`.
 
+Record-backed views can expose exact raw-record snapshots through bounded
+virtual lines. `FileViewer` owns the `r` structured/raw toggle, separate raw
+search and wrap state, and synchronization when returning to the structured
+viewport. Follow refresh and the main viewport's attached or detached state
+continue behind an open raw snapshot.
+
+Generic conversation handling also stays in core. The JSON package recognizes
+direct chat roles, contextual tool calls, direct tool-role results, and nested
+typed tool results without depending on an application's storage types. The
+viewer-only JSONL display path can collapse high-confidence inline base64 media
+to media type and validated decoded size without decoding the payload. Normal
+transforms preserve exact tool-argument tokens, media payloads, and unknown
+fields for redirected output and diffs.
+
 Reset overlap uses a bounded, non-consuming probe of the committed source
 prefix. Exact IDs for the matched prefix are filtered from tail and later older
 batches, so large replacements remain tail-first without guessing from equal

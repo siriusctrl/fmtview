@@ -160,6 +160,49 @@ fn record_engine_toggles_bounded_raw_view_and_keeps_core_interactions() {
 }
 
 #[test]
+fn pretty_nested_tool_pair_navigation_round_trips_between_records() {
+    let source = source(
+        "conversation.jsonl",
+        concat!(
+            r#"{"ref":"m2","role":"assistant","content":[{"type":"tool_call","id":"call_1","name":"shell","arguments":"{\"cmd\":\"cargo test\"}"}]}"#,
+            "\n",
+            r#"{"ref":"m3","role":"tool","content":[{"type":"tool_result","call_id":"call_1","content":"ok"}]}"#,
+            "\n"
+        ),
+    );
+    let options = FormatOptions {
+        kind: FormatKind::Jsonl,
+        indent: 2,
+    };
+    let profile = TypeProfile::resolve(&source, &options).unwrap();
+    let opened = open_view_file(&source, &options, profile).unwrap();
+    let mut viewer = FileViewer::new(opened.file, opened.content, opened.notice);
+    let size = Size::new(72, 8);
+    viewer.render(size, None).unwrap();
+
+    send_key(&mut viewer, size, KeyCode::Char('/'));
+    for ch in "tool_call".chars() {
+        send_key(&mut viewer, size, KeyCode::Char(ch));
+    }
+    send_key(&mut viewer, size, KeyCode::Enter);
+    while viewer.advance(std::time::Instant::now()).unwrap() {}
+    let call = viewer.render(size, None).unwrap();
+    let call_top = call.position.top;
+    assert!(buffer_text(call).contains("tool_call"));
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('t')).dirty);
+    let result = viewer.render(size, None).unwrap();
+    let result_top = result.position.top;
+    assert!(result_top > call_top, "call={call_top} result={result_top}");
+    assert!(buffer_text(result).contains("tool_result"));
+
+    assert!(send_key(&mut viewer, size, KeyCode::Char('t')).dirty);
+    let returned = viewer.render(size, None).unwrap();
+    assert!(returned.position.top < result_top);
+    assert!(buffer_text(returned).contains("tool_call"));
+}
+
+#[test]
 fn diff_engine_renders_and_navigates_without_a_terminal() {
     let left = source("left.json", "{\"value\":1}\n");
     let right = source("right.json", "{\"value\":2}\n");
