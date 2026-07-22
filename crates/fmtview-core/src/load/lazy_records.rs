@@ -249,6 +249,29 @@ mod tests {
     }
 
     #[test]
+    fn lazy_view_collapses_large_data_uri_before_spooling_formatted_lines() {
+        let mut input = Vec::with_capacity(1024 * 1024 + 64);
+        input.extend_from_slice(br#"{"content":"data:image/png;base64,"#);
+        input.extend(std::iter::repeat_n(b'A', 1024 * 1024));
+        input.extend_from_slice(b"\"}\n");
+        let (_temp, source) = temp_source(&input);
+        let options = FormatOptions {
+            kind: FormatKind::Jsonl,
+            indent: 2,
+        };
+        let file = LazyTransformedRecordsFile::new(&source, options).unwrap();
+
+        let lines = file.read_window(0, 8).unwrap();
+
+        assert!(
+            lines
+                .iter()
+                .any(|line| { line.contains("<media image/png; 786432 decoded bytes>") })
+        );
+        assert!(lines.iter().map(String::len).sum::<usize>() < 1024);
+    }
+
+    #[test]
     fn lazy_load_reads_spooled_lines_after_preload() {
         let (_temp, source) = temp_source(b"{\"a\":1}\n{\"b\":2}\n{\"c\":3}\n");
         let options = FormatOptions {

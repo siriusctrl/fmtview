@@ -5,7 +5,9 @@ use tempfile::NamedTempFile;
 
 use crate::formats::{
     html::transform::format_html_reader,
-    json::transform::{format_json, format_json_value, format_jsonl, trim_line_end},
+    json::transform::{
+        format_json, format_json_value, format_json_value_for_view, format_jsonl, trim_line_end,
+    },
     xml::transform::format_xml_reader,
 };
 use crate::input::InputSource;
@@ -166,6 +168,10 @@ fn record_output_capacity(input_len: usize) -> usize {
     input_len.saturating_mul(2).clamp(128, 8192)
 }
 
+fn record_display_output_capacity(input_len: usize) -> usize {
+    input_len.saturating_mul(2).clamp(128, 64 * 1024)
+}
+
 pub fn trim_record_line_end(line: &[u8]) -> &[u8] {
     trim_line_end(line)
 }
@@ -217,6 +223,32 @@ pub(crate) fn format_record_bytes(line: &[u8], options: FormatOptions) -> Result
     };
 
     Ok(formatted.unwrap_or_else(|| trimmed.to_vec()))
+}
+
+pub(crate) fn format_record_display_bytes(line: &[u8], options: FormatOptions) -> Result<Vec<u8>> {
+    let trimmed = trim_record_line_end(line);
+    if trim_ascii_ws(trimmed).is_empty() {
+        return Ok(Vec::new());
+    }
+
+    match options.kind {
+        FormatKind::Auto => match record_format_kind(trimmed) {
+            Some(FormatKind::Json) => {
+                let mut output = Vec::with_capacity(record_display_output_capacity(trimmed.len()));
+                format_json_value_for_view(Cursor::new(trimmed), &mut output, options.indent)
+                    .context("failed to parse JSON record")?;
+                Ok(output)
+            }
+            _ => format_record_bytes(line, options),
+        },
+        FormatKind::Json | FormatKind::Jsonl => {
+            let mut output = Vec::with_capacity(record_display_output_capacity(trimmed.len()));
+            format_json_value_for_view(Cursor::new(trimmed), &mut output, options.indent)
+                .context("failed to parse JSON record")?;
+            Ok(output)
+        }
+        _ => format_record_bytes(line, options),
+    }
 }
 
 fn record_format_kind(line: &[u8]) -> Option<FormatKind> {

@@ -323,7 +323,7 @@ impl TimelineViewState {
         let mut parse_failures = 0_usize;
         let mut first_failure_offset = None;
         for record in records {
-            let bytes = match transform::format_record_bytes(&record.raw, self.options) {
+            let bytes = match transform::format_record_display_bytes(&record.raw, self.options) {
                 Ok(bytes) => bytes,
                 Err(_) => {
                     parse_failures = parse_failures.saturating_add(1);

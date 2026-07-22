@@ -130,7 +130,7 @@ impl RecoveringFormattedRecordReader {
             return Ok(None);
         };
 
-        let bytes = match transform::format_record_bytes(raw.bytes, self.options) {
+        let bytes = match transform::format_record_display_bytes(raw.bytes, self.options) {
             Ok(bytes) => bytes,
             Err(_) => {
                 return Ok(Some(RecoveringFormattedRecordBytes {
