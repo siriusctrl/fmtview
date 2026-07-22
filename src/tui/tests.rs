@@ -37,6 +37,10 @@ fn terminal_renderer_applies_plain_style_to_default_spans() {
     terminal.draw(frame(false, 0)).unwrap();
 
     let output = String::from_utf8(output.borrow().clone()).unwrap();
+    let begin = output.find("\x1b[?2026h").unwrap();
+    let content = output.find("plain text").unwrap();
+    let end = output.rfind("\x1b[?2026l").unwrap();
+    assert!(begin < content && content < end, "{output:?}");
     assert!(output.contains("\x1b[38;5;145mplain text"));
 }
 
