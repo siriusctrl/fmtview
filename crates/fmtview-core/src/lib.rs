@@ -22,7 +22,8 @@ pub use load::{
 pub use profile::TypeProfile;
 pub use timeline::{
     FileRecordTimeline, FileTimelineInstrumentation, RecordId, RecordLoadLimit, RecordTimeline,
-    TimelineRead, TimelineRecord, TimelineRefresh, TimelineResetReason, TimelineSnapshot,
+    TimelineRead, TimelineReadNext, TimelineRecord, TimelineRefresh, TimelineResetReason,
+    TimelineSnapshot,
 };
 pub use transform::{FormatKind, FormatOptions};
 pub use tui::screen::{RenderFrame, ScrollDirection, ScrollHint, ScrollPosition};

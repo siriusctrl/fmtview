@@ -28,8 +28,10 @@ for GitHub Release notes, so every published version must have a matching
   terminal, while the `fmtview` package keeps the same install and binary name.
 - Extend lazy record spooling, search, structure/chat/tool navigation, and
   viewport anchoring across tail-first older loads and live appends. Replacement
-  epochs use bounded ordered overlap reconciliation that preserves legitimate
-  duplicate records and prevents stale/new history interleaving.
+  epochs use a bounded committed-prefix probe plus exact record identities for
+  ordered overlap reconciliation, preserving legitimate duplicate records and
+  preventing stale/new history interleaving even when overlap spans lazy
+  reverse-load batches.
 
 ### Fixed
 
@@ -43,6 +45,9 @@ for GitHub Release notes, so every published version must have a matching
   in the initial or lazily loaded older follow window.
 - Require the release workflow to resolve an exact version tag and validate its
   changelog entry before any crates.io or npm publishing job can start.
+- Revalidate bounded pending tails before scanning appended bytes, so an
+  in-place delimiter rewrite followed by growth is not missed, and publish
+  newer-read cursor progress only after the complete batch succeeds.
 
 ## [0.5.4] - 2026-07-17
 

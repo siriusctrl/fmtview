@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 
+use crossterm::SynchronizedUpdate;
 use fmtview_core::{RenderFrame, ScrollPosition, render_frame_to_buffer};
 #[cfg(test)]
 use fmtview_core::{ScrollDirection, ScrollHint};
@@ -57,33 +58,33 @@ where
         let selection_mode = frame.selection_mode;
         let scroll_hint = frame.scroll_hint;
         render_frame_to_buffer(&mut current, frame);
-        match self.previous.take() {
-            Some(previous)
-                if previous.area == current.area
-                    && self.previous_sticky_rows == sticky_rows
-                    && self.previous_selection_mode == Some(selection_mode) =>
-            {
-                draw_buffer_delta(
-                    &mut self.backend,
-                    &previous,
-                    &current,
-                    scroll_hint,
-                    sticky_rows,
-                    &mut self.output,
-                )?;
-                self.scratch = Some(previous);
+        let previous = self.previous.take();
+        let draw_result = self.backend.sync_update(|backend| -> io::Result<()> {
+            match previous.as_ref() {
+                Some(previous)
+                    if previous.area == current.area
+                        && self.previous_sticky_rows == sticky_rows
+                        && self.previous_selection_mode == Some(selection_mode) =>
+                {
+                    draw_buffer_delta(
+                        backend,
+                        previous,
+                        &current,
+                        scroll_hint,
+                        sticky_rows,
+                        &mut self.output,
+                    )?;
+                }
+                _ => {
+                    backend.clear()?;
+                    let empty = Buffer::empty(current.area);
+                    draw_cells_with_buffer(backend, empty.diff(&current), &mut self.output)?;
+                }
             }
-            previous => {
-                self.backend.clear()?;
-                let empty = Buffer::empty(current.area);
-                draw_cells_with_buffer(&mut self.backend, empty.diff(&current), &mut self.output)?;
-                self.previous_position = None;
-                self.previous_selection_mode = None;
-                self.scratch = previous;
-            }
-        }
-        self.backend.hide_cursor()?;
-        Backend::flush(&mut self.backend)?;
+            backend.hide_cursor()
+        })?;
+        draw_result?;
+        self.scratch = previous;
         self.previous = Some(current);
         self.previous_position = Some(position);
         self.previous_sticky_rows = sticky_rows;
