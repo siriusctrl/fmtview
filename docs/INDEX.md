@@ -72,7 +72,8 @@ or navigation target should be displayed. Those decisions belong to core.
   redirected output, eager viewing, lazy record viewing, and diff input.
 - `load.rs` and `load/` own `ViewFile`, eager temp-file indexing, lazy record
   spooling, timeline raw/formatted spools, reset reconciliation, read windows,
-  progress, notices, and preload mechanics.
+  progress, notices, and preload mechanics. `load/delimited.rs` owns lazy CSV-
+  family logical-record positions and selected-record reads.
 - `timeline.rs` defines the public backend-neutral `RecordTimeline` contract,
   identities/snapshots/read/refresh outcomes, and the reverse-scanning growing
   file implementation.
@@ -82,6 +83,9 @@ or navigation target should be displayed. Those decisions belong to core.
   action types. The root package translates crossterm events into this vocabulary.
 - `viewer/file.rs` owns `FileViewer`: background search/structure work, lazy
   preload scheduling, viewer state transitions, frame rendering, and prewarming.
+- `viewer/delimited.rs` owns the CSV/TSV/XSV field/value explorer, contextual
+  field/value search, record navigation, and backend-neutral frames; its render
+  module owns the sidebar and complete highlighted value pane.
 - `viewer/file/` owns search, navigation, sticky breadcrumbs, conversation/tool
   context, Markdown checkpoints, viewport positioning, layout, gutters,
   highlighting, render caches, and tail clamping.

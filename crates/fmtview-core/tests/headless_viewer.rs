@@ -1,9 +1,9 @@
 use std::io::Write;
 
 use fmtview_core::{
-    ContentShape, DiffViewer, FileViewer, FormatKind, FormatOptions, InputEvent, InputSource,
-    KeyCode, KeyModifiers, LoadPlan, TypeProfile, diff_view, open_view_file,
-    render_frame_to_buffer,
+    ContentShape, DelimitedViewer, DiffViewer, FileViewer, FormatKind, FormatOptions, InputEvent,
+    InputSource, KeyCode, KeyModifiers, LoadPlan, TypeProfile, diff_view, open_delimited_dataset,
+    open_view_file, render_frame_to_buffer,
 };
 use ratatui::{
     buffer::Buffer,
@@ -356,6 +356,50 @@ fn diff_engine_renders_and_navigates_without_a_terminal() {
     assert!(!next.styled.is_empty());
 }
 
+#[test]
+fn delimited_engine_finds_fields_and_highlights_structured_values() {
+    let source = source(
+        "wide.csv",
+        concat!(
+            "id,status,payload,notes\n",
+            "1,ok,\"{\"\"role\"\":\"\"assistant\"\",\"\"items\"\":[1,true]}\",first\n",
+            "2,error,\"{\"\"role\"\":\"\"tool\"\",\"\"message\"\":\"\"failed\"\"}\",second\n",
+        ),
+    );
+    let dataset = open_delimited_dataset(source, FormatKind::Csv).unwrap();
+    let mut viewer = DelimitedViewer::new(dataset);
+    let size = Size::new(100, 18);
+
+    let first = viewer.render(size);
+    assert!(first.title.contains("CSV ,"), "{}", first.title);
+    assert!(buffer_text(first).contains("id"));
+
+    send_delimited_key(&mut viewer, size, KeyCode::Char('/'));
+    for ch in "payload".chars() {
+        send_delimited_key(&mut viewer, size, KeyCode::Char(ch));
+    }
+    send_delimited_key(&mut viewer, size, KeyCode::Enter);
+    let payload = viewer.render(size);
+    let text = buffer_text(payload);
+    assert!(text.contains("request_payload") || text.contains("payload"));
+    assert!(text.contains("\"role\": \"assistant\""), "{text}");
+
+    send_delimited_key(&mut viewer, size, KeyCode::Enter);
+    send_delimited_key(&mut viewer, size, KeyCode::Char('/'));
+    for ch in "assistant".chars() {
+        send_delimited_key(&mut viewer, size, KeyCode::Char(ch));
+    }
+    send_delimited_key(&mut viewer, size, KeyCode::Enter);
+    let searched = viewer.render(size);
+    assert!(searched.footer_text.contains("search: assistant"));
+
+    send_delimited_key(&mut viewer, size, KeyCode::Esc);
+    assert!(send_delimited_key(&mut viewer, size, KeyCode::Right).dirty);
+    let second = viewer.render(size);
+    assert_eq!(second.position.top, 1);
+    assert!(buffer_text(second).contains("\"role\": \"tool\""));
+}
+
 fn source(label: &str, text: &str) -> InputSource {
     let mut temp = NamedTempFile::new().unwrap();
     temp.write_all(text.as_bytes()).unwrap();
@@ -370,6 +414,20 @@ fn send_key(viewer: &mut FileViewer, size: Size, code: KeyCode) -> fmtview_core:
             modifiers: KeyModifiers::NONE,
         },
         FileViewer::page_for_size(size),
+    )
+}
+
+fn send_delimited_key(
+    viewer: &mut DelimitedViewer,
+    size: Size,
+    code: KeyCode,
+) -> fmtview_core::ViewerAction {
+    viewer.handle_event(
+        InputEvent::Key {
+            code,
+            modifiers: KeyModifiers::NONE,
+        },
+        DelimitedViewer::page_for_size(size),
     )
 }
 

@@ -45,6 +45,9 @@ pub fn open_view_file_with_fallback(
     allow_plain_fallback: bool,
 ) -> Result<OpenedViewFile> {
     match profile.load {
+        LoadPlan::LazyDelimitedRecords => {
+            anyhow::bail!("delimited inputs require the delimited viewer")
+        }
         LoadPlan::LazyTransformedRecords => Ok(OpenedViewFile {
             file: Box::new(LazyTransformedRecordsFile::new(input, *options)?),
             content: profile.content,
@@ -108,6 +111,9 @@ impl FormatKindLabel for FormatKind {
     fn label(self) -> &'static str {
         match self {
             FormatKind::Auto => "input",
+            FormatKind::Csv => "CSV",
+            FormatKind::Tsv => "TSV",
+            FormatKind::Xsv => "XSV",
             FormatKind::Json => "JSON",
             FormatKind::Jsonl => "JSONL",
             FormatKind::Xml => "XML",

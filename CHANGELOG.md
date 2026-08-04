@@ -8,6 +8,17 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-08-04
+
+### Added
+
+- Add a dedicated interactive explorer for CSV, TSV, and other delimiter-
+  separated files. It keeps a searchable field sidebar beside the complete
+  selected value, navigates records lazily, and reuses JSON/XML/scalar syntax
+  highlighting inside individual cells without changing redirected output.
+  Structured cells larger than 1 MiB stay in their complete raw layout to
+  avoid retaining another whole formatted copy.
+
 ## [0.6.2] - 2026-07-22
 
 ### Fixed

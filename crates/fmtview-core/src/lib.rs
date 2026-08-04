@@ -16,8 +16,8 @@ pub use diff::{DiffView, diff_sources, diff_view};
 pub use formats::ContentShape;
 pub use input::InputSource;
 pub use load::{
-    LoadPlan, OpenedViewFile, RecordTimelineViewFile, ViewFile, ViewFileChange,
-    open_follow_view_file, open_view_file, open_view_file_with_fallback,
+    DelimitedDataset, LoadPlan, OpenedViewFile, RecordTimelineViewFile, ViewFile, ViewFileChange,
+    open_delimited_dataset, open_follow_view_file, open_view_file, open_view_file_with_fallback,
 };
 pub use profile::TypeProfile;
 pub use timeline::{
@@ -28,8 +28,8 @@ pub use timeline::{
 pub use transform::{FormatKind, FormatOptions};
 pub use tui::screen::{RenderFrame, ScrollDirection, ScrollHint, ScrollPosition};
 pub use viewer::{
-    DiffViewer, FileViewer, InputEvent, KeyCode, KeyModifiers, MouseEventKind, ViewerAction,
-    ViewerCommand,
+    DelimitedViewer, DiffViewer, FileViewer, InputEvent, KeyCode, KeyModifiers, MouseEventKind,
+    ViewerAction, ViewerCommand,
 };
 
 /// Transform one source according to an already resolved profile.

@@ -4,7 +4,8 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use fmtview_core::{
     ContentShape, FormatKind, FormatOptions, TypeProfile, diff_sources, diff_view,
-    open_follow_view_file, open_view_file, open_view_file_with_fallback, transform_source_to_temp,
+    open_delimited_dataset, open_follow_view_file, open_view_file, open_view_file_with_fallback,
+    transform_source_to_temp,
 };
 
 use crate::{
@@ -17,7 +18,7 @@ use crate::{
 #[command(
     name = "fmtview",
     version,
-    about = "Fast formatter, diff tool, and terminal viewer for JSON, JSONL, XML, HTML, Markdown, TOML, plain text, and Jinja templates",
+    about = "Fast formatter, diff tool, and terminal viewer for CSV, TSV, XSV, JSON, JSONL, XML, HTML, Markdown, TOML, plain text, and Jinja templates",
     args_conflicts_with_subcommands = true,
     subcommand_precedence_over_arg = true
 )]
@@ -145,6 +146,11 @@ fn run_format(command: FormatCommand) -> Result<()> {
         return viewer::run(opened.file, opened.content, opened.notice);
     }
 
+    if profile.content_kind().is_delimited() && should_view() {
+        let dataset = open_delimited_dataset(input, profile.content_kind())?;
+        return viewer::run_delimited(dataset);
+    }
+
     if should_view() {
         let opened = if kind == FormatKind::Auto {
             open_view_file_with_fallback(&input, &resolved_options, profile, true)?
@@ -180,6 +186,9 @@ fn run_diff(command: DiffCommand) -> Result<()> {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum CliFormatKind {
     Auto,
+    Csv,
+    Tsv,
+    Xsv,
     Json,
     Jsonl,
     Xml,
@@ -194,6 +203,9 @@ impl From<CliFormatKind> for FormatKind {
     fn from(kind: CliFormatKind) -> Self {
         match kind {
             CliFormatKind::Auto => Self::Auto,
+            CliFormatKind::Csv => Self::Csv,
+            CliFormatKind::Tsv => Self::Tsv,
+            CliFormatKind::Xsv => Self::Xsv,
             CliFormatKind::Json => Self::Json,
             CliFormatKind::Jsonl => Self::Jsonl,
             CliFormatKind::Xml => Self::Xml,

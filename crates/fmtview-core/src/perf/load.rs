@@ -6,10 +6,14 @@ use std::{
 use tempfile::NamedTempFile;
 
 use crate::{
-    load::{IndexedTempFile, LazyTransformedRecordsFile, RecordTimelineViewFile, ViewFile},
+    InputSource,
+    load::{
+        IndexedTempFile, LazyTransformedRecordsFile, RecordTimelineViewFile, ViewFile,
+        open_delimited_dataset,
+    },
     timeline::{FileRecordTimeline, RecordLoadLimit},
     transform::{FormatKind, FormatOptions, format_source_to_temp},
-    viewer::FileViewer,
+    viewer::{DelimitedViewer, FileViewer, InputEvent, KeyCode, KeyModifiers},
 };
 use ratatui::layout::Size;
 
@@ -23,6 +27,12 @@ use super::{
 };
 
 pub(super) const CASES: &[BenchCase] = &[
+    BenchCase {
+        label: "wide delimited first-record open+render",
+        shape: "delimited-records/wide-row",
+        layer: "header+record-index+raw-cell-highlight+deep-viewport",
+        run: bench_wide_delimited_first_record,
+    },
     BenchCase {
         label: "raw indexed load",
         shape: "line-indexed",
@@ -108,6 +118,69 @@ pub(super) const CASES: &[BenchCase] = &[
         run: bench_xml_whole_document_index_readback,
     },
 ];
+
+fn bench_wide_delimited_first_record() -> BenchSample {
+    const FIELDS: usize = 20_000;
+    let mut temp = NamedTempFile::new().unwrap();
+    let headers = (1..FIELDS)
+        .map(|index| format!("field_{index}"))
+        .chain(std::iter::once("payload".to_owned()))
+        .collect::<Vec<_>>()
+        .join(",");
+    writeln!(temp, "{headers}").unwrap();
+    let payload = format!(r#"{{"message":"{}"}}"#, "long value ".repeat(200_000));
+    let escaped = payload.replace('"', "\"\"");
+    let values = std::iter::repeat_n("value".to_owned(), FIELDS - 1)
+        .chain(std::iter::once(format!("\"{escaped}\"")))
+        .collect::<Vec<_>>()
+        .join(",");
+    writeln!(temp, "{values}").unwrap();
+    temp.flush().unwrap();
+    let input_bytes = temp.as_file().metadata().unwrap().len() as usize;
+    let source = InputSource::from_temp(temp, "wide.csv");
+
+    let started = Instant::now();
+    let dataset = open_delimited_dataset(source, FormatKind::Csv).unwrap();
+    let mut viewer = DelimitedViewer::new(dataset);
+    let size = Size::new(120, 32);
+    viewer.handle_event(
+        InputEvent::Key {
+            code: KeyCode::End,
+            modifiers: KeyModifiers::NONE,
+        },
+        DelimitedViewer::page_for_size(size),
+    );
+    let _first = viewer.render(size);
+    viewer.handle_event(
+        InputEvent::Key {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+        },
+        DelimitedViewer::page_for_size(size),
+    );
+    viewer.handle_event(
+        InputEvent::Key {
+            code: KeyCode::End,
+            modifiers: KeyModifiers::NONE,
+        },
+        DelimitedViewer::page_for_size(size),
+    );
+    let frame = viewer.render(size);
+    let elapsed = started.elapsed();
+
+    assert!(frame.title.contains(&format!("field {FIELDS}/{FIELDS}")));
+    BenchSample {
+        elapsed,
+        records: 1,
+        items: FIELDS,
+        string_bytes: payload.len(),
+        lines: frame.styled.len(),
+        indexed_lines: 0,
+        window_lines: 0,
+        input_bytes,
+        output_bytes: 0,
+    }
+}
 fn bench_raw_indexed_load() -> BenchSample {
     let mut temp = NamedTempFile::new().unwrap();
     let line = format!("{}\n", "x".repeat(240));

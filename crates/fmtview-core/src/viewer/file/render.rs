@@ -19,6 +19,7 @@ pub(in crate::viewer) use layout::*;
 pub(in crate::viewer) use line::rendered_row_count;
 pub(in crate::viewer) use metrics::*;
 pub(in crate::viewer) use prewarm::*;
+pub(in crate::viewer) use search::*;
 pub(in crate::viewer) use tail::*;
 pub(in crate::viewer) use types::*;
 pub(in crate::viewer) use viewport::*;
@@ -27,5 +28,3 @@ pub(in crate::viewer) use viewport::*;
 pub(in crate::viewer) use crate::tui::wrap::*;
 #[cfg(test)]
 pub(in crate::viewer) use line::*;
-#[cfg(test)]
-pub(in crate::viewer) use search::*;
