@@ -1,3 +1,4 @@
+mod delimited;
 mod indexed;
 mod lazy;
 mod lazy_records;
@@ -9,6 +10,7 @@ pub(crate) mod record_stream;
 mod timeline;
 mod view_file;
 
+pub use delimited::{DelimitedDataset, open_delimited_dataset};
 pub use indexed::IndexedTempFile;
 pub use lazy_records::LazyTransformedRecordsFile;
 pub use open::{

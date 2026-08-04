@@ -252,6 +252,30 @@ fn unknown_extension_plain_text_is_passthrough() {
 }
 
 #[test]
+fn csv_redirect_preserves_exact_source_bytes() {
+    let input = "id,payload\r\n1,\"line one\nline two\"\r\n";
+    let mut file = TempFileBuilder::new().suffix(".csv").tempfile().unwrap();
+    file.write_all(input.as_bytes()).unwrap();
+
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.arg(file.path())
+        .assert()
+        .success()
+        .stdout(predicate::eq(input));
+}
+
+#[test]
+fn explicit_tsv_stdin_stays_scriptable() {
+    let input = "id\tpayload\n1\t{\"ok\":true}\n";
+    let mut cmd = Command::cargo_bin("fmtview").unwrap();
+    cmd.args(["--type", "tsv"])
+        .write_stdin(input)
+        .assert()
+        .success()
+        .stdout(predicate::eq(input));
+}
+
+#[test]
 fn auto_detects_toml_as_passthrough() {
     let mut input = TempFileBuilder::new().suffix(".toml").tempfile().unwrap();
     input

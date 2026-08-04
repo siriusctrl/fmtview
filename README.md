@@ -1,7 +1,8 @@
 # fmtview
 
-Fast CLI viewing, highlighting, search, and diffing for JSON, JSONL,
-XML-compatible markup, HTML, Markdown, TOML, plain text, and Jinja templates.
+Fast CLI viewing, highlighting, search, and diffing for CSV/TSV/XSV, JSON,
+JSONL, XML-compatible markup, HTML, Markdown, TOML, plain text, and Jinja
+templates.
 
 `fmtview` is built for the workflow where you want to inspect data quickly in a
 terminal: open large files without waiting for a full render, keep format
@@ -10,6 +11,7 @@ inputs without leaving the CLI.
 
 ```sh
 fmtview payload.json
+fmtview export.csv
 fmtview events.jsonl
 fmtview --follow events.jsonl
 fmtview response.xml
@@ -39,6 +41,8 @@ embedded markup, wrapped records, or formatted diffs.
 
 - View files in a terminal UI with line numbers, progress, and indent-aware
   soft wrap.
+- Explore delimiter-separated records with a searchable field sidebar and a
+  complete, wrapped value pane instead of squeezing wide records into a grid.
 - Highlight JSON, XML-compatible markup, HTML, embedded markup in JSON strings,
   Markdown, TOML, and Jinja templates.
 - Search the visible text without loading rendered output into memory.
@@ -202,6 +206,12 @@ formatting errors instead of silently changing output semantics.
 
 Known extensions still provide a fast, deterministic hint:
 
+- `.csv` -> comma-separated record explorer in a TTY, exact passthrough when
+  redirected.
+- `.tsv` and `.tab` -> tab-separated record explorer.
+- `.xsv`, `.psv`, and `.ssv` -> delimiter-separated explorer; `.psv` and
+  `.ssv` select pipe and semicolon directly, while `.xsv` sniffs comma, tab,
+  pipe, or semicolon from at most 24 records and 256 KiB per candidate.
 - `.json` -> JSON formatting.
 - `.jsonl` and `.ndjson` -> lazy JSONL record formatting.
 - `.xml` and `.xhtml` -> XML-compatible markup formatting.
@@ -237,6 +247,8 @@ Use `--type` when stdin or an unusual extension needs an explicit profile.
 
 Other types are intentionally passthrough:
 
+- CSV/TSV/XSV data keeps its exact source bytes on redirected stdout. In a TTY,
+  the first record supplies field names and later records are indexed lazily.
 - Markdown is indexed, wrapped, and highlighted, but not rendered to HTML or
   reformatted. Known fenced code blocks reuse the same highlighters as
   top-level files.
@@ -436,6 +448,36 @@ showcase with separated change blocks for trying the single-column/split layout
 toggle, next/previous change navigation, and line/inline diff shading.
 
 ## Viewer
+
+### Delimited record explorer
+
+CSV, TSV, and XSV files use a field/value explorer rather than the ordinary
+line viewer. The left sidebar keeps field names visible and `/` filters them as
+you type. The right pane shows the selected value completely with wrapping; it
+does not replace long content with an ellipsis. JSON and XML values reuse the
+matching formatter and highlighter, while scalar values use number, boolean,
+null, or string colors.
+
+```text
+Up/Down or j/k       previous/next field
+Left/Right or h/l    previous/next record
+/                    find a field
+Enter                focus the complete value
+Esc                  return from the value to fields; quit from fields
+```
+
+While the value is focused, `Up`/`Down`, `j`/`k`, `PageUp`/`PageDown`,
+`Home`, and `End` scroll it. `/` searches inside the value and `n`/`N` repeat
+the search. Record positions are indexed lazily, including quoted CSV fields
+that contain physical newlines. Redirected output remains the original file;
+the explorer is a TTY-only presentation.
+
+The CSV parser holds the selected logical record in memory so quoting and
+multiline fields remain correct. Embedded JSON/XML values up to 1 MiB are
+pretty-formatted for display. Larger structured values remain complete and
+syntax-highlighted in their original layout, avoiding an additional formatted
+copy; selecting an unusually large record still costs memory proportional to
+that raw record.
 
 The viewer is intentionally small and works with both keyboard and pointer
 input:
@@ -658,8 +700,9 @@ rendered output in memory for browsing.
   queued, so a burst of scroll events is not delayed by speculative work.
 - Highlighting and wrapping scan only the visible prefix of long lines.
 - Viewer search scans the indexed visible text in bounded chunks.
-- JSON, JSONL, XML-compatible markup, HTML, Markdown, TOML, plain text, and Jinja
-  templates are processed incrementally where their load strategy allows it.
+- CSV/TSV/XSV cell content and JSON, JSONL, XML-compatible markup, HTML,
+  Markdown, TOML, plain text, and Jinja templates are processed incrementally
+  where their load strategy allows it.
 - JSON numbers are written from their original tokens instead of being coerced
   through native integer or floating-point types.
 

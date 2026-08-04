@@ -63,6 +63,16 @@ FMTVIEW_EMULATOR_SCENARIO=conversation \
   target/debug/fmtview examples/conversation.jsonl
 ```
 
+For the wide delimited-record explorer, select the dedicated scenario. It
+records live field filtering, complete embedded JSON rendering, value focus and
+search, record navigation, and clean quit:
+
+```sh
+FMTVIEW_EMULATOR_SCENARIO=delimited \
+  scripts/record-emulator-demo.sh target/fmtview-emulator-recordings/delimited -- \
+  target/debug/fmtview examples/wide.csv
+```
+
 For release candidates, pass the release binary explicitly after building it:
 
 ```sh

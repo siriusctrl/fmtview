@@ -1,6 +1,6 @@
 [package]
 name = "fmtview-core"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2024"
 rust-version = "1.85"
 description = "Headless viewer engine for fmtview"
@@ -16,6 +16,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0.102"
+csv = "1.3.1"
 memchr = "2.8.0"
 quick-xml = "0.39.2"
 ratatui = { version = "0.30.0", default-features = false }

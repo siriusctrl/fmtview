@@ -1,7 +1,8 @@
 # fmtview
 
-Fast CLI viewing, highlighting, search, and diffing for JSON, JSONL,
-HTML, XML-compatible markup, Markdown, TOML, plain text, and Jinja templates.
+Fast CLI viewing, highlighting, search, and diffing for CSV/TSV/XSV, JSON,
+JSONL, HTML, XML-compatible markup, Markdown, TOML, plain text, and Jinja
+templates.
 
 This npm package installs the prebuilt static Linux x64 `fmtview` binary.
 
@@ -20,10 +21,12 @@ fmtview app.log
 `.jsonl`, `.html`, `.md`, `.toml`, `.txt`, and `.j2` are hints, and unknown
 extensions are sniffed from a bounded content prefix where possible.
 
-JSON, JSONL/NDJSON, XML-compatible markup, and HTML are formatted. Markdown,
-TOML, plain text, and Jinja templates are passthrough types: they are indexed
-and previewed without rewriting their content. Markdown fenced `json`, `toml`,
-`xml`/`html`, and `jinja` blocks reuse the matching viewer highlighter.
+CSV/TSV/XSV files open as a searchable field/value explorer in a TTY and keep
+exact source bytes when redirected. JSON, JSONL/NDJSON, XML-compatible markup,
+and HTML are formatted. Markdown, TOML, plain text, and Jinja templates are
+passthrough types: they are indexed and previewed without rewriting their
+content. Markdown fenced `json`, `toml`, `xml`/`html`, and `jinja` blocks reuse
+the matching viewer highlighter.
 
 The main product surface is the terminal viewer: fast lazy loading, useful
 highlighting, in-viewer search, and interactive diffs while redirected stdout

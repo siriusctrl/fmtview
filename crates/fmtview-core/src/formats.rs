@@ -1,4 +1,5 @@
 mod checkpoints;
+pub(crate) mod delimited;
 pub(crate) mod html;
 mod indent;
 pub(crate) mod jinja;
@@ -30,6 +31,9 @@ use crate::{
 };
 
 pub(crate) const FORMAT_SPECS: &[FormatSpec] = &[
+    delimited::CSV_SPEC,
+    delimited::TSV_SPEC,
+    delimited::XSV_SPEC,
     json::SPEC,
     jsonl::SPEC,
     xml::SPEC,
@@ -54,6 +58,8 @@ pub enum ContentShape {
     LineIndexed,
     /// Input is a sequence of independent newline-delimited records.
     RecordStream,
+    /// Input is a sequence of delimiter-aware records with named fields.
+    DelimitedRecords,
     /// Formatting requires document-level parser state.
     WholeDocument,
 }
@@ -90,6 +96,9 @@ pub(crate) fn highlight_content_window_indexed(
     let window_start = window_start.min(line.len());
     let window_end = window_end.min(line.len()).max(window_start);
     match format {
+        FormatKind::Csv | FormatKind::Tsv | FormatKind::Xsv => {
+            plain::highlight::highlight_plain_window(line, window_start, window_end)
+        }
         FormatKind::Json | FormatKind::Jsonl => {
             json::highlight::highlight_json_like_window(line, window_start, window_end, index)
         }
@@ -112,6 +121,33 @@ pub(crate) fn highlight_content_window_indexed(
             plain::highlight::highlight_plain_window(line, window_start, window_end)
         }
     }
+}
+
+pub(crate) fn highlight_large_content_window(
+    line: &str,
+    format: FormatKind,
+    window_start: usize,
+    window_end: usize,
+) -> Vec<Span<'static>> {
+    const CONTEXT_BYTES: usize = 4 * 1024;
+
+    let window_start = window_start.min(line.len());
+    let window_end = window_end.min(line.len()).max(window_start);
+    let mut context_start = window_start.saturating_sub(CONTEXT_BYTES);
+    while context_start > 0 && !line.is_char_boundary(context_start) {
+        context_start -= 1;
+    }
+    let mut context_end = window_end.saturating_add(CONTEXT_BYTES).min(line.len());
+    while context_end < line.len() && !line.is_char_boundary(context_end) {
+        context_end += 1;
+    }
+    let context = &line[context_start..context_end];
+    highlight_content_window(
+        context,
+        format,
+        window_start - context_start,
+        window_end - context_start,
+    )
 }
 
 pub(crate) fn highlight_structured_window(
@@ -160,6 +196,7 @@ pub(crate) fn structure_candidate_kind(
     previous_line: Option<&str>,
 ) -> Option<StructureCandidateKind> {
     match format {
+        FormatKind::Csv | FormatKind::Tsv | FormatKind::Xsv => None,
         FormatKind::Json | FormatKind::Jsonl => json::structure::candidate_kind(line),
         FormatKind::Xml | FormatKind::Html => xml::structure::is_start_tag(line.trim_start())
             .then_some(StructureCandidateKind::XmlStartTag),
@@ -185,6 +222,7 @@ pub(crate) fn structure_candidate_kind_in_window(
     offset: usize,
 ) -> Option<StructureCandidateKind> {
     match format {
+        FormatKind::Csv | FormatKind::Tsv | FormatKind::Xsv => None,
         FormatKind::Json | FormatKind::Jsonl => {
             json::structure::candidate_kind_in_window(lines, offset)
         }
@@ -210,6 +248,7 @@ pub(crate) fn structure_block_end(
     line_count_exact: bool,
 ) -> Option<usize> {
     match format {
+        FormatKind::Csv | FormatKind::Tsv | FormatKind::Xsv => None,
         FormatKind::Json | FormatKind::Jsonl => {
             json::structure::block_end(lines, read_start, start_offset, viewport_bottom)
         }
@@ -362,6 +401,15 @@ mod tests {
         let start = text.find("{{").unwrap();
         let spans = highlight_content_window(text, FormatKind::Jinja, start, text.len());
         assert_eq!(span_text(&spans), r#"{{ item.name }}</div>"#);
+    }
+
+    #[test]
+    fn large_highlight_preserves_only_the_requested_deep_window() {
+        let line = format!("[{}true]", "1234567890,".repeat(200_000));
+        let start = line.len() - 64;
+        let spans = highlight_large_content_window(&line, FormatKind::Json, start, line.len());
+
+        assert_eq!(span_text(&spans), &line[start..]);
     }
 
     fn span_text(spans: &[Span<'static>]) -> String {

@@ -1,6 +1,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormatKind {
     Auto,
+    Csv,
+    Tsv,
+    Xsv,
     Json,
     Jsonl,
     Xml,
@@ -9,6 +12,12 @@ pub enum FormatKind {
     Markdown,
     Plain,
     Jinja,
+}
+
+impl FormatKind {
+    pub const fn is_delimited(self) -> bool {
+        matches!(self, Self::Csv | Self::Tsv | Self::Xsv)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

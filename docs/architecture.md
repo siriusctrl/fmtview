@@ -100,6 +100,14 @@ unit of work that shared runtimes can rely on:
     in bounded record batches, and future ordered parallel transform can share
     the same runtime. JSONL and NDJSON use this shape today.
 
+  DelimitedRecords
+    Input is a delimiter-aware sequence whose logical records may span physical
+    lines. The explorer indexes record positions lazily, keeps header fields as
+    the navigation axis, and holds only the selected logical record for field
+    access. Embedded structured cells have a bounded 1 MiB pretty-format path;
+    larger values keep their complete raw layout and visible-window syntax
+    highlighting. CSV, TSV, and XSV use this shape today.
+
   WholeDocument
     Correct formatting depends on document-level parser state. The transformed
     document normally has to be produced before the viewer can index it. JSON,
@@ -115,6 +123,7 @@ behavior, temp-file indexing, highlight checkpoints, and viewer readback.
 
 | Type | Shape | Interactive view | Redirected output | Diff input | Format package |
 | --- | --- | --- | --- | --- | --- |
+| CSV/TSV/XSV | DelimitedRecords | Lazy record index with field sidebar and complete highlighted value pane | Exact passthrough | Passthrough | `formats/delimited` dialect rules plus shared embedded-value highlighters |
 | JSON | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed JSON | Pretty-printed JSON | `formats/json` |
 | JSONL/NDJSON | RecordStream | Lazy transformed records spooled and indexed on demand | Pretty-printed records | Pretty-printed records; TTY diff can open lazily | `formats/jsonl` profile plus JSON record behavior |
 | XML | WholeDocument | Eager transformed document indexed from a temp file | Pretty-printed XML-compatible markup | Pretty-printed XML-compatible markup | `formats/xml` |

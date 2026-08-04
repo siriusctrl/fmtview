@@ -5,14 +5,14 @@ resolver = "3"
 
 [package]
 name = "fmtview"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2024"
 rust-version = "1.85"
-description = "Fast CLI viewer for highlighting, search, and diffs across JSON, JSONL, HTML/XML, Markdown, TOML, text, and Jinja"
+description = "Fast CLI viewer for CSV, JSON, JSONL, HTML/XML, Markdown, TOML, text, and Jinja"
 license = "MIT"
 repository = "https://github.com/siriusctrl/fmtview"
 readme = "README.md"
-keywords = ["json", "jsonl", "markdown", "toml", "cli"]
+keywords = ["csv", "json", "jsonl", "viewer", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 exclude = [".github/", "npm/"]
 
@@ -20,7 +20,7 @@ exclude = [".github/", "npm/"]
 anyhow = "1.0.102"
 clap = { version = "4.6.1", features = ["derive"] }
 crossterm = "0.29.0"
-fmtview-core = { version = "0.6.2", path = "crates/fmtview-core" }
+fmtview-core = { version = "0.6.3", path = "crates/fmtview-core" }
 ratatui = { version = "0.30.0", default-features = false, features = ["crossterm"] }
 tempfile = "3.27.0"
 

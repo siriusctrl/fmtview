@@ -13,8 +13,8 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use fmtview_core::{
-    DiffView, DiffViewer, FileViewer, FormatKind, InputEvent, KeyCode, KeyModifiers,
-    MouseEventKind, ViewFile, ViewerAction,
+    DelimitedDataset, DelimitedViewer, DiffView, DiffViewer, FileViewer, FormatKind, InputEvent,
+    KeyCode, KeyModifiers, MouseEventKind, ViewFile, ViewerAction,
 };
 use ratatui::backend::CrosstermBackend;
 
@@ -33,6 +33,10 @@ pub(crate) fn run_diff(view: DiffView) -> Result<()> {
         let size = terminal.size().context("failed to read terminal size")?;
         run_diff_loop(terminal, DiffViewer::new(view, size)?)
     })
+}
+
+pub(crate) fn run_delimited(dataset: DelimitedDataset) -> Result<()> {
+    run_terminal(|terminal| run_delimited_loop(terminal, DelimitedViewer::new(dataset)))
 }
 
 fn run_file_loop(
@@ -108,6 +112,36 @@ fn run_diff_loop(
         if !dirty {
             dirty |= viewer.preload()?;
         }
+    }
+    Ok(())
+}
+
+fn run_delimited_loop(
+    terminal: &mut ViewerTerminal<CrosstermBackend<io::Stdout>>,
+    mut viewer: DelimitedViewer,
+) -> Result<()> {
+    let mut dirty = true;
+    loop {
+        if dirty {
+            let size = terminal.size().context("failed to read terminal size")?;
+            terminal
+                .draw(viewer.render(size))
+                .context("failed to draw delimited viewer frame")?;
+            dirty = false;
+        }
+
+        if !event::poll(EVENT_POLL_INTERVAL).context("failed to poll terminal event")? {
+            dirty |= viewer.preload()?;
+            continue;
+        }
+
+        let size = terminal.size().context("failed to read terminal size")?;
+        let page = DelimitedViewer::page_for_size(size);
+        let action = drain_events(|event| (viewer.handle_event(event, page), false))?;
+        if action.quit {
+            break;
+        }
+        dirty |= action.dirty;
     }
     Ok(())
 }

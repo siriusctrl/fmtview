@@ -43,6 +43,30 @@ fn resolves_plain_extension_to_passthrough_profile() {
 }
 
 #[test]
+fn resolves_delimited_extensions_to_lazy_table_profiles() {
+    for (suffix, expected) in [
+        (".csv", FormatKind::Csv),
+        (".tsv", FormatKind::Tsv),
+        (".xsv", FormatKind::Xsv),
+    ] {
+        let (_temp, source) = source_with_suffix(b"id,payload\n1,hello\n", suffix);
+        let profile = TypeProfile::resolve(
+            &source,
+            &FormatOptions {
+                kind: FormatKind::Auto,
+                indent: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.content, expected);
+        assert_eq!(profile.shape, ContentShape::DelimitedRecords);
+        assert_eq!(profile.load, LoadPlan::LazyDelimitedRecords);
+        assert_eq!(profile.transform, TransformStrategy::Passthrough);
+    }
+}
+
+#[test]
 fn resolves_jinja_extension_to_template_profile() {
     let (_temp, source) = source_with_suffix(b"<h1>{{ title }}</h1>\n", ".html.j2");
     let profile = TypeProfile::resolve(
@@ -137,6 +161,12 @@ fn explicit_format_kinds_choose_profile_without_sniffing() {
     let (_temp, source) = source(b"{\"broken\":\n");
 
     let cases = [
+        (
+            FormatKind::Csv,
+            ContentShape::DelimitedRecords,
+            LoadPlan::LazyDelimitedRecords,
+            TransformStrategy::Passthrough,
+        ),
         (
             FormatKind::Jsonl,
             ContentShape::RecordStream,

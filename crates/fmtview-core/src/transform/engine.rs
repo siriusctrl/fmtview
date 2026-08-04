@@ -119,9 +119,13 @@ fn try_format_source_to_writer<W: Write>(
             options.indent,
         )
         .with_context(|| format!("failed to format {} as HTML", source.label()))?,
-        FormatKind::Toml | FormatKind::Markdown | FormatKind::Plain | FormatKind::Jinja => {
-            passthrough_source_to_writer(source, output)?
-        }
+        FormatKind::Csv
+        | FormatKind::Tsv
+        | FormatKind::Xsv
+        | FormatKind::Toml
+        | FormatKind::Markdown
+        | FormatKind::Plain
+        | FormatKind::Jinja => passthrough_source_to_writer(source, output)?,
     }
     Ok(())
 }
@@ -153,9 +157,13 @@ pub fn format_record_to_bytes(input: &[u8], kind: FormatKind, indent: usize) -> 
                 output.pop();
             }
         }
-        FormatKind::Toml | FormatKind::Markdown | FormatKind::Plain | FormatKind::Jinja => {
-            output.extend_from_slice(input)
-        }
+        FormatKind::Csv
+        | FormatKind::Tsv
+        | FormatKind::Xsv
+        | FormatKind::Toml
+        | FormatKind::Markdown
+        | FormatKind::Plain
+        | FormatKind::Jinja => output.extend_from_slice(input),
     }
     Ok(output)
 }
@@ -219,7 +227,13 @@ pub(crate) fn format_record_bytes(line: &[u8], options: FormatOptions) -> Result
             FormatKind::Html,
             options.indent,
         )?),
-        FormatKind::Toml | FormatKind::Markdown | FormatKind::Plain | FormatKind::Jinja => None,
+        FormatKind::Csv
+        | FormatKind::Tsv
+        | FormatKind::Xsv
+        | FormatKind::Toml
+        | FormatKind::Markdown
+        | FormatKind::Plain
+        | FormatKind::Jinja => None,
     };
 
     Ok(formatted.unwrap_or_else(|| trimmed.to_vec()))

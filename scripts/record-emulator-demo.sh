@@ -29,6 +29,9 @@ command to record append, detach, reattach, and pause/resume actions.
 
 Set FMTVIEW_EMULATOR_SCENARIO=conversation to record nested tool-pair
 navigation, structured/raw record toggles, media collapse, search, and wrap.
+
+Set FMTVIEW_EMULATOR_SCENARIO=delimited to record field filtering, embedded
+value highlighting, value search, and record navigation for examples/wide.csv.
 EOF
 }
 
@@ -258,6 +261,29 @@ if [[ -n "$follow_file" ]]; then
   append_follow_record "append_while_paused" 900004
   sleep 0.8
   send_key "resume_follow" "f"
+  sleep 0.8
+elif [[ "$scenario" == "delimited" ]]; then
+  send_key "field_search_open" "slash"
+  sleep 0.2
+  send_type "field_search_query" "request_payload"
+  sleep 0.4
+  send_key "field_search_accept" "Return"
+  sleep 0.8
+  send_key "focus_value" "Return"
+  sleep 0.7
+  send_key "value_search_open" "slash"
+  sleep 0.2
+  send_type "value_search_query" "content"
+  sleep 0.2
+  send_key "value_search_accept" "Return"
+  sleep 0.8
+  send_key "value_page_down" "Page_Down"
+  sleep 0.7
+  send_key "return_to_fields" "Escape"
+  sleep 0.5
+  send_key "next_record" "Right"
+  sleep 0.8
+  send_key "focus_next_value" "Return"
   sleep 0.8
 elif [[ "$scenario" == "conversation" ]]; then
   send_key "tool_search_open" "slash"

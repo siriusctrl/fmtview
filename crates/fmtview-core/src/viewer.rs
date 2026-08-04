@@ -1,7 +1,9 @@
+mod delimited;
 mod diff;
 mod file;
 mod input;
 
+pub use delimited::DelimitedViewer;
 pub use diff::DiffViewer;
 pub use file::FileViewer;
 pub use input::{InputEvent, KeyCode, KeyModifiers, MouseEventKind, ViewerAction, ViewerCommand};
