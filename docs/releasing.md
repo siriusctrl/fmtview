@@ -123,6 +123,11 @@ tagged release path, not a way to publish from a branch or arbitrary commit.
 If the crates.io or npm secret is missing, the workflow still builds the GitHub
 Release artifact and skips that registry publish step.
 
+To pause npm releases while renewing credentials, set the repository Actions
+variable `NPM_PUBLISH_ENABLED` to `false`. This skips the npm job while GitHub
+Release and crates.io continue. Remove the variable or set it to `true` after
+restoring npm authentication; rerun the existing tag to publish a skipped version.
+
 Initial target:
 
 - `x86_64-unknown-linux-musl`

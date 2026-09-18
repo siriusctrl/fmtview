@@ -24,6 +24,10 @@ for GitHub Release notes, so every published version must have a matching
 - Retain source coordinates for whole-document JSON/XML/HTML with an extra
   buffered alignment pass and a numeric line map, keeping formatted text on
   disk instead of retaining the document in memory.
+- Allow maintainers to pause npm publishing independently through the
+  `NPM_PUBLISH_ENABLED` repository variable. The 0.6.4 release is available on
+  GitHub Releases and crates.io; npm publishing is paused pending credential
+  renewal.
 
 ## [0.6.3] - 2026-08-04
 
