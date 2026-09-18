@@ -8,6 +8,23 @@ for GitHub Release notes, so every published version must have a matching
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-09-18
+
+### Changed
+
+- Show original input line numbers in the file viewer, title ranges, raw-record
+  snapshots, and tool-pair hints. Expanded formatted lines share the source
+  number with continuation markers. Numeric jumps now target source lines and
+  load lazy JSONL records in cancellable batches.
+- Tail-first timelines show `?` while the source prefix is unknown, then resolve
+  original line numbers once older history reaches the beginning. Numeric jumps
+  can load that history on demand; retained records keep their original
+  coordinates after rotation, and jumps address the replacement file.
+  A deduplicated overlapping prefix uses the replacement's coordinates.
+- Retain source coordinates for whole-document JSON/XML/HTML with an extra
+  buffered alignment pass and a numeric line map, keeping formatted text on
+  disk instead of retaining the document in memory.
+
 ## [0.6.3] - 2026-08-04
 
 ### Added

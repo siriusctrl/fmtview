@@ -61,6 +61,18 @@ impl ViewFile for LazyTransformedRecordsFile {
         self.inner.line_count_exact()
     }
 
+    fn source_line(&self, line: usize) -> Option<usize> {
+        self.inner.source_line(line)
+    }
+
+    fn source_line_count(&self) -> Option<usize> {
+        self.inner.source_line_count()
+    }
+
+    fn display_line_for_source(&self, requested: usize) -> Option<usize> {
+        self.inner.display_line_for_source(requested)
+    }
+
     fn byte_len(&self) -> u64 {
         self.inner.byte_len()
     }

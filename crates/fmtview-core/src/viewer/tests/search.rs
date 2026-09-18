@@ -341,6 +341,7 @@ fn wrapped_search_jumps_to_visual_row_containing_match() {
         request,
         &mut cache,
         ViewportRenderOptions {
+            source_file: None,
             line_modes: None,
             chat_role_marks: None,
             tool_relation_marks: None,
@@ -699,6 +700,7 @@ fn active_search_match_keeps_stronger_background() {
         request,
         &mut cache,
         ViewportRenderOptions {
+            source_file: None,
             line_modes: None,
             chat_role_marks: None,
             tool_relation_marks: None,

@@ -165,7 +165,7 @@ fn tool_result_footer_shows_pair_context_and_jump_hint() {
 
     use crate::formats::json::tool_links::{ToolLink, ToolLinkStatus};
 
-    let file = indexed_lines(&["tool result"]);
+    let file = indexed_lines(&["tool result"; 13]);
     let mut state = ViewState {
         follow: Some(FollowState::Paused),
         ..ViewState::default()

@@ -522,10 +522,12 @@ fn bench_json_whole_document_eager_view_open() -> BenchSample {
         indent: 2,
     };
 
+    let profile = crate::TypeProfile::resolve(&source, &options).unwrap();
     let started = Instant::now();
-    let formatted = format_source_to_temp(&source, &options).unwrap();
-    let output_bytes = formatted.as_file().metadata().unwrap().len() as usize;
-    let indexed = IndexedTempFile::new(source.label().to_owned(), formatted).unwrap();
+    let indexed = crate::load::open_view_file(&source, &options, profile)
+        .unwrap()
+        .file;
+    let output_bytes = indexed.byte_len() as usize;
     let window = indexed.read_window(120_000, 120).unwrap();
     let elapsed = started.elapsed();
 
@@ -578,10 +580,12 @@ fn bench_xml_whole_document_eager_view_open() -> BenchSample {
         indent: 2,
     };
 
+    let profile = crate::TypeProfile::resolve(&source, &options).unwrap();
     let started = Instant::now();
-    let formatted = format_source_to_temp(&source, &options).unwrap();
-    let output_bytes = formatted.as_file().metadata().unwrap().len() as usize;
-    let indexed = IndexedTempFile::new(source.label().to_owned(), formatted).unwrap();
+    let indexed = crate::load::open_view_file(&source, &options, profile)
+        .unwrap()
+        .file;
+    let output_bytes = indexed.byte_len() as usize;
     let window = indexed.read_window(120_000, 120).unwrap();
     let elapsed = started.elapsed();
 

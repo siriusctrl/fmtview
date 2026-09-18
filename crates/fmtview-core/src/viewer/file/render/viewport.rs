@@ -11,8 +11,9 @@ use crate::{
     viewer::file::input::SearchTarget,
 };
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy, Default)]
 pub(in crate::viewer) struct ViewportRenderOptions<'a> {
+    pub(in crate::viewer) source_file: Option<&'a dyn crate::load::ViewFile>,
     pub(in crate::viewer) line_modes: Option<&'a [FormatKind]>,
     pub(in crate::viewer) chat_role_marks: Option<&'a [ChatRoleMark]>,
     pub(in crate::viewer) tool_relation_marks: Option<&'a [ToolLineMark]>,
@@ -87,6 +88,7 @@ pub(in crate::viewer) fn render_viewport(
                         chat_role,
                         &tool_relation,
                         request.context,
+                        source_coordinate(options, first_line_number, first_line_number),
                     ),
                     options.search_query,
                     request.context,
@@ -107,6 +109,7 @@ pub(in crate::viewer) fn render_viewport(
                     chat_role,
                     &tool_relation,
                     request.context,
+                    source_coordinate(options, first_line_number, first_line_number),
                 ));
             }
         }
@@ -163,6 +166,7 @@ pub(in crate::viewer) fn render_viewport(
                         chat_role,
                         &tool_relation,
                         request.context,
+                        source_coordinate(options, line_number, first_line_number),
                     ),
                     options.search_query,
                     request.context,
@@ -183,6 +187,7 @@ pub(in crate::viewer) fn render_viewport(
                     chat_role,
                     &tool_relation,
                     request.context,
+                    source_coordinate(options, line_number, first_line_number),
                 ));
             }
         }
@@ -232,11 +237,19 @@ fn apply_conversation_gutter(
     mark: ChatRoleMark,
     tool: &ToolLineMark,
     context: RenderContext,
+    source: Option<(Option<usize>, bool)>,
 ) -> ratatui::text::Line<'static> {
     if row_index == 0 && !line.spans.is_empty() {
-        line.spans[0] = context
-            .gutter
-            .line_number_with_tool_direction(line_number, tool.relation);
+        line.spans[0] = match source {
+            Some((number, continued)) => {
+                context
+                    .gutter
+                    .source_line_number(number, continued, tool.relation)
+            }
+            None => context
+                .gutter
+                .line_number_with_tool_direction(line_number, tool.relation),
+        };
     }
     if context.gutter.chat_role_enabled() && line.spans.len() >= 3 {
         let [label, guide] =
@@ -247,6 +260,19 @@ fn apply_conversation_gutter(
         line.spans[2] = guide;
     }
     line
+}
+
+fn source_coordinate(
+    options: ViewportRenderOptions<'_>,
+    line_number: usize,
+    first_line_number: usize,
+) -> Option<(Option<usize>, bool)> {
+    let file = options.source_file?;
+    let number = file.source_line(line_number - 1);
+    let continued = line_number > first_line_number
+        && number.is_some()
+        && file.source_line(line_number - 2) == number;
+    Some((number, continued))
 }
 
 fn line_request(request: RenderRequest, mode: Option<FormatKind>) -> RenderRequest {

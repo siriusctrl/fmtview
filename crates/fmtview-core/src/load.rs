@@ -7,6 +7,7 @@ mod open;
 mod plan;
 mod raw_record;
 pub(crate) mod record_stream;
+mod source_lines;
 mod timeline;
 mod view_file;
 
