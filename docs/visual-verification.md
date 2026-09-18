@@ -73,6 +73,11 @@ FMTVIEW_EMULATOR_SCENARIO=delimited \
   target/debug/fmtview examples/wide.csv
 ```
 
+For original-line numbering, use `FMTVIEW_EMULATOR_SCENARIO=source-lines` with
+a disposable JSONL fixture containing at least 100 records. This records jumps
+to source lines 2 and 100, the raw/structured toggle, scrolling within an
+expanded record, and wrap mode. Inspect both gutter and title coordinates.
+
 For release candidates, pass the release binary explicitly after building it:
 
 ```sh

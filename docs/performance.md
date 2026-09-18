@@ -156,7 +156,8 @@ Load metrics:
   source refresh through transform/spool work to the next backend-neutral
   frame.
 - `json whole-document eager view open` and `xml whole-document eager view open`
-  measure complete document transform, temp-file line indexing, and first-window
+  measure complete document transform, temp-file line indexing, source-line
+  alignment, and first-window
   readback together. Shape: `whole-document`.
 - `json whole-document index+readback` and `xml whole-document index+readback`
   measure the post-transform viewer-open cost for already formatted document

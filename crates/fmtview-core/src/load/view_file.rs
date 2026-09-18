@@ -22,6 +22,39 @@ pub trait ViewFile {
     fn line_count_exact(&self) -> bool {
         true
     }
+    /// Original one-based input line for a zero-based display line. Tail-first
+    /// sources may not know this until their older boundary is discovered.
+    fn source_line(&self, line: usize) -> Option<usize> {
+        (line < self.line_count()).then_some(line.saturating_add(1))
+    }
+    /// Known original line count, or None while the source prefix is unknown.
+    fn source_line_count(&self) -> Option<usize> {
+        Some(self.line_count())
+    }
+    /// Locate the first display line at or after an original input line.
+    /// None means that more input must be loaded before the jump can resolve.
+    fn display_line_for_source(&self, requested: usize) -> Option<usize> {
+        let count = self.line_count();
+        if count == 0 {
+            return self.line_count_exact().then_some(0);
+        }
+        let last = self.source_line(count - 1)?;
+        if requested > last && !self.at_newer_boundary() {
+            return None;
+        }
+        let requested = requested.max(1).min(last);
+        let mut lo = 0;
+        let mut hi = count;
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if self.source_line(mid)? < requested {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        Some(lo.min(count - 1))
+    }
     fn byte_len(&self) -> u64;
     fn byte_offset_for_line(&self, line: usize) -> u64;
     fn read_window(&self, start: usize, count: usize) -> Result<Vec<String>>;

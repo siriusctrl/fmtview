@@ -100,6 +100,7 @@ fn markdown_viewport_reuses_inner_code_highlighter() {
         request,
         &mut cache,
         ViewportRenderOptions {
+            source_file: None,
             line_modes: Some(&line_modes),
             chat_role_marks: None,
             tool_relation_marks: None,
@@ -370,6 +371,7 @@ fn markdown_json_code_does_not_enable_chat_role_gutter() {
         request,
         &mut cache,
         ViewportRenderOptions {
+            source_file: None,
             line_modes: Some(&line_modes),
             chat_role_marks: None,
             tool_relation_marks: None,

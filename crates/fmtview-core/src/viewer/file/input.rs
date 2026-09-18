@@ -6,6 +6,7 @@ mod search;
 mod state;
 
 pub(in crate::viewer) use events::handle_event_with_count;
+pub(in crate::viewer) use jump::{handle_source_jump, resolve_source_jump};
 pub(in crate::viewer) use scroll::{reset_top_row_offset, set_file_end};
 pub(in crate::viewer) use search::{
     SearchDirection, SearchTarget, process_search_index_step, process_search_step,

@@ -14,11 +14,11 @@ pub(in crate::viewer) fn file_title_text(
     progress: usize,
 ) -> String {
     format!(
-        " {} | {} lines | {}-{} | {:>3}% | {} ",
+        " {} | {} source lines | {}-{} | {:>3}% | {} ",
         file.label(),
         line_count_text(file),
-        current,
-        bottom,
+        source_number_text(file, current),
+        source_number_text(file, bottom),
         progress,
         display_mode_text(state)
     )
@@ -31,9 +31,11 @@ pub(in crate::viewer) fn file_footer_text(file: &dyn ViewFile, state: &ViewState
             " {follow}search: {} | Enter find | Backspace edit | Esc cancel ",
             state.search_buffer
         )
+    } else if let Some(requested) = state.source_jump {
+        format!(" {follow}finding source line {requested} | Esc cancel ")
     } else if !state.jump_buffer.is_empty() {
         format!(
-            " {follow}go to line: {} / {} | Enter jump | Backspace edit | Esc cancel ",
+            " {follow}go to source line: {} / {} | Enter jump | Backspace edit | Esc cancel ",
             state.jump_buffer,
             line_count_text(file)
         )
@@ -45,7 +47,7 @@ pub(in crate::viewer) fn file_footer_text(file: &dyn ViewFile, state: &ViewState
             search_count_suffix(state)
         )
     } else if state.tool_context.is_some() {
-        tool_context_footer_text(state)
+        tool_context_footer_text(file, state)
     } else {
         idle_footer_text(state)
     }
@@ -115,7 +117,7 @@ fn follow_status(state: &ViewState) -> &'static str {
     }
 }
 
-fn tool_context_footer_text(state: &ViewState) -> String {
+fn tool_context_footer_text(file: &dyn ViewFile, state: &ViewState) -> String {
     let Some(link) = state.tool_context.as_ref() else {
         return idle_footer_text(state);
     };
@@ -126,12 +128,12 @@ fn tool_context_footer_text(state: &ViewState) -> String {
             if at_call {
                 format!(
                     " tool call ↓ result line {} | id: {id} | t jump | ]/[ structure ",
-                    link.result_line.saturating_add(1)
+                    source_number_text(file, link.result_line.saturating_add(1))
                 )
             } else {
                 format!(
                     " tool result ↑ call line {} | id: {id} | t jump | ]/[ structure ",
-                    call_line.saturating_add(1)
+                    source_number_text(file, call_line.saturating_add(1))
                 )
             }
         }
@@ -207,7 +209,9 @@ pub(in crate::viewer) fn display_mode_text(state: &ViewState) -> String {
 }
 
 pub(in crate::viewer) fn line_count_text(file: &dyn ViewFile) -> String {
-    let count = file.line_count();
+    let Some(count) = file.source_line_count() else {
+        return "?".to_owned();
+    };
     if file.line_count_exact() {
         count.to_string()
     } else {
@@ -216,13 +220,30 @@ pub(in crate::viewer) fn line_count_text(file: &dyn ViewFile) -> String {
 }
 
 pub(in crate::viewer) fn gutter_digits(file: &dyn ViewFile, selection_mode: bool) -> usize {
+    let mut count = file
+        .source_line_count()
+        .unwrap_or(0)
+        .max(file.source_line(0).unwrap_or(0));
+    if file.starts_at_tail() {
+        // Retained epochs may contain larger source numbers than a newly
+        // rotated file. Their fully resolved prefix fits within this index.
+        count = count.max(file.line_count());
+    }
     if selection_mode {
         0
     } else if file.line_count_exact() {
-        line_number_digits(file.line_count())
+        line_number_digits(count)
     } else {
-        line_number_digits(file.line_count()).max(4)
+        line_number_digits(count).max(4)
     }
+}
+
+fn source_number_text(file: &dyn ViewFile, display_line: usize) -> String {
+    if display_line == 0 {
+        return "0".to_owned();
+    }
+    file.source_line(display_line - 1)
+        .map_or_else(|| "?".to_owned(), |n| n.to_string())
 }
 
 fn wrap_position_text(state: &ViewState) -> Option<String> {

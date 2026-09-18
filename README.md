@@ -517,14 +517,17 @@ h/l         horizontal scroll in nowrap mode
 Left/Right  horizontal scroll in nowrap mode
 ```
 
-The title bar shows the source label, total line count, visible line range,
+The title bar shows the source label, original input line count, visible source line range,
 scroll percentage, and whether wrapping is enabled. In wrap mode, the percentage
 tracks the visible byte position so it can advance inside a very long logical
 line without scanning the whole file. When the viewport starts inside one
 wrapped logical line, the title/footer also show a `+N rows` offset so repetitive
-content still gives visible scrolling feedback. The left gutter shows line
-numbers, and wrapped continuation rows use a lighter continuation gutter with
-periodic tick marks.
+content still gives visible scrolling feedback. The left gutter shows
+original input line numbers. Formatting can expand one input line into many
+display lines: the first shows its source number and later lines use a lighter
+continuation gutter. The first visible logical line repeats its source number
+when scrolling into an expanded record. Wrapped continuation rows also use this
+gutter with periodic tick marks.
 
 For JSON-like transformed output, the viewer keeps a small key breadcrumb pinned
 above the scrollable body, such as `payload › items › name`. Long paths wrap to
@@ -541,6 +544,12 @@ Redirected output still performs the full deterministic formatting pass.
 With `--follow`, this same indexed spool starts from the committed tail, loads
 older records backward when needed, and extends forward after source refreshes.
 The footer shows `follow:on`, `follow:detached`, or `follow:off`.
+Tail-first views show `?` for unknown source line numbers until older history
+reaches the beginning, preserving bounded startup work. A numeric jump loads
+that history in cancellable batches to resolve the original line. After file
+rotation, retained history keeps its previous coordinates and numeric jumps
+refer to the replacement file. A shared suffix reused as the replacement's
+prefix takes the replacement's source coordinates.
 
 Press `r` on a JSONL/NDJSON record to open a bounded raw snapshot backed by its
 exact immutable raw-spool range. An active search match selects its containing
@@ -554,12 +563,14 @@ artificial chunk boundary is not matched. Invalid UTF-8 is displayed lossily;
 the exact bytes remain in the source/spool and are never reconstructed from
 pretty output. Press `q` (or an idle `Esc`) to quit from either view.
 
-To jump to a specific line, type the line number directly and press Enter. While
+To jump to a specific original input line, type its number and press Enter. While
 a line jump is pending, the footer shows the target line; Backspace edits it and
 Esc cancels it. Out-of-range line numbers are clamped to the file. On fully
-indexed files, jumps seek through the formatted line-offset index instead of
-scanning from the top, so jumping to a deep line only reads the target window.
-On lazy record previews, jumps are bounded by the currently discovered session
+indexed files, source coordinates locate the first corresponding formatted line
+and then seek through the display index. If formatting removed a blank input
+line, the jump selects the next surviving source line. JSONL jumps load records
+in bounded batches as needed; press Esc to cancel a pending jump.
+On lazy record previews, source counts grow with the currently discovered session
 index while background preloading continues to extend it.
 
 To jump between structures, press `]` or `[`. The viewer treats this as a
@@ -664,6 +675,9 @@ rendered output in memory for browsing.
 - A compact byte-offset index is built for transformed or passthrough lines.
   The viewer uses that index to seek directly to the current window, which
   keeps paging and line jumps from rereading earlier content.
+- Whole-document JSON/XML/HTML viewing also makes a buffered alignment pass
+  over the original and formatted files to retain source line coordinates.
+  Only numeric line mappings are retained; formatted text stays on disk.
 - Record-like TTY previews, such as JSONL logs, use a lazy path: `fmtview`
   sniffs a small prefix to confirm that the input is independent records, then
   formats only the records needed for the visible window.

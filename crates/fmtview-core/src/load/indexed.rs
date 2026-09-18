@@ -8,6 +8,7 @@ use tempfile::NamedTempFile;
 
 use super::{
     lines::{index_lines, strip_line_end},
+    source_lines::SourceLines,
     view_file::ViewFile,
 };
 
@@ -16,6 +17,7 @@ pub struct IndexedTempFile {
     temp: NamedTempFile,
     offsets: Vec<u64>,
     len: u64,
+    source_lines: Option<SourceLines>,
 }
 
 impl IndexedTempFile {
@@ -31,7 +33,16 @@ impl IndexedTempFile {
             temp,
             offsets,
             len,
+            source_lines: None,
         })
+    }
+
+    pub(super) fn with_source_lines(mut self, source: impl BufRead) -> Result<Self> {
+        self.source_lines = Some(SourceLines::build(
+            source,
+            BufReader::with_capacity(64 * 1024, self.temp.reopen()?),
+        )?);
+        Ok(self)
     }
 }
 
@@ -46,6 +57,21 @@ impl ViewFile for IndexedTempFile {
 
     fn byte_len(&self) -> u64 {
         self.len
+    }
+
+    fn source_line(&self, line: usize) -> Option<usize> {
+        match &self.source_lines {
+            Some(source) => source.lines.get(line).copied(),
+            None => (line < self.offsets.len()).then_some(line.saturating_add(1)),
+        }
+    }
+
+    fn source_line_count(&self) -> Option<usize> {
+        Some(
+            self.source_lines
+                .as_ref()
+                .map_or(self.offsets.len(), |source| source.count),
+        )
     }
 
     fn byte_offset_for_line(&self, line: usize) -> u64 {

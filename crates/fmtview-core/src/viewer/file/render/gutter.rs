@@ -78,7 +78,6 @@ impl GutterLayout {
         if self.line_digits == 0 {
             return Span::raw("");
         }
-
         let marker = match relation {
             ToolRelationMark::MatchedCall => '↓',
             ToolRelationMark::MatchedResult => '↑',
@@ -86,6 +85,32 @@ impl GutterLayout {
         };
         Span::styled(
             format!("{line_number:>width$} {marker} ", width = self.line_digits),
+            gutter_style(),
+        )
+    }
+
+    pub(in crate::viewer) fn source_line_number(
+        self,
+        number: Option<usize>,
+        continued: bool,
+        relation: ToolRelationMark,
+    ) -> Span<'static> {
+        if let Some(number) = number.filter(|_| !continued) {
+            return self.line_number_with_tool_direction(number, relation);
+        }
+        if self.line_digits == 0 {
+            return Span::raw("");
+        }
+
+        let marker = match relation {
+            ToolRelationMark::MatchedCall => '↓',
+            ToolRelationMark::MatchedResult => '↑',
+            ToolRelationMark::None if continued => '┆',
+            ToolRelationMark::None => '│',
+        };
+        let number = if continued { "" } else { "?" };
+        Span::styled(
+            format!("{number:>width$} {marker} ", width = self.line_digits),
             gutter_style(),
         )
     }

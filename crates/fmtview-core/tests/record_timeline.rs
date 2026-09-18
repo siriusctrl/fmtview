@@ -24,6 +24,83 @@ const JSONL: FormatOptions = FormatOptions {
 };
 
 #[test]
+fn source_lines_resolve_after_loading_history_and_survive_append_and_rotation() {
+    let (handle, timeline) = fake_timeline((0..6).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(2, 4096),
+    )
+    .unwrap();
+    assert_eq!(file.source_line(0), None);
+    assert_eq!(file.source_line_count(), None);
+    assert_eq!(file.display_line_for_source(2), None);
+    while file.has_older_records() {
+        file.load_older_records(2, 4096).unwrap();
+    }
+    assert_eq!(file.source_line_count(), Some(6));
+    assert_eq!(file.source_line(find_line(&file, "record-4")), Some(5));
+    handle.append(record(6));
+    file.refresh_records(2, 4096).unwrap();
+    assert_eq!(file.source_line(find_line(&file, "record-6")), Some(7));
+    assert_eq!(file.source_line_count(), Some(7));
+
+    // The replacement begins with an overlapping record already retained in
+    // history. Its next record is original line 2, not a new session ordinal.
+    handle.replace([record(6), record(7), record(8)]);
+    file.refresh_records(2, 4096).unwrap();
+    while file.has_older_records() {
+        file.load_older_records(2, 4096).unwrap();
+    }
+    assert_eq!(file.source_line(find_line(&file, "record-5")), Some(6));
+    assert_eq!(file.source_line(find_line(&file, "record-6")), Some(1));
+    assert_eq!(file.source_line(find_line(&file, "record-7")), Some(2));
+    assert_eq!(file.source_line(find_line(&file, "record-8")), Some(3));
+    assert_eq!(file.source_line_count(), Some(3));
+    let prefix = file.display_line_for_source(1).unwrap();
+    assert!(
+        file.read_window(prefix, 5)
+            .unwrap()
+            .join("\n")
+            .contains("record-6")
+    );
+    let target = file.display_line_for_source(2).unwrap();
+    assert!(
+        file.read_window(target, 5)
+            .unwrap()
+            .join("\n")
+            .contains("record-7")
+    );
+}
+
+#[test]
+fn tail_first_source_jump_loads_the_prefix_without_using_session_line_numbers() {
+    let (_handle, timeline) = fake_timeline((0..300).map(record));
+    let file = RecordTimelineViewFile::with_initial_limit(
+        Box::new(timeline),
+        JSONL,
+        RecordLoadLimit::new(2, 4096),
+    )
+    .unwrap();
+    let mut viewer = FileViewer::new(Box::new(file), FormatKind::Jsonl, None);
+    let size = Size::new(80, 7);
+    assert!(
+        viewer
+            .render(size, None)
+            .unwrap()
+            .title
+            .contains("? source lines")
+    );
+    for code in [KeyCode::Char('2'), KeyCode::Enter] {
+        viewer.handle_event(key(code), FileViewer::page_for_size(size));
+    }
+    advance_until_idle(&mut viewer);
+    let frame = viewer.render(size, None).unwrap();
+    assert_eq!(frame.styled[0].spans[0].content.trim(), "2 │");
+    assert!(frame_text(frame).contains("record-1"));
+}
+
+#[test]
 fn fake_timeline_distinguishes_pending_from_terminal_end() {
     let (handle, mut timeline) = fake_timeline([]);
 
@@ -529,6 +606,7 @@ fn tail_first_follow_layout_variants_keep_the_exact_tail_attached() {
         }
 
         let first = viewer.render(size, None).unwrap();
+        let first_position = first.position;
         let first_title = first.title.clone();
         let first_footer = first.footer_text.clone();
         let first_text = frame_text(first);
@@ -545,12 +623,13 @@ fn tail_first_follow_layout_variants_keep_the_exact_tail_attached() {
         handle.append(conversation_record(140, &format!("{name}-appended")));
         assert!(viewer.preload().unwrap());
         let appended = viewer.render(size, None).unwrap();
+        let appended_position = appended.position;
         let appended_title = appended.title.clone();
         let appended_footer = appended.footer_text.clone();
         let appended_text = frame_text(appended);
         if name == "narrow" {
             assert!(appended_title.contains("100%"), "{appended_title}");
-            assert_ne!(appended_title, first_title);
+            assert_ne!(appended_position, first_position);
         } else {
             assert!(
                 appended_text.contains(&format!("{name}-appended")),

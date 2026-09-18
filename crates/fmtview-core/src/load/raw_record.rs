@@ -15,6 +15,7 @@ pub(crate) struct RawRecordViewFile {
     file: RefCell<File>,
     offset: u64,
     len: u64,
+    source_line: Option<usize>,
 }
 
 impl RawRecordViewFile {
@@ -23,7 +24,7 @@ impl RawRecordViewFile {
         source_label: &str,
         offset: u64,
         raw_len: u64,
-        source_line: usize,
+        source_line: Option<usize>,
     ) -> Result<Self> {
         let mut len = raw_len;
         if len > 0 && byte_at(&mut file, offset.saturating_add(len - 1))? == b'\n' {
@@ -33,10 +34,14 @@ impl RawRecordViewFile {
             len -= 1;
         }
         Ok(Self {
-            label: format!("{source_label} | raw record at line {}", source_line + 1),
+            label: format!(
+                "{source_label} | raw record at source line {}",
+                source_line.map_or_else(|| "?".to_owned(), |line| line.to_string())
+            ),
             file: RefCell::new(file),
             offset,
             len,
+            source_line,
         })
     }
 
@@ -81,6 +86,18 @@ impl ViewFile for RawRecordViewFile {
 
     fn byte_len(&self) -> u64 {
         self.len
+    }
+
+    fn source_line(&self, _line: usize) -> Option<usize> {
+        self.source_line
+    }
+
+    fn source_line_count(&self) -> Option<usize> {
+        Some(1)
+    }
+
+    fn display_line_for_source(&self, _requested: usize) -> Option<usize> {
+        Some(0)
     }
 
     fn byte_offset_for_line(&self, line: usize) -> u64 {
@@ -152,7 +169,7 @@ mod tests {
             "fixture.jsonl",
             0,
             text.len() as u64,
-            12,
+            Some(13),
         )
         .unwrap();
 
@@ -160,7 +177,9 @@ mod tests {
 
         assert_eq!(chunks.concat(), text.trim_end());
         assert!(chunks.iter().all(|chunk| chunk.len() <= 32 * 1024 + 3));
-        assert!(view.label().contains("raw record at line 13"));
+        assert_eq!(view.source_line(0), Some(13));
+        assert_eq!(view.source_line(1), Some(13));
+        assert!(view.label().contains("raw record at source line 13"));
     }
 
     #[test]
@@ -176,7 +195,7 @@ mod tests {
             "invalid.jsonl",
             0,
             bytes.len() as u64,
-            0,
+            Some(1),
         )
         .unwrap();
         let mut file = spool.reopen().unwrap();
@@ -193,7 +212,8 @@ mod tests {
         let mut spool = NamedTempFile::new().unwrap();
         spool.write_all(b"\n").unwrap();
         spool.flush().unwrap();
-        let view = RawRecordViewFile::new(spool.reopen().unwrap(), "empty.jsonl", 0, 1, 0).unwrap();
+        let view =
+            RawRecordViewFile::new(spool.reopen().unwrap(), "empty.jsonl", 0, 1, Some(1)).unwrap();
 
         assert_eq!(view.line_count(), 1);
         assert_eq!(view.read_window(0, 1).unwrap(), vec![""]);

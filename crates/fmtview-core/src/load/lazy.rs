@@ -61,6 +61,7 @@ impl<P: LazyProducer> LazyFile<P> {
                 source_offset: 0,
                 line_offsets: Vec::new(),
                 source_line_offsets: Vec::new(),
+                record_starts: Vec::new(),
                 complete: len == 0,
                 units_produced: 0,
                 raw_spool: retain_raw_records
@@ -114,6 +115,26 @@ impl<P: LazyProducer> ViewFile for LazyFile<P> {
 
     fn byte_len(&self) -> u64 {
         self.len
+    }
+
+    fn source_line(&self, line: usize) -> Option<usize> {
+        let state = self.state.borrow();
+        (line < state.line_offsets.len())
+            .then(|| state.record_starts.partition_point(|&start| start <= line))
+    }
+
+    fn source_line_count(&self) -> Option<usize> {
+        Some(self.state.borrow().units_produced)
+    }
+
+    fn display_line_for_source(&self, requested: usize) -> Option<usize> {
+        let state = self.state.borrow();
+        let index = requested.max(1) - 1;
+        state.record_starts.get(index).copied().or_else(|| {
+            state
+                .complete
+                .then(|| state.record_starts.last().copied().unwrap_or(0))
+        })
     }
 
     fn byte_offset_for_line(&self, line: usize) -> u64 {
@@ -212,7 +233,7 @@ impl<P: LazyProducer> ViewFile for LazyFile<P> {
             &self.label,
             record.raw_offset,
             record.raw_len,
-            line,
+            self.source_line(line),
         )?;
         Ok(Some(Box::new(raw)))
     }
@@ -225,6 +246,7 @@ struct LazyState<P> {
     source_offset: u64,
     line_offsets: Vec<u64>,
     source_line_offsets: Vec<u64>,
+    record_starts: Vec<usize>,
     complete: bool,
     units_produced: usize,
     raw_spool: Option<NamedTempFile>,
@@ -291,6 +313,7 @@ impl<P: LazyProducer> LazyState<P> {
     }
 
     fn append_bytes(&mut self, source_offset: u64, bytes: &[u8]) -> Result<()> {
+        self.record_starts.push(self.line_offsets.len());
         self.line_offsets.push(self.spool_len);
         self.source_line_offsets.push(source_offset);
         for index in memchr_iter(b'\n', bytes) {

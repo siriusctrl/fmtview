@@ -109,6 +109,33 @@ impl FileViewer {
             return advance_overlay(raw, now);
         }
         let mut dirty = false;
+        if self.state.source_jump.is_some() {
+            dirty |= input::resolve_source_jump(self.file.as_ref(), &mut self.state);
+            if self.state.source_jump.is_some() {
+                let progressed = if self.file.has_older_records() {
+                    let change = self
+                        .file
+                        .load_older_records(LAZY_PRELOAD_RECORDS, TIMELINE_PRELOAD_BYTES)?;
+                    self.apply_file_change(change)
+                } else {
+                    self.file.preload(
+                        LAZY_PRELOAD_LINES,
+                        LAZY_PRELOAD_RECORDS,
+                        LAZY_PRELOAD_BUDGET,
+                    )?
+                };
+                let resolved = input::resolve_source_jump(self.file.as_ref(), &mut self.state);
+                if !progressed && !resolved {
+                    self.state.source_jump = None;
+                    self.state.set_notice(
+                        "source line is not available in this timeline".to_owned(),
+                        now,
+                        NOTICE_DURATION,
+                    );
+                }
+                dirty = true;
+            }
+        }
         if self.file.has_older_records()
             && self
                 .state
@@ -186,7 +213,9 @@ impl FileViewer {
         if let Some(raw) = self.raw_record.as_ref() {
             return raw.state.search_task.is_some() || raw.state.structure_task.is_some();
         }
-        self.state.search_task.is_some() || self.state.structure_task.is_some()
+        self.state.search_task.is_some()
+            || self.state.structure_task.is_some()
+            || self.state.source_jump.is_some()
     }
 
     pub fn preload(&mut self) -> Result<bool> {
@@ -248,6 +277,11 @@ impl FileViewer {
                 };
             }
             let raw = self.raw_record.as_mut().expect("raw overlay checked above");
+            if let Some(action) =
+                input::handle_source_jump(event, raw.file.as_ref(), &mut raw.state)
+            {
+                return action;
+            }
             return handle_event_with_count(
                 event,
                 &mut raw.state,
@@ -259,6 +293,10 @@ impl FileViewer {
         }
 
         let had_active_prompt = self.state.has_active_prompt();
+        if let Some(action) = input::handle_source_jump(event, self.file.as_ref(), &mut self.state)
+        {
+            return action;
+        }
         if !had_active_prompt
             && matches!(
                 event,
@@ -648,6 +686,7 @@ fn draw_view(
         render_request,
         &mut caches.render,
         ViewportRenderOptions {
+            source_file: Some(file),
             line_modes: line_modes.as_deref(),
             chat_role_marks: conversation_marks
                 .as_ref()
@@ -671,6 +710,7 @@ fn draw_view(
             render_request,
             &mut caches.render,
             ViewportRenderOptions {
+                source_file: Some(file),
                 line_modes: line_modes.as_deref(),
                 chat_role_marks: conversation_marks
                     .as_ref()
@@ -697,6 +737,7 @@ fn draw_view(
             render_request,
             &mut caches.render,
             ViewportRenderOptions {
+                source_file: Some(file),
                 line_modes: line_modes.as_deref(),
                 chat_role_marks: conversation_marks
                     .as_ref()

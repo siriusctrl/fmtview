@@ -14,7 +14,6 @@ use tempfile::NamedTempFile;
 use super::file::input::*;
 use super::file::input::{ViewState, handle_event, handle_key_event, handle_key_event_with_count};
 use super::file::render::*;
-use super::file::structure::*;
 use super::*;
 use crate::{
     formats::{highlight_json_like, highlight_xml_line},

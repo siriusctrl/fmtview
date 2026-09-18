@@ -90,10 +90,13 @@ fn open_indexed(
     transform: TransformStrategy,
 ) -> Result<Box<dyn ViewFile>> {
     let formatted = transform::transform_source_to_temp(input, options, transform)?;
-    Ok(Box::new(IndexedTempFile::new(
-        input.label().to_owned(),
-        formatted,
-    )?))
+    let indexed = IndexedTempFile::new(input.label().to_owned(), formatted)?;
+    let indexed = if transform == TransformStrategy::Passthrough {
+        indexed
+    } else {
+        indexed.with_source_lines(std::io::BufReader::with_capacity(64 * 1024, input.open()?))?
+    };
+    Ok(Box::new(indexed))
 }
 
 fn fallback_notice(kind: FormatKind) -> String {

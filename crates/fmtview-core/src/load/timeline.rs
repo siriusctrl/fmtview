@@ -108,6 +108,38 @@ impl ViewFile for RecordTimelineViewFile {
         state.older_end && state.newer_end
     }
 
+    fn source_line(&self, line: usize) -> Option<usize> {
+        self.state
+            .borrow()
+            .lines
+            .get(line)
+            .and_then(|line| line.source_line)
+    }
+
+    fn source_line_count(&self) -> Option<usize> {
+        self.state.borrow().next_source_line.map(|line| line - 1)
+    }
+
+    fn display_line_for_source(&self, requested: usize) -> Option<usize> {
+        let state = self.state.borrow();
+        state.next_source_line?;
+        // After rotation, numeric jumps refer to the current source epoch;
+        // retained history keeps the coordinates it had in its original file.
+        let start = state.current_source_start();
+        let lines = &state.lines[start..];
+        let Some(last) = lines.last().and_then(|line| line.source_line) else {
+            return Some(start.saturating_sub(1));
+        };
+        if requested > last && !state.at_newer_boundary {
+            return None;
+        }
+        let index = lines.partition_point(|line| {
+            line.source_line
+                .is_some_and(|n| n < requested.max(1).min(last))
+        });
+        Some(start + index.min(lines.len().saturating_sub(1)))
+    }
+
     fn byte_len(&self) -> u64 {
         self.state.borrow().timeline.snapshot().observed_end
     }
@@ -186,7 +218,7 @@ impl ViewFile for RecordTimelineViewFile {
             &self.label,
             line.raw_offset,
             u64::try_from(line.raw_len).context("raw timeline record was too large")?,
-            line_index,
+            line.source_line,
         )?;
         Ok(Some(Box::new(raw)))
     }
@@ -213,6 +245,8 @@ struct TimelineViewState {
     newer_end: bool,
     at_newer_boundary: bool,
     notices: VecDeque<String>,
+    source_overlap_records: usize,
+    next_source_line: Option<usize>,
 }
 
 impl TimelineViewState {
@@ -234,6 +268,8 @@ impl TimelineViewState {
             newer_end: false,
             at_newer_boundary: true,
             notices: VecDeque::new(),
+            source_overlap_records: 0,
+            next_source_line: None,
         })
     }
 
@@ -254,6 +290,7 @@ impl TimelineViewState {
                 self.older_end = next == TimelineReadNext::End;
                 if self.older_end {
                     self.reset_overlap_ids.clear();
+                    self.resolve_source_lines();
                 }
                 Ok(ViewFileChange {
                     inserted_at,
@@ -265,6 +302,7 @@ impl TimelineViewState {
             TimelineRead::End => {
                 self.older_end = true;
                 self.reset_overlap_ids.clear();
+                self.resolve_source_lines();
                 Ok(ViewFileChange::default())
             }
         }
@@ -323,6 +361,8 @@ impl TimelineViewState {
         };
         self.older_insert_at = self.lines.len();
         self.older_record_insert_at = self.records.len();
+        self.source_overlap_records = 0;
+        self.next_source_line = None;
         self.reset_overlap_ids.clear();
         self.older_end = false;
         self.newer_end = false;
@@ -339,6 +379,7 @@ impl TimelineViewState {
             TimelineRead::End => {
                 self.older_end = true;
                 self.reset_pending = false;
+                self.resolve_source_lines();
                 return Ok(ViewFileChange {
                     reset: true,
                     ..ViewFileChange::default()
@@ -347,6 +388,7 @@ impl TimelineViewState {
         };
 
         let overlap = self.reset_tail_overlap(&prefix)?;
+        self.source_overlap_records = overlap;
         self.reset_overlap_ids
             .extend(prefix[..overlap].iter().map(|record| record.id));
         self.older_end = next == TimelineReadNext::End;
@@ -360,6 +402,9 @@ impl TimelineViewState {
         let spooled = self.spool_records(&records, true)?;
         self.lines.extend(spooled.lines);
         self.records.extend(spooled.records);
+        if self.older_end {
+            self.resolve_source_lines();
+        }
         Ok(ViewFileChange {
             appended_lines: self.lines.len().saturating_sub(old_len),
             reset: true,
@@ -372,6 +417,29 @@ impl TimelineViewState {
             records.retain(|record| !self.reset_overlap_ids.contains(&record.id));
         }
         records
+    }
+
+    fn resolve_source_lines(&mut self) {
+        let mut number = 1;
+        let mut display = self.current_source_start();
+        for record in &self.records[self.older_record_insert_at - self.source_overlap_records..] {
+            for line in &mut self.lines[display..display + record.display_lines] {
+                line.source_line = Some(number);
+            }
+            display += record.display_lines;
+            number += record.source_lines;
+        }
+        self.next_source_line = Some(number);
+    }
+
+    fn current_source_start(&self) -> usize {
+        let shared_lines: usize = self.records[self.older_record_insert_at
+            - self.source_overlap_records
+            ..self.older_record_insert_at]
+            .iter()
+            .map(|record| record.display_lines)
+            .sum();
+        self.older_insert_at - shared_lines
     }
 
     fn spool_records(
@@ -452,6 +520,7 @@ impl TimelineViewState {
                 source_offset: record.id.start_offset,
                 raw_offset,
                 raw_len: record.raw.len(),
+                source_line: self.next_source_line,
             });
             start = newline + 1;
         }
@@ -462,6 +531,7 @@ impl TimelineViewState {
                 source_offset: record.id.start_offset,
                 raw_offset,
                 raw_len: record.raw.len(),
+                source_line: self.next_source_line,
             });
         }
         let record_ref = TimelineRecordRef {
@@ -469,7 +539,12 @@ impl TimelineViewState {
             raw_offset,
             raw_len: record.raw.len(),
             raw_hash: hash_raw(&record.raw),
+            display_lines: refs.len(),
+            source_lines: physical_line_count(&record.raw),
         };
+        if let Some(number) = self.next_source_line.as_mut() {
+            *number += record_ref.source_lines;
+        }
         Ok((refs, record_ref))
     }
 
@@ -522,6 +597,8 @@ struct TimelineRecordRef {
     raw_offset: u64,
     raw_len: usize,
     raw_hash: u64,
+    display_lines: usize,
+    source_lines: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -531,6 +608,11 @@ struct TimelineLine {
     source_offset: u64,
     raw_offset: u64,
     raw_len: usize,
+    source_line: Option<usize>,
+}
+
+fn physical_line_count(raw: &[u8]) -> usize {
+    (memchr::memchr_iter(b'\n', raw).count() + usize::from(!raw.ends_with(b"\n"))).max(1)
 }
 
 fn record_ref_matches(

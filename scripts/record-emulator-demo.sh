@@ -32,6 +32,9 @@ navigation, structured/raw record toggles, media collapse, search, and wrap.
 
 Set FMTVIEW_EMULATOR_SCENARIO=delimited to record field filtering, embedded
 value highlighting, value search, and record navigation for examples/wide.csv.
+
+Set FMTVIEW_EMULATOR_SCENARIO=source-lines with a JSONL fixture of at least 100
+records to record original-line jumps, raw-record coordinates, and scrolling.
 EOF
 }
 
@@ -261,6 +264,21 @@ if [[ -n "$follow_file" ]]; then
   append_follow_record "append_while_paused" 900004
   sleep 0.8
   send_key "resume_follow" "f"
+  sleep 0.8
+elif [[ "$scenario" == "source-lines" ]]; then
+  send_type "source_line_2" "2"
+  send_key "jump_source_line_2" "Return"
+  sleep 0.8
+  send_key "raw_source_line_2" "r"
+  sleep 0.8
+  send_key "structured_source_line_2" "r"
+  sleep 0.8
+  send_type "source_line_100" "100"
+  send_key "jump_source_line_100" "Return"
+  sleep 0.8
+  send_key "scroll_source_line_100" "j"
+  sleep 0.8
+  send_key "toggle_wrap" "w"
   sleep 0.8
 elif [[ "$scenario" == "delimited" ]]; then
   send_key "field_search_open" "slash"
